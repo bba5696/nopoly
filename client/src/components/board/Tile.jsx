@@ -11,14 +11,39 @@ import { TileIcon, iconKindFor } from './TileIcon';
 const VACANT_PILL = 'rgba(255,255,255,0.11)';
 const VACANT_SURFACE = 'rgba(255,255,255,0.055)';
 
-function Houses({ houses }) {
-    if (houses === 5) {
-        return <span className="h-[0.42em] w-[1.15em] rounded-[0.1em] bg-white shadow-[0_0_0.4em_rgba(255,255,255,.8)]" />;
-    }
+// Silhouettes rather than plain blocks — at this size a square reads as a pip,
+// and four pips in a row look like a counter rather than a developed street.
+// The dark stroke is what keeps them legible: the pill behind them is the
+// owner's colour, which can be anything from navy to yellow.
+const HOUSE = 'M6 0 12 5 10.5 5 10.5 11 1.5 11 1.5 5 0 5Z';
+// A hotel is one bigger building, not a bigger house: flat roof with a cap.
+const HOTEL = 'M0 1h20v2.2H0Z M2 3.2h16V11H2Z';
+
+// Mitred, not rounded: at eight pixels tall a round join swallows the roof
+// peak and the house reads as a dot.
+function Building({ path, box, width, height }) {
     return (
-        <span className="flex gap-[0.14em]">
+        <svg
+            viewBox={`0 0 ${box} 11`}
+            style={{ width, height }}
+            fill="#fff"
+            stroke="rgba(0,0,0,0.45)"
+            strokeWidth="0.5"
+            strokeLinejoin="miter"
+        >
+            <path d={path} />
+        </svg>
+    );
+}
+
+// Sized against the slot rather than by eye: four houses plus their gaps come
+// to ~2.7em inside a 3.4em slot, which leaves the pill its rounded ends.
+function Houses({ houses }) {
+    if (houses === 5) return <Building path={HOTEL} box={20} width="1em" height="0.55em" />;
+    return (
+        <span className="flex gap-[0.07em]">
             {Array.from({ length: houses }).map((_, i) => (
-                <span key={i} className="size-[0.36em] rounded-[0.07em] bg-white/90" />
+                <Building key={i} path={HOUSE} box={12} width="0.62em" height="0.57em" />
             ))}
         </span>
     );
