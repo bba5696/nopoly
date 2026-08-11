@@ -17,7 +17,9 @@ const PASS_START_BONUS = 200;
 const JAIL_FINE = 50;
 const MAX_JAIL_TURNS = 3;
 
-const AUCTION_MS = 12000;
+// Short on purpose: an auction is a reflex, not a negotiation, and every bid
+// puts the full clock back so a contested tile still gets its back-and-forth.
+const AUCTION_MS = 6000;
 /** Raise amounts offered in the auction UI. */
 const BID_STEPS = [2, 10, 100];
 
@@ -900,6 +902,17 @@ function createTrade(room, fromId, { toId, give, get, counterOf }) {
     }
     // A counter replaces the offer it answers.
     if (counterOf) dropTrade(room, counterOf);
+    // One live offer per direction. Without this a player can bury someone
+    // under fifty offers, and since an incoming trade opens a modal that would
+    // be a way to stop them playing at all.
+    const open = room.trades.find((t) => t.fromId === fromId && t.toId === toId);
+    if (open) {
+        // A counter is a reply to something they sent you, so it replaces
+        // whatever you had open with them rather than being refused — being
+        // mid-offer with someone shouldn't stop you answering them.
+        if (!counterOf) return { error: `You already have an offer open with ${to.name}` };
+        dropTrade(room, open.id);
+    }
     const trade = {
         id: uid(),
         fromId,

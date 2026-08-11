@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeftRight, MessageSquare, TrendingDown, Users, Wallet, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/ui/modal';
@@ -52,6 +52,24 @@ export function Game() {
     // Only the player who drew gets their screen covered — everyone else reads
     // the card in the history feed.
     const cardOpen = state.pendingCard?.playerId === playerId && !moving;
+
+    // An offer in the side rail goes unnoticed, especially on a phone where the
+    // rail is behind a tab, so a new one addressed to you opens itself. It
+    // waits rather than covering a prompt that's already asking you something —
+    // once that clears, the effect re-runs and it opens then.
+    const announced = useRef(new Set());
+    useEffect(() => {
+        const mine = state.trades.filter((t) => t.toId === playerId);
+        const live = new Set(mine.map((t) => t.id));
+        // Forget withdrawn offers, so re-sending one pops it up again.
+        for (const id of [...announced.current]) if (!live.has(id)) announced.current.delete(id);
+
+        const fresh = mine.find((t) => !announced.current.has(t.id));
+        if (!fresh) return;
+        if (buyOpen || cardOpen || moving || state.auction || trade || viewTradeId) return;
+        announced.current.add(fresh.id);
+        setViewTradeId(fresh.id);
+    }, [state.trades, state.auction, playerId, buyOpen, cardOpen, moving, trade, viewTradeId]);
 
     return (
         <div className="flex h-svh flex-col overflow-hidden">
