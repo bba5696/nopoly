@@ -1,0 +1,95 @@
+import { motion } from 'framer-motion';
+import { Crown, WifiOff } from 'lucide-react';
+import { useGame } from '@/lib/game-context';
+import { alpha, initials } from '@/lib/color';
+import { money } from '@/lib/board-layout';
+
+function note(player, state, isCurrent) {
+    if (player.bankrupt) return 'bankrupt';
+    if (!player.connected) return 'away';
+    if (player.inJail) return `in jail · ${Math.max(3 - player.jailTurns, 1)} turn${3 - player.jailTurns === 1 ? '' : 's'}`;
+    if (isCurrent) return 'now playing';
+    const n = player.properties.length;
+    return n === 0 ? 'no properties' : `${n} propert${n === 1 ? 'y' : 'ies'}`;
+}
+
+function Avatar({ player, size = 30, glow }) {
+    return (
+        <div
+            className="mono relative flex shrink-0 items-center justify-center rounded-full font-semibold text-white"
+            style={{
+                width: size,
+                height: size,
+                fontSize: size * 0.36,
+                background: `linear-gradient(160deg, ${player.color}, ${alpha(player.color, 0.65)})`,
+                boxShadow: glow ? `0 0 0 2px ${alpha(player.color, 0.5)}, 0 0 16px ${alpha(player.color, 0.7)}` : 'none',
+                opacity: player.bankrupt ? 0.4 : 1,
+            }}
+        >
+            {initials(player.name)}
+        </div>
+    );
+}
+
+function Row({ player, state, order, compact, isCurrent, isMe, isHost }) {
+    return (
+        <motion.div
+            layout
+            className={`flex items-center gap-3 px-3 ${compact ? 'py-1.5' : 'py-2.5'} ${
+                isCurrent ? '' : 'border-b border-white/5 last:border-b-0'
+            }`}
+            style={
+                isCurrent
+                    ? {
+                          background: `linear-gradient(90deg, ${alpha(player.color, 0.17)}, transparent 78%)`,
+                          borderRadius: 'var(--radius-md)',
+                          boxShadow: `inset 0 0 0 1px ${alpha(player.color, 0.35)}`,
+                      }
+                    : undefined
+            }
+        >
+            {!compact && <span className="mono w-4 text-[10px] text-muted-foreground">{order}</span>}
+            <Avatar player={player} size={compact ? 24 : 30} glow={isCurrent} />
+            <div className="flex min-w-0 flex-1 flex-col">
+                <span className={`flex items-center gap-1.5 truncate ${compact ? 'text-[13px]' : 'text-[15px]'} leading-tight`}>
+                    <span className="truncate" style={{ color: player.bankrupt ? 'var(--muted-foreground)' : undefined }}>
+                        {player.name}
+                    </span>
+                    {isMe && <span className="label !text-[9px] opacity-70">you</span>}
+                    {isHost && <Crown className="size-3 shrink-0 text-[#ffb648]" />}
+                    {!player.connected && <WifiOff className="size-3 shrink-0 text-[#ff5c7c]" />}
+                </span>
+                {!compact && <span className="label !text-[9.5px]">{note(player, state, isCurrent)}</span>}
+            </div>
+            <span className={`mono shrink-0 ${compact ? 'text-[11px]' : 'text-[13px]'}`}>{money(player.cash)}</span>
+        </motion.div>
+    );
+}
+
+export function PlayerRail() {
+    const { state, playerId, current } = useGame();
+    const compact = state.players.length > 8;
+
+    return (
+        <section className="panel flex flex-col">
+            <header className="panel-divider flex items-center justify-between px-4 py-3">
+                <span className="label">Players ({state.players.length})</span>
+                <span className="label opacity-60">turn {state.stats.turnCount + 1}</span>
+            </header>
+            <div className={`scroll-thin flex flex-col gap-0.5 overflow-y-auto p-2 ${compact ? 'max-h-[340px]' : ''}`}>
+                {state.players.map((p, i) => (
+                    <Row
+                        key={p.id}
+                        player={p}
+                        state={state}
+                        order={i + 1}
+                        compact={compact && p.id !== current?.id}
+                        isCurrent={p.id === current?.id}
+                        isMe={p.id === playerId}
+                        isHost={p.id === state.hostId}
+                    />
+                ))}
+            </div>
+        </section>
+    );
+}

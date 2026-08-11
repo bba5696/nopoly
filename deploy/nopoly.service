@@ -1,0 +1,47 @@
+# systemd unit for the Nopoly game server.
+#
+# Install to /etc/systemd/system/nopoly.service, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now nopoly
+#
+# Adjust User/WorkingDirectory if you cloned somewhere else or your image's
+# default account is `opc` (Oracle Linux) rather than `ubuntu`.
+
+[Unit]
+Description=Nopoly game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/nopoly/server
+ExecStart=/usr/bin/node index.js
+
+# The password lives here, not in the repo. Keep it 600 and owned by root.
+EnvironmentFile=/etc/nopoly.env
+
+# Nginx terminates TLS and proxies to this, so it only needs to listen locally.
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+Restart=always
+RestartSec=3
+
+# Games are in memory, so a restart drops them — give the process time to hand
+# out its final broadcasts before systemd escalates to SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nopoly
+
+# Modest hardening. The server keeps all state in memory and never writes to
+# disk, so read-only access to its own code directory is all it needs.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
