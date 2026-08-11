@@ -5,13 +5,29 @@ terminates TLS in front of it. No database — all game state is in memory.
 
 ## Before you start
 
-- An **Always Free** VM. Prefer an **Ampere A1** shape (4 OCPU / 24 GB) over the
-  AMD `E2.1.Micro` (1 GB): the client build needs more than a gigabyte and will
-  be OOM-killed on the micro shape. If you're stuck on the micro, see
-  [Building on a 1 GB VM](#building-on-a-1-gb-vm).
 - A **domain name** pointed at the VM's public IP. Let's Encrypt will not issue
   a certificate for a bare IP address, and without HTTPS the shared password
   crosses the internet in the clear. A free DuckDNS subdomain is fine.
+- If you're on the `VM.Standard.E2.1.Micro` shape (1 GB RAM), **do the swap step
+  below first**. It is not optional there.
+
+## Swap (required on the 1 GB micro shape)
+
+`npm ci` and the Vite build both need more than a gigabyte. Without swap the
+kernel's OOM killer stops them partway, which surfaces as a bare `Killed` or an
+unexplained non-zero exit rather than an error that names the real cause.
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # survives reboot
+free -h                                                       # confirm Swap: 2.0Gi
+```
+
+The build is slow on one OCPU — expect a few minutes. If you'd rather not build
+on the VM at all, see [Building elsewhere](#building-elsewhere).
 
 ## The two things that go wrong
 
@@ -58,9 +74,23 @@ sudo iptables -L INPUT --line-numbers -n | head -12
 ```bash
 # Node 20+
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs nginx
+sudo apt-get install -y nodejs nginx git
+```
 
-git clone <your-repo-url> ~/nopoly
+The repo is private, so the VM needs its own read access. A deploy key is the
+narrowest way to grant it — it works for exactly this one repo and nothing else
+on the account:
+
+```bash
+ssh-keygen -t ed25519 -C "nopoly-server" -f ~/.ssh/id_ed25519 -N ""
+cat ~/.ssh/id_ed25519.pub
+```
+
+Paste that public key into the repo's **Settings → Deploy keys → Add deploy
+key**. Leave "Allow write access" unchecked — the VM only ever pulls. Then:
+
+```bash
+git clone git@github.com:YOUR_USER/nopoly.git ~/nopoly
 
 # Build the client — this is what the server serves
 cd ~/nopoly/client && npm ci && npm run build
@@ -118,22 +148,22 @@ sudo systemctl restart nopoly
 **A restart ends every game in progress** — state is in memory only. Deploy when
 nobody is mid-game.
 
-## Building on a 1 GB VM
+## Building elsewhere
 
-The Vite build gets OOM-killed on the micro shape. Either build on your own
-machine and copy `client/dist` up:
-
-```bash
-scp -r client/dist ubuntu@YOUR_IP:~/nopoly/client/
-```
-
-...or add swap on the VM:
+The alternative to building on a slow VM: build on your own machine and copy the
+output up. `client/dist` is the only thing the server needs — it's gitignored, so
+it doesn't travel with `git pull` and has to be copied on every deploy.
 
 ```bash
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+# on your machine, from the repo root
+cd client && npm run build
+scp -r dist ubuntu@YOUR_IP:~/nopoly/client/
+ssh ubuntu@YOUR_IP 'sudo systemctl restart nopoly'
 ```
+
+The server still needs its own dependencies installed on the VM
+(`npm ci --omit=dev` in `server/`), but that's a much lighter install than the
+client's and completes fine on 1 GB.
 
 ## Do not run two instances
 
