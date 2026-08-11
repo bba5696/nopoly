@@ -189,7 +189,11 @@ export function Lobby() {
                 </header>
 
                 <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-7 lg:flex-row lg:overflow-visible">
-                    <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-3 lg:overflow-y-auto">
+                    {/* `min-h-0` only from lg, where this column is its own
+                        scroll container. Stacked, there's no overflow rule
+                        here — the parent scrolls — so letting it shrink below
+                        its content spills the roster over the settings. */}
+                    <div className="scroll-thin flex shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                         <span className="label shrink-0">
                             Players ({state.players.length}/{settings.maxPlayers})
                         </span>
