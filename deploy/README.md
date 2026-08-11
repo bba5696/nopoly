@@ -7,7 +7,8 @@ terminates TLS in front of it. No database — all game state is in memory.
 
 - A **domain name** pointed at the VM's public IP. Let's Encrypt will not issue
   a certificate for a bare IP address, and without HTTPS the shared password
-  crosses the internet in the clear. A free DuckDNS subdomain is fine.
+  crosses the internet in the clear. A free DuckDNS subdomain works — see
+  [Domain](#domain-free-via-duckdns).
 - If you're on the `VM.Standard.E2.1.Micro` shape (1 GB RAM), **do the swap step
   below first**. It is not optional there.
 
@@ -28,6 +29,26 @@ free -h                                                       # confirm Swap: 2.
 
 The build is slow on one OCPU — expect a few minutes. If you'd rather not build
 on the VM at all, see [Building elsewhere](#building-elsewhere).
+
+## Domain (free, via DuckDNS)
+
+Certbot needs a real hostname; it will not issue for a bare IP. DuckDNS gives
+one away and satisfies Let's Encrypt's HTTP challenge fine.
+
+1. Sign in at [duckdns.org](https://duckdns.org) with any of the listed logins.
+2. Claim a subdomain — `nopoly` gives you `nopoly.duckdns.org`.
+3. Set its IP to the VM's **public** address (the one in the Oracle console, not
+   the `10.x` private one) and hit update.
+
+Confirm it resolves before running certbot, or the challenge fails with an error
+that points at the wrong thing:
+
+```bash
+dig +short nopoly.duckdns.org     # must print your VM's public IP
+```
+
+The address is static as long as the instance isn't recreated, so nothing needs
+to keep it refreshed.
 
 ## The two things that go wrong
 
