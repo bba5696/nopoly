@@ -65,7 +65,14 @@ function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlig
                 </span>
                 {!compact && <span className="label !text-[9.5px]">{note(player, state, isCurrent)}</span>}
             </div>
-            <span className={`mono shrink-0 ${compact ? 'text-[11px]' : 'text-[13px]'}`}>{money(player.cash)}</span>
+            {/* Owing money shows as a negative balance rather than $0 — see
+                YouRail. Everyone can see it, same as everyone can see cash. */}
+            <span
+                className={`mono shrink-0 ${compact ? 'text-[11px]' : 'text-[13px]'}`}
+                style={player.debt ? { color: '#ff5c7c' } : undefined}
+            >
+                {money(player.cash - (player.debt?.amount ?? 0))}
+            </span>
         </motion.div>
     );
 }

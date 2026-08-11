@@ -129,10 +129,13 @@ function ownsFullGroup(room, playerId, groupId) {
 }
 
 function netWorth(room, player) {
-    return player.properties.reduce((sum, id) => {
+    const estate = player.properties.reduce((sum, id) => {
         const tile = room.tiles[id];
         return sum + market.priceOf(room, tile) + tile.houses * (tile.houseCost || 0);
     }, player.cash);
+    // An unsettled debt is a real liability — leaving it out would rank someone
+    // above a rival they can't actually afford to stay in the game against.
+    return estate - (player.debt?.amount ?? 0);
 }
 
 /** Full ownership map of colour sets, used by the client for the set-glow. */

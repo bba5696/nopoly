@@ -38,19 +38,24 @@ export function YouRail({ onOpenTile }) {
 
     const owned = me.properties.map((id) => state.tiles[id]).sort((a, b) => a.id - b.id);
 
+    const balance = me.cash - (me.debt?.amount ?? 0);
+
     return (
         <>
             <section className="panel flex flex-col gap-2 p-4">
                 <span className="label">You · {me.name}</span>
                 <div className="flex items-end justify-between">
+                    {/* Cash itself never goes below zero — the shortfall lives
+                        in `debt` — but showing $0 while you owe money reads as
+                        though nothing is wrong. */}
                     <motion.span
-                        key={me.cash}
+                        key={balance}
                         initial={{ opacity: 0.4, y: -3 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mono text-3xl font-medium"
-                        style={{ color: me.color }}
+                        style={{ color: balance < 0 ? '#ff5c7c' : me.color }}
                     >
-                        {money(me.cash)}
+                        {money(balance)}
                     </motion.span>
                     <span className="label">net {money(me.netWorth)}</span>
                 </div>

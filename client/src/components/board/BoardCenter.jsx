@@ -43,14 +43,27 @@ function statusLine({ state, current, moving }) {
     return `${current.name} is playing`;
 }
 
+/**
+ * Wraps an action a debt has taken away. The title sits on a span rather than
+ * on the button, because a disabled button gets `pointer-events: none` and a
+ * tooltip attached to it would never fire.
+ */
+function Blocked({ when, children }) {
+    if (!when) return children;
+    return (
+        <span title="You are in debt" className="inline-flex cursor-not-allowed">
+            {children}
+        </span>
+    );
+}
+
 export function BoardCenter({ moving, dim }) {
     const { state, me, current, isMyTurn, send } = useGame();
-    // A debt freezes the turn until it's cleared, so none of the usual actions
-    // are on offer — the server refuses them all anyway.
+    // A debt freezes the turn until it's cleared. The buttons still render so
+    // the turn still reads as yours — they're just dead, and say why on hover.
     const debt = me?.debt || null;
-    const canRoll = isMyTurn && !debt && state.phase === 'rolling' && !moving;
-    const canEnd =
-        isMyTurn && !debt && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
+    const canRoll = isMyTurn && state.phase === 'rolling' && !moving;
+    const canEnd = isMyTurn && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
     const inJail = isMyTurn && me?.inJail && state.phase === 'rolling';
     // A double earns another roll, but the server only re-arms it when the turn
     // is handed back — so "End turn" is what you press to keep going, which
@@ -112,32 +125,44 @@ export function BoardCenter({ moving, dim }) {
                     </Button>
                 )}
                 {canRoll && (
-                    <Button className="h-11 px-6 text-base" onClick={() => send('game:roll')}>
-                        <Dices /> {rollingAgain ? 'Roll again' : 'Roll'}
-                    </Button>
+                    <Blocked when={!!debt}>
+                        <Button className="h-11 px-6 text-base" disabled={!!debt} onClick={() => send('game:roll')}>
+                            <Dices /> {rollingAgain ? 'Roll again' : 'Roll'}
+                        </Button>
+                    </Blocked>
                 )}
-                {canEnd &&
-                    (rollingAgain ? (
-                        // Two events, one press. The server needs the resolve
-                        // phase closed before it will re-arm the roll, but
-                        // making the player click twice — through a button that
-                        // says "Roll again" both times — is just a worse way of
-                        // saying "roll". Ordering is safe: the socket delivers
-                        // in order and the handler is synchronous.
-                        <Button
-                            className="h-11 px-6 text-base"
-                            onClick={() => {
-                                send('game:endTurn');
-                                send('game:roll');
-                            }}
-                        >
-                            <Dices /> Roll again
-                        </Button>
-                    ) : (
-                        <Button className="h-11 px-5 text-base" variant="outline" onClick={() => send('game:endTurn')}>
-                            <SkipForward /> End turn
-                        </Button>
-                    ))}
+                {canEnd && (
+                    <Blocked when={!!debt}>
+                        {rollingAgain ? (
+                            // Two events, one press. The server needs the
+                            // resolve phase closed before it will re-arm the
+                            // roll, but making the player click twice — through
+                            // a button that says "Roll again" both times — is
+                            // just a worse way of saying "roll". Ordering is
+                            // safe: the socket delivers in order and the
+                            // handler is synchronous.
+                            <Button
+                                className="h-11 px-6 text-base"
+                                disabled={!!debt}
+                                onClick={() => {
+                                    send('game:endTurn');
+                                    send('game:roll');
+                                }}
+                            >
+                                <Dices /> Roll again
+                            </Button>
+                        ) : (
+                            <Button
+                                className="h-11 px-5 text-base"
+                                variant="outline"
+                                disabled={!!debt}
+                                onClick={() => send('game:endTurn')}
+                            >
+                                <SkipForward /> End turn
+                            </Button>
+                        )}
+                    </Blocked>
+                )}
             </div>
 
             <GameFeed />
