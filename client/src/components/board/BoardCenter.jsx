@@ -41,7 +41,7 @@ function statusLine({ state, current, moving }) {
     return `${current.name} is playing`;
 }
 
-export function BoardCenter({ moving }) {
+export function BoardCenter({ moving, dim }) {
     const { state, me, current, isMyTurn, send } = useGame();
     const canRoll = isMyTurn && state.phase === 'rolling' && !moving;
     const canEnd = isMyTurn && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
@@ -59,7 +59,9 @@ export function BoardCenter({ moving }) {
 
     return (
         <div
-            className="relative flex min-h-0 flex-col items-center justify-center gap-5 rounded-2xl border border-white/[0.05] bg-[#101018]/60 p-6"
+            className={`relative flex min-h-0 flex-col items-center justify-center gap-5 rounded-2xl border border-white/[0.05] bg-[#101018]/60 p-6 transition-opacity duration-200 ${
+                dim ? 'opacity-25' : ''
+            }`}
             style={{ gridArea: `2 / 2 / ${grid} / ${grid}` }}
         >
             <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(60%_60%_at_50%_40%,rgba(124,92,255,.10),transparent_70%)]" />
@@ -97,7 +99,19 @@ export function BoardCenter({ moving }) {
                 )}
                 {canEnd &&
                     (rollingAgain ? (
-                        <Button className="h-11 px-6 text-base" onClick={() => send('game:endTurn')}>
+                        // Two events, one press. The server needs the resolve
+                        // phase closed before it will re-arm the roll, but
+                        // making the player click twice — through a button that
+                        // says "Roll again" both times — is just a worse way of
+                        // saying "roll". Ordering is safe: the socket delivers
+                        // in order and the handler is synchronous.
+                        <Button
+                            className="h-11 px-6 text-base"
+                            onClick={() => {
+                                send('game:endTurn');
+                                send('game:roll');
+                            }}
+                        >
                             <Dices /> Roll again
                         </Button>
                     ) : (
