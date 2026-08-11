@@ -326,13 +326,27 @@ function transfer(room, from, to, amount, reason) {
 function settleDebt(room, player, creditor) {
     if (player.cash >= 0 || player.bankrupt) return;
 
-    for (const tileId of player.properties) {
-        const tile = room.tiles[tileId];
-        while (tile.houses > 0 && player.cash < 0) {
-            tile.houses -= 1;
-            player.cash += Math.floor(tile.houseCost / 2);
+    // Always off the tallest tile. Walking the estate in order and stripping
+    // each tile bare before moving on leaves a set nobody could have built by
+    // hand — and with evenBuild on it can't be rebuilt either, since every
+    // remaining tile sits above the minimum. Taking from the tallest keeps
+    // every group inside the one-house spread the build rule requires.
+    while (player.cash < 0) {
+        let tallest = null;
+        for (const tileId of player.properties) {
+            const tile = room.tiles[tileId];
+            if (tile.houses === 0) continue;
+            // Tie broken on the pricier building: fewer demolitions to clear
+            // the same debt.
+            const better =
+                !tallest ||
+                tile.houses > tallest.houses ||
+                (tile.houses === tallest.houses && tile.houseCost > tallest.houseCost);
+            if (better) tallest = tile;
         }
-        if (player.cash >= 0) break;
+        if (!tallest) break;
+        tallest.houses -= 1;
+        player.cash += Math.floor(tallest.houseCost / 2);
     }
     if (player.cash >= 0) {
         log(room, `${player.name} sold buildings to cover the debt`);
