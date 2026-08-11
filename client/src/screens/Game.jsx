@@ -30,7 +30,7 @@ const TABS = [
 export function Game() {
     const { state, me, playerId, connected, send } = useGame();
     const [confirmBankrupt, setConfirmBankrupt] = useState(false);
-    const { display, moving } = useTokenPositions(state.players);
+    const { display, moving } = useTokenPositions(state.players, state.tiles.length);
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
