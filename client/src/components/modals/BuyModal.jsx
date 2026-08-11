@@ -5,6 +5,7 @@ import { money } from '@/lib/board-layout';
 import { rentTable } from '@/lib/rent';
 import { alpha } from '@/lib/color';
 import { priceOf, trendColor, trendOf } from '@/lib/market';
+import { playBuy } from '@/lib/sound';
 
 /** Shown to the player who just landed on an unowned property. */
 export function BuyModal({ open }) {
@@ -45,7 +46,10 @@ export function BuyModal({ open }) {
                     <Button
                         className="h-12 text-lg"
                         disabled={me.cash < price}
-                        onClick={() => send('game:buy')}
+                        onClick={() => {
+                            playBuy();
+                            send('game:buy');
+                        }}
                     >
                         Buy for {money(price)}
                     </Button>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Percent, Scale, ShieldOff, TrendingUp, Users } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
 import { alpha, initials } from '@/lib/color';
 import { cn } from '@/lib/utils';
+import { playJoin, playPlayerJoined } from '@/lib/sound';
 
 /**
  * The settings column is tabbed rather than one long list — the whole lobby
@@ -145,6 +146,22 @@ function SettingRow({ icon: Icon, label, hint, beta, children }) {
 export function Lobby() {
     const { state, playerId, isHost, send, leaveRoom } = useGame();
     const [copied, setCopied] = useState(false);
+
+    // Landing in the lobby is a gesture-adjacent moment — the click that got
+    // you here has already opened the audio context.
+    useEffect(() => {
+        playJoin();
+    }, []);
+
+    // A host setting up rules isn't watching the roster, so announce arrivals.
+    // Seeded with the current count so the players already here on mount don't
+    // all fire at once.
+    const seenPlayers = useRef(state.players.length);
+    useEffect(() => {
+        if (state.players.length > seenPlayers.current) playPlayerJoined();
+        seenPlayers.current = state.players.length;
+    }, [state.players.length]);
+
     const [tab, setTab] = useState('rules');
     const settings = state.settings;
     // Surfaced on the tab itself, so an experimental rule someone turned on

@@ -10,7 +10,7 @@ import {
     WifiOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { isMuted, playTrade, playTurn, setMuted, unlock } from '@/lib/sound';
+import { isMuted, playStart, playTrade, playTurn, setMuted, unlock } from '@/lib/sound';
 import { Modal } from '@/components/ui/modal';
 import { useGame } from '@/lib/game-context';
 import { useTokenPositions } from '@/lib/use-token-positions';
@@ -95,6 +95,14 @@ export function Game() {
         if (isMyTurn && !wasMyTurn.current) playTurn();
         wasMyTurn.current = isMyTurn;
     }, [isMyTurn]);
+
+    // Kick-off fanfare, on mount only. Guarded on the turn counter so that
+    // refreshing or reconnecting mid-game doesn't replay it — this screen
+    // mounts on every reload, not just when the game begins.
+    useEffect(() => {
+        if (state.stats.turnCount === 0 && !state.winnerId) playStart();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Browsers won't let audio start until the page has been clicked, and the
     // turn ping fires from a state change rather than a gesture — so the very

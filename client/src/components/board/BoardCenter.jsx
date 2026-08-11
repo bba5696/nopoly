@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Dices, SkipForward, KeyRound, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGame } from '@/lib/game-context';
+import { playEndTurn, playRoll } from '@/lib/sound';
 import { gridFor } from '@/lib/board-layout';
 import { Dice } from './Dice';
 import { GameFeed } from './GameFeed';
@@ -126,7 +127,14 @@ export function BoardCenter({ moving, dim }) {
                 )}
                 {canRoll && (
                     <Blocked when={!!debt}>
-                        <Button className="h-11 px-6 text-base" disabled={!!debt} onClick={() => send('game:roll')}>
+                        <Button
+                            className="h-11 px-6 text-base"
+                            disabled={!!debt}
+                            onClick={() => {
+                                playRoll();
+                                send('game:roll');
+                            }}
+                        >
                             <Dices /> {rollingAgain ? 'Roll again' : 'Roll'}
                         </Button>
                     </Blocked>
@@ -145,6 +153,7 @@ export function BoardCenter({ moving, dim }) {
                                 className="h-11 px-6 text-base"
                                 disabled={!!debt}
                                 onClick={() => {
+                                    playRoll();
                                     send('game:endTurn');
                                     send('game:roll');
                                 }}
@@ -156,7 +165,10 @@ export function BoardCenter({ moving, dim }) {
                                 className="h-11 px-5 text-base"
                                 variant="outline"
                                 disabled={!!debt}
-                                onClick={() => send('game:endTurn')}
+                                onClick={() => {
+                                    playEndTurn();
+                                    send('game:endTurn');
+                                }}
                             >
                                 <SkipForward /> End turn
                             </Button>
