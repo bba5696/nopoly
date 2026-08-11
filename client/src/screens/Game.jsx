@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeftRight, MessageSquare, TrendingDown, Users, Wallet, WifiOff } from 'lucide-react';
+import {
+    ArrowLeftRight,
+    MessageSquare,
+    TrendingDown,
+    Users,
+    Volume2,
+    VolumeX,
+    Wallet,
+    WifiOff,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isMuted, playTrade, playTurn, setMuted, unlock } from '@/lib/sound';
 import { Modal } from '@/components/ui/modal';
 import { useGame } from '@/lib/game-context';
 import { useTokenPositions } from '@/lib/use-token-positions';
@@ -30,16 +40,21 @@ const TABS = [
 export function Game() {
     const { state, me, playerId, connected, send } = useGame();
     const [confirmBankrupt, setConfirmBankrupt] = useState(false);
+    // Mirrors the stored setting so the icon re-renders when it's toggled.
+    const [quiet, setQuiet] = useState(isMuted);
     const { display, moving } = useTokenPositions(state.players, state.tiles.length);
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
     const [viewTradeId, setViewTradeId] = useState(null);
     const [tab, setTab] = useState('players');
-    // Player id whose holdings are lit on the board, or null. Hover-driven, so
-    // it never engages on touch — the board and the roster aren't on screen
-    // together there anyway.
-    const [spotlight, setSpotlight] = useState(null);
+    // Whose holdings are lit on the board. Hovering a row previews; tapping one
+    // pins it, which is the only route on a touchscreen — and the board sits
+    // above the roster there, so a pinned player stays visible while you read
+    // the list.
+    const [hovered, setHovered] = useState(null);
+    const [pinned, setPinned] = useState(null);
+    const spotlight = pinned ?? hovered;
     const tile = tileId === null ? null : state.tiles[tileId];
 
     // A phone player can't see the trade rail while another tab is up, so an
@@ -68,8 +83,27 @@ export function Game() {
         if (!fresh) return;
         if (buyOpen || cardOpen || moving || state.auction || trade || viewTradeId) return;
         announced.current.add(fresh.id);
+        playTrade();
         setViewTradeId(fresh.id);
     }, [state.trades, state.auction, playerId, buyOpen, cardOpen, moving, trade, viewTradeId]);
+
+    // Waiting on six other people means nobody is watching the screen. Ping on
+    // the transition only, never on a re-render that happens to land mid-turn.
+    const isMyTurn = !!me && state.players[state.turnIndex]?.id === playerId && !me.bankrupt;
+    const wasMyTurn = useRef(isMyTurn);
+    useEffect(() => {
+        if (isMyTurn && !wasMyTurn.current) playTurn();
+        wasMyTurn.current = isMyTurn;
+    }, [isMyTurn]);
+
+    // Browsers won't let audio start until the page has been clicked, and the
+    // turn ping fires from a state change rather than a gesture — so the very
+    // first interaction, whatever it is, opens the audio context.
+    useEffect(() => {
+        const once = () => unlock();
+        window.addEventListener('pointerdown', once, { once: true });
+        return () => window.removeEventListener('pointerdown', once);
+    }, []);
 
     return (
         <div className="flex h-svh flex-col overflow-hidden">
@@ -89,6 +123,22 @@ export function Game() {
                     <span className="mono hidden rounded-md border border-white/10 px-3 py-1.5 text-[12px] text-muted-foreground sm:inline-block">
                         turn {state.stats.turnCount + 1}
                     </span>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2 text-muted-foreground"
+                        title={quiet ? 'Sounds off' : 'Sounds on'}
+                        onClick={() => {
+                            const next = !quiet;
+                            setQuiet(next);
+                            setMuted(next);
+                            // Confirm audibly that it's back on — and unmuting
+                            // is a gesture, so the context opens here too.
+                            if (!next) playTurn();
+                        }}
+                    >
+                        {quiet ? <VolumeX /> : <Volume2 />}
+                    </Button>
                     {/* No leave button in-game: walking out mid-game strands
                         everyone else, and Bankrupt is the way out. */}
                     {me && !me.bankrupt && (
@@ -135,7 +185,11 @@ export function Game() {
                     )}
                 >
                     <div className={cn('min-h-0 flex-col xl:contents', tab === 'players' ? 'flex' : 'hidden')}>
-                        <PlayerRail onSpotlight={setSpotlight} />
+                        <PlayerRail
+                            onSpotlight={setHovered}
+                            pinned={pinned}
+                            onPin={(id) => setPinned((cur) => (cur === id ? null : id))}
+                        />
                     </div>
                     <div className={cn('min-h-0 flex-1 flex-col xl:contents', tab === 'chat' ? 'flex' : 'hidden')}>
                         <ChatLog />

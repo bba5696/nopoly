@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Crown, WifiOff } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { alpha, initials } from '@/lib/color';
-import { money } from '@/lib/board-layout';
+import { money, shortMoney } from '@/lib/board-layout';
 
 function note(player, state, isCurrent) {
     if (player.bankrupt) return 'bankrupt';
@@ -31,26 +31,45 @@ function Avatar({ player, size = 30, glow }) {
     );
 }
 
-function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlight }) {
+function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlight, pinned, onPin }) {
+    const lit = isCurrent || pinned;
     return (
         <motion.div
             layout
+            role="button"
+            tabIndex={0}
             // Mouse events rather than pointer ones: on a touchscreen a pointer
             // enter fires on tap and would flash the board on every scroll.
             onMouseEnter={() => onSpotlight?.(player.id)}
             onMouseLeave={() => onSpotlight?.(null)}
-            className={`flex items-center gap-3 px-3 ${compact ? 'py-1.5' : 'py-2.5'} ${
-                isCurrent ? '' : 'border-b border-white/5 last:border-b-0'
+            // Tapping pins the spotlight, which is the only way to reach it on
+            // a touchscreen — and on a phone the board sits above this list, so
+            // a pinned player stays lit while you scroll the roster.
+            onClick={() => onPin?.(player.id)}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onPin?.(player.id);
+                }
+            }}
+            className={`flex cursor-pointer items-center gap-3 px-3 ${compact ? 'py-1.5' : 'py-2.5'} ${
+                lit ? '' : 'border-b border-white/5 last:border-b-0'
             }`}
-            style={
-                isCurrent
-                    ? {
-                          background: `linear-gradient(90deg, ${alpha(player.color, 0.17)}, transparent 78%)`,
-                          borderRadius: 'var(--radius-md)',
-                          boxShadow: `inset 0 0 0 1px ${alpha(player.color, 0.35)}`,
-                      }
-                    : undefined
-            }
+            // Every property is always present, with an explicit 'none' rather
+            // than dropping to `undefined` when unlit: framer-motion keeps the
+            // inline styles it has already written, so a row that stopped being
+            // pinned would otherwise keep its outline for the rest of the game.
+            // A pinned row is outlined harder than the current player's, so the
+            // two aren't mistaken for each other.
+            style={{
+                background: lit
+                    ? `linear-gradient(90deg, ${alpha(player.color, isCurrent ? 0.17 : 0.1)}, transparent 78%)`
+                    : 'none',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: lit
+                    ? `inset 0 0 0 ${pinned ? 1.5 : 1}px ${alpha(player.color, pinned ? 0.75 : 0.35)}`
+                    : 'none',
+            }}
         >
             {!compact && <span className="mono w-4 text-[10px] text-muted-foreground">{order}</span>}
             <Avatar player={player} size={compact ? 24 : 30} glow={isCurrent} />
@@ -65,19 +84,28 @@ function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlig
                 </span>
                 {!compact && <span className="label !text-[9.5px]">{note(player, state, isCurrent)}</span>}
             </div>
-            {/* Owing money shows as a negative balance rather than $0 — see
-                YouRail. Everyone can see it, same as everyone can see cash. */}
-            <span
-                className={`mono shrink-0 ${compact ? 'text-[11px]' : 'text-[13px]'}`}
-                style={player.debt ? { color: '#ff5c7c' } : undefined}
-            >
-                {money(player.cash - (player.debt?.amount ?? 0))}
-            </span>
+            <div className="flex shrink-0 flex-col items-end leading-tight">
+                {/* Owing money shows as a negative balance rather than $0 — see
+                    YouRail. Everyone can see it, same as everyone sees cash. */}
+                <span
+                    className={`mono ${compact ? 'text-[11px]' : 'text-[13px]'}`}
+                    style={player.debt ? { color: '#ff5c7c' } : undefined}
+                >
+                    {money(player.cash - (player.debt?.amount ?? 0))}
+                </span>
+                {/* Cash on its own is a poor read on who's winning: someone
+                    with $50 and three full sets is well ahead of someone
+                    sitting on $900 and nothing. Abbreviated because it's the
+                    secondary number and the rail is 288px wide. */}
+                {!compact && !player.bankrupt && (
+                    <span className="label !text-[9.5px] opacity-70">net {shortMoney(player.netWorth)}</span>
+                )}
+            </div>
         </motion.div>
     );
 }
 
-export function PlayerRail({ onSpotlight }) {
+export function PlayerRail({ onSpotlight, pinned, onPin }) {
     const { state, playerId, current } = useGame();
     const compact = state.players.length > 8;
 
@@ -101,6 +129,8 @@ export function PlayerRail({ onSpotlight }) {
                         isMe={p.id === playerId}
                         isHost={p.id === state.hostId}
                         onSpotlight={onSpotlight}
+                        pinned={pinned === p.id}
+                        onPin={onPin}
                     />
                 ))}
             </div>
