@@ -55,6 +55,13 @@ export function YouRail({ onOpenTile }) {
                     <span className="label">net {money(me.netWorth)}</span>
                 </div>
                 {me.jailCards > 0 && <span className="label">{me.jailCards} get-out-of-jail card(s)</span>}
+                {/* This panel is where the selling happens, so the amount owed
+                    belongs next to it rather than only out on the board. */}
+                {me.debt && (
+                    <span className="mono rounded-lg border border-[#ff5c7c]/35 bg-[#ff5c7c]/10 px-3 py-2 text-[13px] text-[#ff9db2]">
+                        You owe {money(me.debt.amount)} — sell below to cover it
+                    </span>
+                )}
             </section>
 
             <section className="panel flex min-h-0 flex-col">

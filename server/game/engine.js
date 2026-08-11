@@ -44,6 +44,9 @@ const SETTING_LIMITS = {
 
 const uid = () => crypto.randomUUID();
 
+/** Shown whenever a player tries to carry on with a debt outstanding. */
+const DEBT_BLOCKED = 'Settle your debt first — sell buildings or property';
+
 /* ------------------------------------------------------------------ rooms */
 
 function makeRoomCode() {
@@ -215,6 +218,9 @@ function addPlayer(room, { name, playerId }) {
         disconnectedAt: null,
         bankrupt: false,
         resigned: false,
+        // { amount, toId } while they owe more than they held in cash. Blocks
+        // their turn until they've sold enough to clear it.
+        debt: null,
         activity: null,
     };
     room.players.push(player);
@@ -297,86 +303,99 @@ function snapshotNetWorth(room) {
 }
 
 function payBank(room, player, amount, reason) {
-    if (amount <= 0 || player.bankrupt) return;
-    player.cash -= amount;
-    // With the vacation-cash rule on, everything paid to the bank piles up on
-    // the Vacation square instead of vanishing.
-    if (room.settings.vacationCash) room.vacationPot += amount;
-    log(room, `${player.name} paid $${amount}${reason ? ` — ${reason}` : ''}`);
-    settleDebt(room, player, null);
+    charge(room, player, null, amount, reason);
 }
 
 function transfer(room, from, to, amount, reason) {
-    // Bankruptcy is settled the moment it happens and the estate is already
-    // gone — a card that moves the player on and re-resolves the landing must
-    // not bill them again.
-    if (amount <= 0 || from.bankrupt) return;
-    const paid = Math.min(amount, Math.max(from.cash, 0));
-    from.cash -= amount;
-    to.cash += Math.max(paid, 0);
-    log(room, `${from.name} paid ${to.name} $${amount}${reason ? ` — ${reason}` : ''}`);
-    settleDebt(room, from, to);
+    charge(room, from, to, amount, reason);
+}
+
+/** Hand cash to whoever is owed — the bank's share can pile up on Vacation. */
+function credit(room, creditor, amount) {
+    if (amount <= 0) return;
+    if (creditor && !creditor.bankrupt) creditor.cash += amount;
+    else if (room.settings.vacationCash) room.vacationPot += amount;
 }
 
 /**
- * Called whenever a player's cash may have gone negative. Buildings are sold
- * back at half price first; if that isn't enough the player goes bankrupt and
- * their estate passes to `creditor` (or back to the bank).
+ * What the estate would actually raise if it were all sold right now.
+ * Buildings come back at half, which is why this isn't `netWorth` — that one
+ * values them at cost and would tell a player they can cover a debt they
+ * can't.
  */
-function settleDebt(room, player, creditor) {
-    if (player.cash >= 0 || player.bankrupt) return;
+function liquidValue(room, player) {
+    return player.properties.reduce((sum, id) => {
+        const tile = room.tiles[id];
+        return sum + market.priceOf(room, tile) + tile.houses * Math.floor((tile.houseCost || 0) / 2);
+    }, player.cash);
+}
 
-    // Always off the tallest tile. Walking the estate in order and stripping
-    // each tile bare before moving on leaves a set nobody could have built by
-    // hand — and with evenBuild on it can't be rebuilt either, since every
-    // remaining tile sits above the minimum. Taking from the tallest keeps
-    // every group inside the one-house spread the build rule requires.
-    while (player.cash < 0) {
-        let tallest = null;
-        for (const tileId of player.properties) {
-            const tile = room.tiles[tileId];
-            if (tile.houses === 0) continue;
-            // Tie broken on the pricier building: fewer demolitions to clear
-            // the same debt.
-            const better =
-                !tallest ||
-                tile.houses > tallest.houses ||
-                (tile.houses === tallest.houses && tile.houseCost > tallest.houseCost);
-            if (better) tallest = tile;
-        }
-        if (!tallest) break;
-        tallest.houses -= 1;
-        player.cash += Math.floor(tallest.houseCost / 2);
-    }
-    if (player.cash >= 0) {
-        log(room, `${player.name} sold buildings to cover the debt`);
+/**
+ * Bill a player. Anything they can't cover in cash becomes a debt they have to
+ * clear themselves, by selling buildings or property — the game does not
+ * liquidate the estate on their behalf. Their turn is blocked until it's
+ * settled, and bankruptcy only follows when the whole estate provably falls
+ * short.
+ */
+function charge(room, player, creditor, amount, reason) {
+    // Bankruptcy is settled the moment it happens and the estate is already
+    // gone — a card that moves the player on and re-resolves the landing must
+    // not bill them again.
+    if (amount <= 0 || player.bankrupt) return;
+
+    const paid = Math.min(amount, Math.max(player.cash, 0));
+    player.cash -= paid;
+    credit(room, creditor, paid);
+    const who = creditor ? ` to ${creditor.name}` : '';
+    log(room, `${player.name} paid $${paid}${who}${reason ? ` — ${reason}` : ''}`);
+
+    const owed = amount - paid;
+    if (owed <= 0) return;
+
+    player.debt = { amount: owed, toId: creditor && !creditor.bankrupt ? creditor.id : null };
+    if (liquidValue(room, player) < owed) {
+        log(room, `${player.name} owes $${owed} and can't cover it`);
+        goBankrupt(room, player);
         return;
     }
+    log(room, `${player.name} owes $${owed} — sell buildings or property to cover it`);
+}
 
-    // Bankrupt: estate moves to the creditor, or is returned to the bank.
+/** Push whatever cash is in hand at an outstanding debt. Called after a sale. */
+function payDownDebt(room, player) {
+    if (!player.debt || player.bankrupt || player.cash <= 0) return;
+    const pay = Math.min(player.cash, player.debt.amount);
+    player.cash -= pay;
+    credit(room, player.debt.toId ? findPlayer(room, player.debt.toId) : null, pay);
+    player.debt.amount -= pay;
+    if (player.debt.amount <= 0) {
+        player.debt = null;
+        log(room, `${player.name} settled the debt`);
+    }
+}
+
+/**
+ * Out of the game. The estate goes back to the bank and the tiles are vacant
+ * again — a creditor doesn't inherit it, so nothing can be handed to a friend
+ * on the way out and no one wins the game by being owed money.
+ */
+function goBankrupt(room, player) {
+    if (player.bankrupt) return;
     player.bankrupt = true;
-    const owed = -player.cash;
+    player.debt = null;
     player.cash = 0;
     const estate = player.properties.slice();
     player.properties = [];
     for (const tileId of estate) {
         const tile = room.tiles[tileId];
         tile.houses = 0;
-        if (creditor && !creditor.bankrupt) {
-            tile.ownerId = creditor.id;
-            creditor.properties.push(tileId);
-        } else {
-            tile.ownerId = null;
-        }
+        tile.ownerId = null;
     }
-    if (creditor && !creditor.bankrupt) {
-        log(room, `${player.name} went bankrupt — ${creditor.name} takes ${estate.length} properties and $${owed} of debt is written off`);
-    } else {
-        log(room, `${player.name} went bankrupt — ${estate.length} properties returned to the bank`);
-    }
+    log(room, `${player.name} went bankrupt — ${estate.length} properties returned to the bank`);
     dropTradesFor(room, player.id);
     checkWin(room);
 }
+
 
 function checkWin(room) {
     const alive = activePlayers(room);
@@ -593,6 +612,7 @@ function rollDice(room, playerId) {
     if (room.phase !== 'rolling') return { error: 'Not the rolling phase' };
     if (!isCurrent(room, playerId)) return { error: 'Not your turn' };
     if (room.hasRolled && room.doublesCount === 0) return { error: 'Already rolled' };
+    if (currentPlayer(room)?.debt) return { error: DEBT_BLOCKED };
 
     const player = currentPlayer(room);
     const dice = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
@@ -645,6 +665,7 @@ function buyProperty(room, playerId) {
     const player = findPlayer(room, playerId);
     const tile = room.tiles[action.tileId];
     if (!player || tile.ownerId !== null) return { error: 'Unavailable' };
+    if (player.debt) return { error: DEBT_BLOCKED };
     const price = market.priceOf(room, tile);
     if (player.cash < price) return { error: 'Not enough cash' };
 
@@ -694,6 +715,7 @@ function placeBid(room, playerId, amount) {
     if (room.paused) return { error: 'Game is paused' };
     const player = findPlayer(room, playerId);
     if (!player || player.bankrupt) return { error: 'You are out of the game' };
+    if (player.debt) return { error: DEBT_BLOCKED };
 
     const bid = Math.round(Number(amount));
     if (!Number.isFinite(bid) || bid < auction.nextBid) return { error: 'Bid is too low' };
@@ -738,6 +760,8 @@ function endTurn(room, playerId) {
     if (room.auction) return { error: 'Wait for the auction to finish' };
     if (!isCurrent(room, playerId)) return { error: 'Not your turn' };
     if (room.phase === 'rolling' && !room.hasRolled) return { error: 'Roll first' };
+    // The table would otherwise move on and leave the debt hanging forever.
+    if (findPlayer(room, playerId)?.debt) return { error: DEBT_BLOCKED };
     if (room.pendingAction) room.pendingAction = null;
     room.pendingCard = null;
 
@@ -795,6 +819,7 @@ function buildHouse(room, playerId, tileId) {
     const tile = room.tiles[tileId];
     if (!player || !tile) return { error: 'Unknown tile' };
     if (room.paused) return { error: 'Game is paused' };
+    if (player.debt) return { error: DEBT_BLOCKED };
     if (!canBuild(room, player, tile)) return { error: 'Cannot build there' };
     player.cash -= tile.houseCost;
     tile.houses += 1;
@@ -814,6 +839,7 @@ function sellHouse(room, playerId, tileId) {
     tile.houses -= 1;
     player.cash += Math.floor(tile.houseCost / 2);
     log(room, `${player.name} sold a building on ${tile.name}`);
+    payDownDebt(room, player);
     return {};
 }
 
@@ -831,6 +857,7 @@ function sellProperty(room, playerId, tileId) {
     player.properties = player.properties.filter((id) => id !== tileId);
     player.cash += value;
     log(room, `${player.name} sold ${tile.name} back to the bank for $${value}`);
+    payDownDebt(room, player);
     return {};
 }
 
@@ -925,6 +952,10 @@ function respondTrade(room, playerId, tradeId, response) {
     dropTrade(room, tradeId);
     room.stats.trades += 1;
     log(room, `${to.name} accepted a trade with ${from.name}`);
+    // Trading is a legitimate way to raise the money, so a debt can be cleared
+    // by selling a property to another player rather than back to the bank.
+    payDownDebt(room, from);
+    payDownDebt(room, to);
     return {};
 }
 
@@ -939,27 +970,18 @@ function declareBankruptcy(room, playerId) {
     if (player.bankrupt) return { error: 'You are already out' };
 
     const wasCurrent = isCurrent(room, playerId);
-    player.bankrupt = true;
+    // Resigning is the one thing you may do while in debt — it's the way out.
     player.resigned = true;
-    player.cash = 0;
+    goBankrupt(room, player);
 
-    const estate = player.properties.slice();
-    player.properties = [];
-    for (const tileId of estate) {
-        const tile = room.tiles[tileId];
-        tile.houses = 0;
-        tile.ownerId = null;
-    }
-    dropTradesFor(room, playerId);
     // Withdraw their bid rather than letting them win a tile they can't pay for.
     if (room.auction?.bidderId === playerId) {
         room.auction.bidderId = null;
         room.auction.bid = 0;
         room.auction.nextBid = room.auction.opening ?? market.MIN_OPENING_BID;
     }
-    log(room, `${player.name} declared bankruptcy — ${estate.length} properties returned to the bank`);
 
-    if (checkWin(room)) return {};
+    if (room.phase === 'ended') return {};
     if (wasCurrent) {
         room.pendingAction = null;
         room.pendingCard = null;
@@ -1052,6 +1074,7 @@ function resetForRematch(room) {
             jailTurns: 0,
             jailCards: 0,
             bankrupt: false,
+            debt: null,
         }));
     if (room.players.length && !room.players.some((p) => p.id === room.hostId)) {
         room.hostId = room.players[0].id;

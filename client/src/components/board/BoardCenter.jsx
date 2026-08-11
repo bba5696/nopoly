@@ -20,6 +20,8 @@ const JAIL_FINE = 50;
  */
 function statusLine({ state, current, moving }) {
     if (state.paused) return 'Game paused';
+    // Ahead of everything else: the table genuinely is waiting on them.
+    if (current?.debt) return `${current.name} owes $${current.debt.amount}`;
     if (state.auction) return `${state.tiles[state.auction.tileId].name} is up for auction`;
     if (!current) return 'Waiting for players';
 
@@ -43,8 +45,12 @@ function statusLine({ state, current, moving }) {
 
 export function BoardCenter({ moving, dim }) {
     const { state, me, current, isMyTurn, send } = useGame();
-    const canRoll = isMyTurn && state.phase === 'rolling' && !moving;
-    const canEnd = isMyTurn && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
+    // A debt freezes the turn until it's cleared, so none of the usual actions
+    // are on offer — the server refuses them all anyway.
+    const debt = me?.debt || null;
+    const canRoll = isMyTurn && !debt && state.phase === 'rolling' && !moving;
+    const canEnd =
+        isMyTurn && !debt && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
     const inJail = isMyTurn && me?.inJail && state.phase === 'rolling';
     // A double earns another roll, but the server only re-arms it when the turn
     // is handed back — so "End turn" is what you press to keep going, which
@@ -78,6 +84,19 @@ export function BoardCenter({ moving, dim }) {
             >
                 {status}
             </motion.span>
+
+            {/* What to do about it, not just that it happened — the selling
+                lives in the You panel and there's nothing to click here. */}
+            {debt && (
+                <div className="flex max-w-[22em] flex-col items-center gap-1 rounded-xl border border-[#ff5c7c]/35 bg-[#ff5c7c]/10 px-5 py-3 text-center">
+                    <span className="mono text-[15px] text-[#ff9db2]">
+                        ${debt.amount} still owed{debt.toId ? ` to ${state.players.find((p) => p.id === debt.toId)?.name}` : ''}
+                    </span>
+                    <span className="text-[13px] leading-snug text-muted-foreground">
+                        Sell buildings or property from the You panel to cover it. Your turn is on hold until you do.
+                    </span>
+                </div>
+            )}
 
             {/* only actions you can actually take are rendered — a row of dead
                 buttons tells you nothing */}
