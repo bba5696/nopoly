@@ -12,7 +12,7 @@ const GAP = 3;
 /** How much deeper a ring slot is than it is wide, along the top and bottom. */
 const DEPTH_RATIO = 1.3;
 
-export function Board({ display, moving, onSelectTile }) {
+export function Board({ display, moving, spotlight, onSelectTile }) {
     const { state, board, current } = useGame();
     const [gridRef, size] = useElementSize();
 
@@ -80,9 +80,12 @@ export function Board({ display, moving, onSelectTile }) {
                         owner={tile.ownerId ? ownerOf[tile.ownerId] : null}
                         setOwned={!!tile.groupId && state.completedGroups[tile.groupId] === tile.ownerId}
                         onSelect={onSelectTile}
+                        dim={!!spotlight && tile.ownerId !== spotlight}
+                        lit={!!spotlight && tile.ownerId === spotlight}
+                        litColor={ownerOf[spotlight]?.color}
                     />
                 ))}
-                <BoardCenter moving={moving} />
+                <BoardCenter moving={moving} dim={!!spotlight} />
             </div>
             <TokenLayer
                 players={state.players}

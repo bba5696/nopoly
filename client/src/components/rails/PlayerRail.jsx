@@ -31,10 +31,14 @@ function Avatar({ player, size = 30, glow }) {
     );
 }
 
-function Row({ player, state, order, compact, isCurrent, isMe, isHost }) {
+function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlight }) {
     return (
         <motion.div
             layout
+            // Mouse events rather than pointer ones: on a touchscreen a pointer
+            // enter fires on tap and would flash the board on every scroll.
+            onMouseEnter={() => onSpotlight?.(player.id)}
+            onMouseLeave={() => onSpotlight?.(null)}
             className={`flex items-center gap-3 px-3 ${compact ? 'py-1.5' : 'py-2.5'} ${
                 isCurrent ? '' : 'border-b border-white/5 last:border-b-0'
             }`}
@@ -66,12 +70,14 @@ function Row({ player, state, order, compact, isCurrent, isMe, isHost }) {
     );
 }
 
-export function PlayerRail() {
+export function PlayerRail({ onSpotlight }) {
     const { state, playerId, current } = useGame();
     const compact = state.players.length > 8;
 
     return (
-        <section className="panel flex flex-col">
+        // Leaving the list at all clears the spotlight — sliding off a row onto
+        // the panel padding shouldn't leave the board stuck dark.
+        <section className="panel flex flex-col" onMouseLeave={() => onSpotlight?.(null)}>
             <header className="panel-divider flex items-center justify-between px-4 py-3">
                 <span className="label">Players ({state.players.length})</span>
                 <span className="label opacity-60">turn {state.stats.turnCount + 1}</span>
@@ -87,6 +93,7 @@ export function PlayerRail() {
                         isCurrent={p.id === current?.id}
                         isMe={p.id === playerId}
                         isHost={p.id === state.hostId}
+                        onSpotlight={onSpotlight}
                     />
                 ))}
             </div>

@@ -36,6 +36,10 @@ export function Game() {
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
     const [viewTradeId, setViewTradeId] = useState(null);
     const [tab, setTab] = useState('players');
+    // Player id whose holdings are lit on the board, or null. Hover-driven, so
+    // it never engages on touch — the board and the roster aren't on screen
+    // together there anyway.
+    const [spotlight, setSpotlight] = useState(null);
     const tile = tileId === null ? null : state.tiles[tileId];
 
     // A phone player can't see the trade rail while another tab is up, so an
@@ -97,7 +101,12 @@ export function Game() {
                         rather than its width, or on a tall narrow screen it
                         would push the panel below it off the bottom. */}
                     <div className="w-full max-w-[min(100%,52svh)] xl:max-w-none">
-                        <Board display={display} moving={moving} onSelectTile={(t) => setTileId(t.id)} />
+                        <Board
+                            display={display}
+                            moving={moving}
+                            spotlight={spotlight}
+                            onSelectTile={(t) => setTileId(t.id)}
+                        />
                     </div>
                 </main>
 
@@ -108,7 +117,7 @@ export function Game() {
                     )}
                 >
                     <div className={cn('min-h-0 flex-col xl:contents', tab === 'players' ? 'flex' : 'hidden')}>
-                        <PlayerRail />
+                        <PlayerRail onSpotlight={setSpotlight} />
                     </div>
                     <div className={cn('min-h-0 flex-1 flex-col xl:contents', tab === 'chat' ? 'flex' : 'hidden')}>
                         <ChatLog />

@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronsRight } from 'lucide-react';
 import { isCorner, jailIndex, tilePlacement } from '@/lib/board-layout';
 import { alpha } from '@/lib/color';
+import { cn } from '@/lib/utils';
 import { flagFor } from '@/lib/emblems';
 import { priceOf, trendColor, trendOf } from '@/lib/market';
 import { Slot, SlotBody, SlotEmblem, SlotJail, SlotName, SlotPrice } from '@/components/ui/slot';
@@ -23,7 +24,7 @@ function Houses({ houses }) {
     );
 }
 
-export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOwned, onSelect }) {
+export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOwned, onSelect, dim, lit, litColor }) {
     const { side, row, col } = tilePlacement(tile.id, boardSize);
     const corner = isCorner(tile.id, boardSize);
     const jail = tile.id === jailIndex(boardSize);
@@ -44,12 +45,20 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
             side={side}
             tone={tone}
             onClick={() => onSelect?.(tile)}
-            className={setOwned ? 'set-owned' : undefined}
+            className={cn(
+                setOwned && 'set-owned',
+                // Spotlight: hovering a player in the rail drops the rest of
+                // the board back so their holdings read at a glance.
+                'transition-[filter,opacity] duration-200',
+                dim && 'opacity-[0.22] saturate-[0.4]',
+                lit && 'z-10',
+            )}
             style={{
                 gridRow: row,
                 gridColumn: col,
                 fontSize,
                 '--set-color-soft': owner ? alpha(owner.color, 0.5) : 'transparent',
+                ...(lit && litColor ? { filter: `drop-shadow(0 0 0.5em ${alpha(litColor, 0.75)})` } : null),
             }}
             surface={{
                 animate: {
