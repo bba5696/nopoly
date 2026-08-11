@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Dices, SkipForward, Pause, Play, KeyRound, Coins } from 'lucide-react';
+import { Dices, SkipForward, KeyRound, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGame } from '@/lib/game-context';
 import { gridFor } from '@/lib/board-layout';
@@ -46,6 +46,12 @@ export function BoardCenter({ moving }) {
     const canRoll = isMyTurn && state.phase === 'rolling' && !moving;
     const canEnd = isMyTurn && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
     const inJail = isMyTurn && me?.inJail && state.phase === 'rolling';
+    // A double earns another roll, but the server only re-arms it when the turn
+    // is handed back — so "End turn" is what you press to keep going, which
+    // reads like the opposite of what it does. Both the button that hands the
+    // turn back and the roll that follows say what's actually about to happen.
+    const rollingAgain =
+        isMyTurn && state.doublesCount > 0 && state.doublesCount < 3 && !me?.inJail && !me?.bankrupt;
     const status = statusLine({ state, current, moving });
     // Fill everything inside the ring — which is two tracks wider on the
     // 48-tile board than on the 40-tile one.
@@ -86,27 +92,22 @@ export function BoardCenter({ moving }) {
                 )}
                 {canRoll && (
                     <Button className="h-11 px-6 text-base" onClick={() => send('game:roll')}>
-                        <Dices /> Roll
+                        <Dices /> {rollingAgain ? 'Roll again' : 'Roll'}
                     </Button>
                 )}
-                {canEnd && (
-                    <Button className="h-11 px-5 text-base" variant="outline" onClick={() => send('game:endTurn')}>
-                        <SkipForward /> End turn
-                    </Button>
-                )}
+                {canEnd &&
+                    (rollingAgain ? (
+                        <Button className="h-11 px-6 text-base" onClick={() => send('game:endTurn')}>
+                            <Dices /> Roll again
+                        </Button>
+                    ) : (
+                        <Button className="h-11 px-5 text-base" variant="outline" onClick={() => send('game:endTurn')}>
+                            <SkipForward /> End turn
+                        </Button>
+                    ))}
             </div>
 
             <GameFeed />
-
-            <Button
-                size="sm"
-                variant="ghost"
-                className="absolute bottom-3 right-3 text-muted-foreground"
-                onClick={() => send('game:pause')}
-            >
-                {state.paused ? <Play /> : <Pause />}
-                {state.paused ? 'Resume' : 'Pause'}
-            </Button>
         </div>
     );
 }

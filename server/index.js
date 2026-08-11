@@ -200,7 +200,9 @@ io.on('connection', (socket) => {
     socket.on('game:endTurn', () => act(socket, engine.endTurn));
     socket.on('game:payJail', () => act(socket, engine.payJailFine));
     socket.on('game:useJailCard', () => act(socket, engine.useJailCard));
-    socket.on('game:pause', () => act(socket, engine.togglePause));
+    // Pause is withdrawn for now: any player could freeze everyone else's game
+    // for as long as they liked. `engine.togglePause` is left in place so this
+    // is one line to restore once it's gated to the host or time-limited.
     socket.on('game:bankrupt', () => act(socket, engine.declareBankruptcy));
     socket.on('game:dismissCard', () =>
         act(socket, (room) => {

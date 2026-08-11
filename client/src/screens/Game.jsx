@@ -15,7 +15,6 @@ import { TradeBuilder } from '@/components/modals/TradeBuilder';
 import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { AuctionModal } from '@/components/modals/AuctionModal';
-import { PauseOverlay } from '@/components/modals/PauseOverlay';
 import { Button } from '@/components/ui/button';
 
 // Narrow screens can't fit the three-column layout, so the rails collapse into
@@ -178,7 +177,6 @@ export function Game() {
                     initialTargetId={trade.targetId}
                 />
             )}
-            <PauseOverlay />
 
             {/* Bankruptcy can't be taken back, so it asks first */}
             <Modal
