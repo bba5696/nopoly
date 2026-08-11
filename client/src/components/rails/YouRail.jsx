@@ -47,13 +47,18 @@ export function YouRail({ onOpenTile }) {
                 <div className="flex items-end justify-between">
                     {/* Cash itself never goes below zero — the shortfall lives
                         in `debt` — but showing $0 while you owe money reads as
-                        though nothing is wrong. */}
+                        though nothing is wrong.
+
+                        Green when solvent, red when not: the same pairing as
+                        the connection indicator, and it reads faster than a
+                        minus sign. The player's own colour used to go here,
+                        which looked tidy but said nothing about the number. */}
                     <motion.span
                         key={balance}
                         initial={{ opacity: 0.4, y: -3 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mono text-3xl font-medium"
-                        style={{ color: balance < 0 ? '#ff5c7c' : me.color }}
+                        style={{ color: balance < 0 ? '#ff5c7c' : '#3ddc97' }}
                     >
                         {money(balance)}
                     </motion.span>
