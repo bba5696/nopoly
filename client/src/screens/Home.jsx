@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
+import { BuildTag } from '@/components/ui/build-tag';
 import { loadIdentity } from '@/lib/socket';
 import { initials } from '@/lib/color';
 
@@ -73,9 +74,12 @@ export function Home() {
                     </form>
                 </div>
 
-                <p className="border-t border-white/8 pt-5 text-[13px] leading-relaxed text-muted-foreground">
-                    Rooms are private — share the 5-character code with your friends. No player cap, no paywalls.
-                </p>
+                <div className="flex flex-col gap-2 border-t border-white/8 pt-5">
+                    <p className="text-[13px] leading-relaxed text-muted-foreground">
+                        Rooms are private — share the 5-character code with your friends. No player cap, no paywalls.
+                    </p>
+                    <BuildTag />
+                </div>
             </motion.div>
         </div>
     );

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BuildTag } from '@/components/ui/build-tag';
 import { login } from '@/lib/socket';
 
 /**
@@ -67,6 +68,10 @@ export function Gate({ onUnlocked }) {
                 <Button type="submit" className="h-13 text-lg" style={{ height: 52 }} disabled={!password || busy}>
                     {busy ? 'Checking…' : 'Enter'}
                 </Button>
+
+                {/* Readable without logging in, which is the point: checking a
+                    friend's phone shouldn't need the password first. */}
+                <BuildTag className="text-center" />
             </motion.form>
         </div>
     );
