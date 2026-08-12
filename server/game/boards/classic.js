@@ -20,7 +20,7 @@ const LAYOUT = [
     ['Salvador', 'property', 'brazil', 60, [2, 10, 30, 90, 160, 250], 50],
     ['Treasure', 'chest', null, 0, null, 0],
     ['Rio', 'property', 'brazil', 60, [4, 20, 60, 180, 320, 450], 50],
-    ['Income Tax', 'tax', null, 0, null, 0, { amount: 200 }],
+    ['Income Tax', 'tax', null, 0, null, 0, { percent: 10, max: 200 }],
     ['GZA Airport', 'airport', 'airport', 200, null, 0],
     ['Gaza', 'property', 'palestine', 100, [6, 30, 90, 270, 400, 550], 50],
     ['Surprise', 'chance', null, 0, null, 0],
@@ -54,7 +54,7 @@ const LAYOUT = [
     ['JFK Airport', 'airport', 'airport', 200, null, 0],
     ['Surprise', 'chance', null, 0, null, 0],
     ['California', 'property', 'usa', 350, [35, 175, 500, 1100, 1300, 1500], 200],
-    ['Luxury Tax', 'tax', null, 0, null, 0, { amount: 100 }],
+    ['Luxury Tax', 'tax', null, 0, null, 0, { percent: 5, max: 100 }],
     ['New York', 'property', 'usa', 400, [50, 200, 600, 1400, 1700, 2000], 200],
 ];
 

@@ -39,6 +39,16 @@ function RentRows({ state, tile, color }) {
     ));
 }
 
+/** What a tax tile charges, in words. */
+function taxRule(tile) {
+    const rule = tile.tax;
+    if (!rule) return 'Pay the bank when you land here.';
+    if (!rule.percent) return `Pay the bank ${money(rule.amount || 0)} when you land here.`;
+    return rule.max
+        ? `Pay the bank ${rule.percent}% of everything you own when you land here — cash, property and buildings — up to ${money(rule.max)}.`
+        : `Pay the bank ${rule.percent}% of everything you own when you land here — cash, property and buildings.`;
+}
+
 export function TileInfoModal({ tile, onClose }) {
     const { state, me, board, isMyTurn, send } = useGame();
     if (!tile) return null;
@@ -157,7 +167,11 @@ export function TileInfoModal({ tile, onClose }) {
                     </div>
                 ) : (
                     <p className="p-6 text-[14px] text-muted-foreground">
-                        {tile.type === 'tax' && 'Pay the bank when you land here.'}
+                        {/* What it will actually cost you, not just that it
+                            will. A share of your worth is worth spelling out —
+                            it's the difference between a bill you can ignore
+                            and one that grows with the game. */}
+                        {tile.type === 'tax' && taxRule(tile)}
                         {tile.type === 'chance' && 'Draw a Surprise card.'}
                         {tile.type === 'chest' && 'Draw a Treasure card.'}
                         {tile.type === 'corner' && 'Nothing happens here — unless it does.'}

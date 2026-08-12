@@ -947,11 +947,18 @@ function movePlayerTo(room, player, target, { collectStart = true, direct = fals
 /**
  * A tax tile charges either a flat fee or a share of net worth. The percentage
  * kind scales with how well you're doing, so the leader pays the most.
+ *
+ * `max` caps that share. A flat fee is at its most painful on the first lap,
+ * when it's a tenth of everything you own, and beneath notice by the time
+ * anyone has a set — a percentage fixes both ends, but without a ceiling it
+ * turns into a four-figure bill that a property-rich player has to sell
+ * buildings to pay. The cap keeps it a tax rather than an eviction.
  */
 function taxFor(room, player, tile) {
     const rule = tile.tax || { amount: 100 };
-    if (rule.percent) return Math.round((netWorth(room, player) * rule.percent) / 100);
-    return rule.amount || 0;
+    if (!rule.percent) return rule.amount || 0;
+    const share = Math.round((netWorth(room, player) * rule.percent) / 100);
+    return rule.max ? Math.min(share, rule.max) : share;
 }
 
 /**
@@ -1952,6 +1959,8 @@ module.exports = {
     cancelAbandon,
     refreshAbandonDeadline,
     setProfile,
+    taxFor,
+    payBank,
     spectateReason,
     addSpectator,
     removeSpectator,

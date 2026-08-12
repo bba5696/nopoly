@@ -70,7 +70,7 @@ const LAYOUT = [
     ['Los Angeles', 'property', 'usa', 350, [35, 175, 500, 1100, 1300, 1500], 200],
     ['Surprise', 'chance', null, 0, null, 0],
     ['San Francisco', 'property', 'usa', 360, [40, 185, 550, 1200, 1450, 1700], 200],
-    ['Premium Tax', 'tax', null, 0, null, 0, { amount: 75 }],
+    ['Premium Tax', 'tax', null, 0, null, 0, { percent: 5, max: 75 }],
     ['New York', 'property', 'usa', 400, [50, 200, 600, 1400, 1700, 2000], 200],
 ];
 
