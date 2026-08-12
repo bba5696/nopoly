@@ -10,6 +10,7 @@ const cors = require('cors');
 
 const engine = require('./game/engine');
 const auth = require('./auth');
+const persist = require('./persist');
 
 const app = express();
 
@@ -51,6 +52,39 @@ const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
 
 app.get('/health', (req, res) => {
     res.json({ ok: true, rooms: rooms.size });
+});
+
+/* ------------------------------------------------------------------ version */
+
+// What the browser should be running. Derived from the built index.html, whose
+// script tag carries a content hash, so it changes on exactly the deploys that
+// need a reload and on no others. Clients poll this and refresh themselves.
+//
+// Read from disk with an mtime check rather than cached at boot: rebuilding
+// client/dist does not restart this process, and a client-only deploy is the
+// one that costs nothing.
+let versionCache = { mtime: 0, value: 'dev' };
+
+function currentVersion() {
+    if (!hasBuild) return 'dev';
+    const file = path.join(CLIENT_DIST, 'index.html');
+    try {
+        const { mtimeMs } = fs.statSync(file);
+        if (mtimeMs !== versionCache.mtime) {
+            const html = fs.readFileSync(file, 'utf8');
+            // The hashed bundle name is the whole point — it is the identity of
+            // the build. Fall back to the mtime if the shape ever changes.
+            const asset = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/);
+            versionCache = { mtime: mtimeMs, value: asset ? asset[0] : String(mtimeMs) };
+        }
+    } catch {
+        /* mid-deploy the file can vanish for an instant — keep the last value */
+    }
+    return versionCache.value;
+}
+
+app.get('/version', (req, res) => {
+    res.set('Cache-Control', 'no-store').json({ version: currentVersion() });
 });
 
 /* ------------------------------------------------------------------- access */
@@ -298,10 +332,43 @@ if (PRODUCTION && !auth.enabled()) {
     process.exit(1);
 }
 
+/**
+ * Bring back whatever was running when we last stopped. Everyone's socket died
+ * with the old process, so nobody is connected yet — the clients reconnect on
+ * their own and `addPlayer` puts them back in their seat by stored id.
+ */
+function restoreRooms() {
+    const saved = persist.load();
+    for (const room of saved) {
+        for (const p of room.players) {
+            p.connected = false;
+            p.activity = null;
+        }
+        rooms.set(room.roomCode, room);
+        // endsAt is absolute, so an auction that expired during the restart
+        // resolves immediately rather than hanging.
+        scheduleAuction(room);
+    }
+    // Consumed: if we crash before the next save, replaying a stale snapshot
+    // would drop the table back into a game they'd already moved past.
+    persist.clear();
+    return saved.length;
+}
+
+// A hard kill, an OOM or a power cut never runs the shutdown hook, so the
+// snapshot can't only be written on the way out. Skipped entirely when there's
+// nothing running, so an idle server doesn't touch the disk at all.
+const AUTOSAVE_MS = 15_000;
+setInterval(() => {
+    if (rooms.size) persist.save(rooms);
+}, AUTOSAVE_MS).unref();
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+    const restored = restoreRooms();
     console.log(`Server listening on port ${PORT}`);
     console.log(hasBuild ? 'Client: serving client/dist' : 'Client: no build found (API only)');
+    console.log(restored ? `State: resumed ${restored} room(s)` : 'State: no rooms to resume');
     if (auth.enabled()) {
         console.log('Access: password required');
     } else {
@@ -313,6 +380,10 @@ server.listen(PORT, () => {
 // look like a hard disconnect to everyone mid-turn.
 for (const signal of ['SIGTERM', 'SIGINT']) {
     process.on(signal, () => {
+        // Snapshot first, before the sockets go — this is the whole reason a
+        // redeploy mid-game is survivable.
+        const saved = persist.save(rooms);
+        console.log(saved.ok ? `State: saved ${saved.count} room(s)` : `State: save failed — ${saved.error}`);
         io.close();
         server.close(() => process.exit(0));
         setTimeout(() => process.exit(0), 5000).unref();

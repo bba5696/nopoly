@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { GameProvider, useGame } from '@/lib/game-context';
 import { authRequired, clearToken, loadToken, socket } from '@/lib/socket';
+import { useLiveUpdate } from '@/lib/use-live-update';
+import { UpdateOverlay } from '@/components/ui/update-overlay';
 import { Gate } from '@/screens/Gate';
 import { Home } from '@/screens/Home';
 import { Lobby } from '@/screens/Lobby';
@@ -74,6 +76,11 @@ export default function App() {
         socket.on('connect_error', onError);
         return () => socket.off('connect_error', onError);
     }, []);
+
+    // Outside the gate check, so a tab sitting on the login screen also picks
+    // up a new build rather than logging in against a stale one.
+    const updating = useLiveUpdate();
+    if (updating) return <UpdateOverlay />;
 
     if (unlocked === null) return null;
     if (!unlocked) return <Gate onUnlocked={open} />;

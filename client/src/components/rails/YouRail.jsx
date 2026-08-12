@@ -5,6 +5,7 @@ import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { money } from '@/lib/board-layout';
 import { alpha } from '@/lib/color';
+import { cn } from '@/lib/utils';
 import { currentRent, ownsFullGroup } from '@/lib/rent';
 
 function PropertyRow({ tile, groups, onOpen }) {
@@ -143,7 +144,15 @@ export function YouRail({ onOpenTile }) {
                     <span className="label">My properties ({owned.length})</span>
                     <span className="label opacity-60">tap to manage</span>
                 </header>
-                <div className="scroll-thin flex max-h-[300px] flex-col gap-1.5 overflow-y-auto p-3">
+                {/* Capped tighter when a teammate list is also on screen: four
+                    stacked panels in a 288px column otherwise push the trades
+                    below the fold, and trades are the thing you need to notice. */}
+                <div
+                    className={cn(
+                        'scroll-thin flex flex-col gap-1.5 overflow-y-auto p-3',
+                        mate ? 'max-h-[208px]' : 'max-h-[300px]',
+                    )}
+                >
                     {owned.length === 0 && <p className="px-1 py-2 text-[13px] text-muted-foreground">Nothing owned yet.</p>}
                     {owned.map((tile) => (
                         <PropertyRow key={tile.id} tile={tile} groups={board?.groups} onOpen={onOpenTile} />
@@ -157,7 +166,7 @@ export function YouRail({ onOpenTile }) {
                         <span className="label">{mate.name}'s ({mateOwned.length})</span>
                         <span className="label opacity-60">build only</span>
                     </header>
-                    <div className="scroll-thin flex max-h-[220px] flex-col gap-1.5 overflow-y-auto p-3">
+                    <div className="scroll-thin flex max-h-[148px] flex-col gap-1.5 overflow-y-auto p-3">
                         {mateOwned.map((tile) => (
                             <PropertyRow key={tile.id} tile={tile} groups={board?.groups} onOpen={onOpenTile} />
                         ))}

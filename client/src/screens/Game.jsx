@@ -43,7 +43,7 @@ export function Game() {
     const [confirmBankrupt, setConfirmBankrupt] = useState(false);
     // Mirrors the stored setting so the icon re-renders when it's toggled.
     const [quiet, setQuiet] = useState(isMuted);
-    const { display, moving } = useTokenPositions(state.players, state.tiles.length);
+    const { display, moving } = useTokenPositions(state.players, state.tiles.length, state.lastMove);
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null

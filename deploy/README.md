@@ -1,7 +1,8 @@
 # Deploying Nopoly to Oracle Cloud
 
 One VM runs everything: Node serves the API and the built client, Nginx
-terminates TLS in front of it. No database — all game state is in memory.
+terminates TLS in front of it. No database — games live in memory, with a
+snapshot on disk so a redeploy doesn't end them.
 
 ## Before you start
 
@@ -159,6 +160,11 @@ a renewal timer.
 
 ## Updating
 
+You can deploy while people are playing. Games are snapshotted to disk on the
+way out and resumed on the way back in, and every open tab notices the new build
+within about twenty seconds, shows "Updating the game", reloads, and rejoins its
+seat. From the table it's a few seconds of nothing.
+
 ```bash
 cd ~/nopoly && git pull
 cd client && npm ci && npm run build
@@ -166,8 +172,34 @@ cd ../server && npm ci --omit=dev
 sudo systemctl restart nopoly
 ```
 
-**A restart ends every game in progress** — state is in memory only. Deploy when
-nobody is mid-game.
+Check the build actually changed, or nothing above is live:
+
+```bash
+curl -s localhost:3000/version    # must differ from before the deploy
+```
+
+### Client-only changes need no restart at all
+
+`express.static` reads from disk per request, so a rebuilt `client/dist` is
+served immediately by the running process. If nothing under `server/` changed,
+stop after `npm run build` — no restart, no reconnect, nothing to resume.
+
+### The state snapshot
+
+Written to `/var/lib/nopoly/rooms.json` — created and owned by systemd via
+`StateDirectory=nopoly` in the unit, which is also the only path the service can
+write to under `ProtectSystem=strict`. It's saved on shutdown and every 15
+seconds, so a `kill -9` or a power cut costs at most a few moves. It's deleted
+once resumed, and ignored if older than six hours.
+
+**If you installed the unit before this existed, reinstall it** — without
+`StateDirectory=` the save silently fails and restarts still end every game:
+
+```bash
+sudo cp ~/nopoly/deploy/nopoly.service /etc/systemd/system/nopoly.service
+sudo systemctl daemon-reload && sudo systemctl restart nopoly
+journalctl -u nopoly -n 5 | grep State:     # "saved N room(s)" / "resumed N room(s)"
+```
 
 ## Building elsewhere
 

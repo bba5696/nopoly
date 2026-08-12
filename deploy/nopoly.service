@@ -27,8 +27,13 @@ Environment=PORT=3000
 Restart=always
 RestartSec=3
 
-# Games are in memory, so a restart drops them — give the process time to hand
-# out its final broadcasts before systemd escalates to SIGKILL.
+# Creates and owns /var/lib/nopoly, and passes it as $STATE_DIRECTORY. This is
+# the only path the service can write to under ProtectSystem=strict below, and
+# it is where running games are snapshotted so a redeploy doesn't end them.
+StateDirectory=nopoly
+
+# The snapshot is written on SIGTERM, before the sockets close — give it room
+# to finish and to hand out its final broadcasts before systemd sends SIGKILL.
 KillSignal=SIGTERM
 TimeoutStopSec=15
 
@@ -36,8 +41,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nopoly
 
-# Modest hardening. The server keeps all state in memory and never writes to
-# disk, so read-only access to its own code directory is all it needs.
+# Modest hardening. The only thing the server writes is its state snapshot, and
+# StateDirectory above punches the one hole needed for that.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

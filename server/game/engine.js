@@ -670,9 +670,24 @@ function checkWin(room) {
 }
 
 function sendToJail(room, player) {
+    // Where they were standing when it happened. The client walks them there
+    // first and only then drops them in jail — otherwise landing on Go to Jail
+    // reads as a teleport from wherever the roll started, and you never see the
+    // tile that did it. When nothing moved them (three doubles, a card drawn on
+    // the spot) this equals where the token already is, so it snaps as before.
+    const via = player.position;
     player.position = geom(room).jailIndex;
     player.inJail = true;
     player.jailTurns = 0;
+    room.moveSeq += 1;
+    room.lastMove = {
+        playerId: player.id,
+        from: via,
+        to: player.position,
+        via,
+        direct: true,
+        seq: room.moveSeq,
+    };
     room.stats.jailVisits[player.id] = (room.stats.jailVisits[player.id] || 0) + 1;
     room.doublesCount = 0;
     log(room, `${player.name} was sent to jail`);
