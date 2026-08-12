@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>nopoly · sounds</title>
+        <!--
+            A bench for the audio, dev-only: Vite builds index.html and nothing
+            else, so this never reaches production. It imports the real module
+            rather than a copy, so what you hear here is exactly what the game
+            plays, and editing sound.js hot-reloads this page.
+        -->
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #0b0b12;
+                --panel: #14141d;
+                --line: rgba(255, 255, 255, 0.08);
+                --fg: #e9e7f2;
+                --dim: #9aa0b5;
+                --accent: #7c5cff;
+            }
+            * { box-sizing: border-box; }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                background: var(--bg);
+                color: var(--fg);
+                font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+                padding: 32px 20px 64px;
+            }
+            .wrap { max-width: 860px; margin: 0 auto; }
+            header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+            h1 { font-size: 30px; font-weight: 500; margin: 0; letter-spacing: -0.02em; }
+            .tag {
+                font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em;
+                color: var(--dim);
+            }
+            .lede { color: var(--dim); margin: 0 0 28px; max-width: 60ch; }
+            h2 {
+                font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em;
+                color: var(--dim); font-weight: 500;
+                margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+            }
+            .grid { display: grid; gap: 10px; }
+            .row {
+                display: flex; align-items: center; gap: 16px;
+                background: var(--panel); border: 1px solid var(--line);
+                border-radius: 12px; padding: 12px 14px;
+            }
+            .row .text { flex: 1; min-width: 0; }
+            .row .name { font-weight: 500; }
+            .row .when { color: var(--dim); font-size: 13px; }
+            button {
+                font: inherit; font-weight: 500; color: var(--fg);
+                background: rgba(255, 255, 255, 0.07);
+                border: 1px solid var(--line); border-radius: 9px;
+                padding: 9px 18px; cursor: pointer; flex-shrink: 0;
+                transition: background 0.15s, border-color 0.15s;
+            }
+            button:hover { background: rgba(255, 255, 255, 0.13); border-color: rgba(255, 255, 255, 0.22); }
+            button:active { transform: translateY(1px); }
+            button.primary { background: var(--accent); border-color: transparent; }
+            button.primary:hover { background: #8f74ff; }
+            button.on { background: #3ddc97; border-color: transparent; color: #04140d; }
+            .bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+            .note {
+                margin-top: 28px; padding: 14px 16px; border-radius: 12px;
+                border: 1px solid rgba(124, 92, 255, 0.3); background: rgba(124, 92, 255, 0.07);
+                color: var(--dim); font-size: 13px; line-height: 1.6;
+            }
+            code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--fg); }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <header>
+                <h1>nopoly</h1>
+                <span class="tag">sound bench</span>
+            </header>
+            <p class="lede">
+                Every sound the game makes, straight from <code>src/lib/sound.js</code>. Press one, tell me what to
+                change. Edits to that file reload this page on their own.
+            </p>
+
+            <div class="bar">
+                <button class="primary" id="all">Play them all in order</button>
+                <button id="unmute">Unmute</button>
+            </div>
+
+            <h2>Yours — fired by your own action</h2>
+            <div class="grid" id="own"></div>
+
+            <h2>The table — fired by what everyone else does</h2>
+            <div class="grid" id="table"></div>
+
+            <h2>Moments</h2>
+            <div class="grid" id="moments"></div>
+
+            <h2>Background music</h2>
+            <div class="grid" id="music"></div>
+
+            <div class="note">
+                Useful things to tell me: too loud, too quiet, too long, too cheerful, too harsh, hard to tell apart
+                from another one, or annoying the tenth time. The pad takes about four seconds to swell — give it
+                twenty or so before judging it, and a couple of minutes to hear whether it loops audibly.
+            </div>
+        </div>
+
+        <script type="module">
+            import {
+                setMuted,
+                unlock,
+                playTurn,
+                playTrade,
+                playJoin,
+                playPlayerJoined,
+                playStart,
+                playBuy,
+                playEndTurn,
+                playRoll,
+                playRivalBuy,
+                playSet,
+                playRivalSet,
+                playJail,
+                playBankrupt,
+                startMusic,
+                stopMusic,
+            } from '/src/lib/sound.js';
+
+            // The bench is useless muted, and the setting is shared with the game.
+            setMuted(false);
+
+            const GROUPS = {
+                own: [
+                    ['Your turn', 'The turn comes round to you', playTurn],
+                    ['Roll', 'You throw the dice', () => playRoll(false)],
+                    ['Buy', 'You buy the property you landed on', playBuy],
+                    ['End turn', 'You hand the turn on', playEndTurn],
+                    ['Trade offer', 'An offer arrives addressed to you', playTrade],
+                ],
+                table: [
+                    ['Distant roll', 'Someone else throws the dice', () => playRoll(true)],
+                    ['Rival buy', 'Someone else buys a property', playRivalBuy],
+                    ['Jail', 'Someone else is sent to jail', playJail],
+                ],
+                moments: [
+                    ['Your set', 'You complete a colour set', playSet],
+                    ["Rival's set", 'Someone else completes one', playRivalSet],
+                    ['Bankrupt', 'A player is out of the game', playBankrupt],
+                    ['Game start', 'The host starts the game', playStart],
+                    ['You joined', 'You land in the lobby', playJoin],
+                    ['Someone joined', 'Another player arrives in the lobby', playPlayerJoined],
+                ],
+            };
+
+            for (const [id, rows] of Object.entries(GROUPS)) {
+                const host = document.getElementById(id);
+                for (const [name, when, fn] of rows) {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    row.innerHTML =
+                        '<div class="text"><div class="name"></div><div class="when"></div></div>';
+                    row.querySelector('.name').textContent = name;
+                    row.querySelector('.when').textContent = when;
+                    const btn = document.createElement('button');
+                    btn.textContent = 'Play';
+                    btn.onclick = () => {
+                        unlock();
+                        fn();
+                    };
+                    row.appendChild(btn);
+                    host.appendChild(row);
+                }
+            }
+
+            // Music gets a toggle rather than a one-shot — the point of a pad is
+            // what it does after a minute.
+            const musicRow = document.createElement('div');
+            musicRow.className = 'row';
+            musicRow.innerHTML =
+                '<div class="text"><div class="name">Background pad</div>' +
+                '<div class="when">Four slow chords, no melody. Off by default in the game.</div></div>';
+            const musicBtn = document.createElement('button');
+            musicBtn.textContent = 'Start';
+            let on = false;
+            musicBtn.onclick = () => {
+                unlock();
+                on = !on;
+                musicBtn.textContent = on ? 'Stop' : 'Start';
+                musicBtn.classList.toggle('on', on);
+                if (on) startMusic();
+                else stopMusic();
+            };
+            musicRow.appendChild(musicBtn);
+            document.getElementById('music').appendChild(musicRow);
+
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            document.getElementById('all').onclick = async () => {
+                unlock();
+                for (const rows of Object.values(GROUPS)) {
+                    for (const [, , fn] of rows) {
+                        fn();
+                        await sleep(1100);
+                    }
+                }
+            };
+            document.getElementById('unmute').onclick = () => {
+                setMuted(false);
+                unlock();
+            };
+        </script>
+    </body>
+</html>
