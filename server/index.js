@@ -159,6 +159,15 @@ function broadcast(room) {
  * Deliberately just numbers: room codes are the only thing keeping a game
  * private, so nothing here can be used to find one.
  */
+
+// How long a tab has to sit in the background before the person behind it stops
+// counting. A socket stays open for hours on a tab nobody has looked at since
+// lunch, and counting those is how "3 online" comes to mean nothing.
+// Overridable only so a test doesn't have to sit here for three minutes.
+const AWAY_MS = Number(process.env.NOPOLY_AWAY_MS) || 3 * 60_000;
+
+const isAway = (socket) => socket.data.hiddenAt != null && Date.now() - socket.data.hiddenAt > AWAY_MS;
+
 function presence() {
     const sockets = [...io.sockets.sockets.values()];
 
@@ -173,17 +182,20 @@ function presence() {
     const who = (s) =>
         s.data.playerId || seatOf.get(s.handshake.auth?.pid) || s.handshake.auth?.pid || s.id;
 
-    const idle = new Set();
+    // One entry per person, not per tab. You're here if any one of your tabs is
+    // in front of you, so the laptop left open in the background doesn't keep
+    // you on the board and doesn't take you off it either.
+    const here = new Set();
     const playing = new Set();
     for (const s of sockets) {
-        (s.data.roomCode && rooms.has(s.data.roomCode) ? playing : idle).add(who(s));
+        if (isAway(s)) continue;
+        here.add(who(s));
+        if (s.data.roomCode && rooms.has(s.data.roomCode)) playing.add(who(s));
     }
-    // Being in a game wins over an idle second tab.
-    for (const who of playing) idle.delete(who);
 
     let games = 0;
     for (const room of rooms.values()) if (room.players.some((p) => p.connected)) games += 1;
-    return { online: idle.size + playing.size, playing: playing.size, games };
+    return { online: here.size, playing: playing.size, games };
 }
 
 // Coalesced and diffed: a reconnect storm after a redeploy would otherwise be
@@ -203,6 +215,11 @@ function pushPresence() {
         io.emit('presence', next);
     }, 150).unref();
 }
+
+// Tabbing out crosses the away line without anyone doing anything, so the count
+// can't only be recomputed on events. A few checks per away-window is enough to
+// keep the number honest, and the diff above means a quiet server sends nothing.
+setInterval(pushPresence, Math.max(2_000, Math.round(AWAY_MS / 6))).unref();
 
 function getRoom(code) {
     return rooms.get(String(code || '').toUpperCase().trim());
@@ -357,6 +374,16 @@ io.on('connection', (socket) => {
     socket.on('trade:respond', ({ tradeId, response } = {}) =>
         act(socket, (room, pid) => engine.respondTrade(room, pid, tradeId, response)),
     );
+
+    // Whether this tab is actually in front of someone. The server holds the
+    // clock rather than the client, because a backgrounded tab is exactly where
+    // browsers throttle timers — the one place a client-side countdown can't be
+    // trusted to fire.
+    socket.on('presence:visibility', ({ hidden } = {}) => {
+        const was = socket.data.hiddenAt;
+        socket.data.hiddenAt = hidden ? was || Date.now() : null;
+        pushPresence();
+    });
 
     socket.on('chat:send', ({ text } = {}) => act(socket, (room, pid) => engine.addChat(room, pid, text)));
     socket.on('game:activity', (payload = {}) => act(socket, (room, pid) => engine.setActivity(room, pid, payload)));

@@ -31,8 +31,15 @@ export function GameProvider({ children }) {
     // Socket lifecycle. On (re)connect we transparently rejoin the stored room,
     // which is what makes a refresh mid-game land you back in your seat.
     useEffect(() => {
+        // Told, not inferred: the server can't see a tab go to the background,
+        // and a socket left open on a tab nobody has looked at for an hour
+        // shouldn't keep its owner on the head count.
+        const reportVisibility = () => socket.emit('presence:visibility', { hidden: document.hidden });
+
         const onConnect = () => {
             setConnected(true);
+            // A tab restored in the background connects already hidden.
+            reportVisibility();
             const { roomCode: stored, playerId: pid, name } = loadIdentity();
             if (stored) {
                 socket.emit('room:join', { roomCode: stored, playerId: pid, name }, (res) => {
@@ -73,9 +80,11 @@ export function GameProvider({ children }) {
         socket.on('state', onState);
         socket.on('presence', onPresence);
         socket.on('error:game', onError);
+        document.addEventListener('visibilitychange', reportVisibility);
         if (socket.connected) onConnect();
 
         return () => {
+            document.removeEventListener('visibilitychange', reportVisibility);
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
             socket.off('state', onState);

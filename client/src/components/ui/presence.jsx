@@ -18,9 +18,12 @@ export function PresencePill({ className }) {
         return <span className={cn('label text-[#ff5c7c]', className)}>offline</span>;
     }
 
-    // The first push lands a beat after the socket does. Until then we know one
-    // thing for certain, which is that we're here.
-    const online = presence?.online ?? 1;
+    // Floored at one, and not only because the first push lands a beat after
+    // the socket does. A tab that's been in the background long enough stops
+    // counting, so the number can genuinely be zero at the moment you look
+    // back at it — and "0 players online" read by a player is just wrong. The
+    // real count arrives a blink later, once the tab reports itself back.
+    const online = Math.max(presence?.online ?? 1, 1);
     const playing = presence?.playing ?? 0;
     const games = presence?.games ?? 0;
 
