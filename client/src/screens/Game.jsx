@@ -19,6 +19,7 @@ import { useGame } from '@/lib/game-context';
 import { loadIdentity } from '@/lib/socket';
 import { useTokenPositions } from '@/lib/use-token-positions';
 import { useTableSounds } from '@/lib/use-table-sounds';
+import { useIdlePing } from '@/lib/use-idle-ping';
 import { Board } from '@/components/board/Board';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
 import { useTurn } from '@/lib/use-turn';
@@ -105,6 +106,9 @@ export function Game() {
     // Waiting on six other people means nobody is watching the screen. Ping on
     // the transition only, never on a re-render that happens to land mid-turn.
     const isMyTurn = !!me && state.players[state.turnIndex]?.id === playerId && !me.bankrupt;
+    // Only while the clock is on you: any movement resets it, and if you don't
+    // move, the turn plays itself rather than stalling everyone.
+    useIdlePing(isMyTurn && !!state.idle, send);
     const wasMyTurn = useRef(isMyTurn);
     useEffect(() => {
         if (isMyTurn && !wasMyTurn.current) playTurn();

@@ -442,6 +442,28 @@ export function playRivalSet() {
 }
 
 /**
+ * Money arriving. The bell again, because collecting rent is the other moment
+ * worth enjoying — a bright two-note lift, short enough to fire several times
+ * a lap without wearing out.
+ */
+export function playCashIn() {
+    playChimes([
+        [0, 783.99, 1.4, 0.06],
+        [0.08, 1046.5, 1.6, 0.055],
+    ]);
+}
+
+/** Money leaving: a dull thud under two falling notes. Deliberately no shine. */
+export function playCashOut() {
+    play([
+        [0, 293.66, 0.16, 0.085],
+        [0.1, 196.0, 0.3, 0.09],
+    ]);
+    playNoise([[0, 0.16, { from: 380, to: 120, peak: 0.11, q: 0.8 }]]);
+    buzz(45);
+}
+
+/**
  * Someone went to jail: a flat, unmusical clack and the thud after it. The
  * narrow bands this started with made it nearly inaudible — a door closing is
  * broadband, and squeezing it through a high-Q filter left a tick.

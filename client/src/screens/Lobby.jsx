@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, TrendingUp, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -98,6 +98,12 @@ const RULES = [
         icon: ShieldOff,
         label: "Don't collect rent while in prison",
         hint: 'Rent will not be collected when landing on properties whose owners are in prison',
+    },
+    {
+        key: 'turnTimer',
+        icon: Timer,
+        label: 'Turn timer',
+        hint: 'A turn nobody is sitting in front of plays itself after a minute — rolls, buys nothing, and hands on. Any movement at all resets it, so thinking is free',
     },
     {
         key: 'evenBuild',

@@ -48,6 +48,8 @@ const graceTimers = new Map();
 const auctionTimers = new Map();
 /** roomCode -> timeout handle closing the running vote-kick. */
 const voteTimers = new Map();
+/** roomCode -> timeout handle for the turn clock. */
+const idleTimers = new Map();
 
 const DISCONNECT_GRACE_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
@@ -268,6 +270,27 @@ function scheduleVote(room) {
     );
 }
 
+/**
+ * And the turn clock, which is re-armed on every action rather than only when
+ * it runs out — anything the current player does is a sign of life, so the
+ * deadline moves and this has to move with it.
+ */
+function scheduleIdle(room) {
+    clearTimeout(idleTimers.get(room.roomCode));
+    idleTimers.delete(room.roomCode);
+    if (!room.idle) return;
+    const delay = Math.max(room.idle.endsAt - Date.now(), 0);
+    idleTimers.set(
+        room.roomCode,
+        setTimeout(() => {
+            idleTimers.delete(room.roomCode);
+            engine.expireIdle(room);
+            broadcast(room);
+            scheduleIdle(room);
+        }, delay),
+    );
+}
+
 /** Run an engine action for a socket's room, then broadcast the new state. */
 function act(socket, fn, { watchers = false } = {}) {
     const room = getRoom(socket.data.roomCode);
@@ -281,9 +304,13 @@ function act(socket, fn, { watchers = false } = {}) {
     }
     const result = fn(room, socket.data.playerId) || {};
     if (result.error) socket.emit('error:game', result.error);
+    // Doing anything at all is the clearest sign of life there is, so it counts
+    // the same as moving the mouse.
+    engine.noteActive(room, socket.data.playerId);
     broadcast(room);
     scheduleAuction(room);
     scheduleVote(room);
+    scheduleIdle(room);
     return result;
 }
 
@@ -301,6 +328,8 @@ function sweepEmptyRooms() {
             auctionTimers.delete(code);
             clearTimeout(voteTimers.get(code));
             voteTimers.delete(code);
+            clearTimeout(idleTimers.get(code));
+            idleTimers.delete(code);
             rooms.delete(code);
         }
     }
@@ -378,6 +407,12 @@ io.on('connection', (socket) => {
         pushPresence();
     });
 
+    // Mouse moved, key pressed, screen touched — sent only by whoever is up,
+    // and throttled hard on the client. It carries nothing: the fact that it
+    // arrived is the whole message.
+    socket.on('game:active', () =>
+        act(socket, (room, pid) => engine.noteActive(room, pid)),
+    );
     socket.on('room:profile', (patch = {}) => act(socket, (room, pid) => engine.setProfile(room, pid, patch)));
     socket.on('room:settings', (patch = {}) => act(socket, (room, pid) => engine.updateSettings(room, pid, patch)));
     socket.on('room:team', ({ playerId, teamId } = {}) =>
@@ -534,10 +569,15 @@ function restoreRooms() {
         // abandonment countdown is watching for — so give it its full length
         // back before arming it, or the restart itself kicks someone out.
         engine.refreshAbandonDeadline(room);
+        // Same reasoning for the turn clock: everyone is disconnected at this
+        // instant, and an inherited deadline would play the current player's
+        // turn for them before their browser had finished reconnecting.
+        engine.armIdle(room);
         // endsAt is absolute on both, so anything that expired during the
         // restart resolves immediately rather than hanging forever.
         scheduleAuction(room);
         scheduleVote(room);
+        scheduleIdle(room);
     }
     // Consumed: if we crash before the next save, replaying a stale snapshot
     // would drop the table back into a game they'd already moved past.

@@ -52,8 +52,21 @@ const DEFAULT_SETTINGS = {
     dynamicValues: false,
     auctionBalance: false,
     teams: false,
+    turnTimer: true,
     board: DEFAULT_BOARD,
 };
+
+/**
+ * How long a turn may sit with nobody touching anything before it plays itself.
+ *
+ * Measured from the last sign of life rather than from the start of the turn:
+ * someone reading a trade offer or counting their money is present, and cutting
+ * them off for thinking would be worse than the stall it prevents. Moving the
+ * mouse is enough to reset it, so the only turns this ever ends are the ones
+ * nobody is sitting in front of.
+ */
+// Overridable only so a test doesn't have to sit here for a minute per turn.
+const IDLE_MS = Number(process.env.NOPOLY_IDLE_MS) || 60_000;
 
 /** Bounds every settings value is clamped to before it's stored. */
 const SETTING_LIMITS = {
@@ -128,6 +141,9 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         winnerTeam: null,
         auction: null,        // { tileId, bid, bidderId, endsAt }
         vote: null,           // { targetId, byId, yes: [], no: [], endsAt }
+        idle: null,           // { playerId, endsAt } — the turn clock
+        lastPayment: null,    // { seq, fromId, toId, amount, reason }
+        paySeq: 0,
         banned: [],           // player ids a vote removed; they can't come back
         voteCooldown: {},     // targetId -> when they may be voted on again
         vacationPot: 0,       // taxes and fines waiting on Vacation
@@ -308,6 +324,9 @@ function publicState(room) {
         auction: room.auction,
         vote: room.vote,
         voteMs: VOTE_MS,
+        idle: room.idle,
+        idleMs: IDLE_MS,
+        lastPayment: room.lastPayment,
         vacationPot: room.vacationPot,
         bidSteps: BID_STEPS,
         trades: room.trades,
@@ -718,6 +737,7 @@ function startGame(room, playerId) {
     room.stats.startedAt = Date.now();
     snapshotNetWorth(room);
     log(room, 'Game started — good luck');
+    armIdle(room);
     return {};
 }
 
@@ -775,6 +795,20 @@ function charge(room, player, creditor, amount, reason) {
     credit(room, creditor, paid);
     const who = creditor ? ` to ${creditor.name}` : '';
     log(room, `${player.name} paid $${paid}${who}${reason ? ` — ${reason}` : ''}`);
+
+    // The most consequential thing that happens in the game arrived as a line
+    // in the feed and two balances quietly changing. Broadcast it as an event
+    // so the client can make it land; the sequence number is what lets a
+    // repeat of the same amount between the same two people animate again.
+    // `|| 0` for rooms restored from a snapshot written before this existed.
+    room.paySeq = (room.paySeq || 0) + 1;
+    room.lastPayment = {
+        seq: room.paySeq,
+        fromId: player.id,
+        toId: creditor && !creditor.bankrupt ? creditor.id : null,
+        amount: paid,
+        reason: reason || null,
+    };
 
     const owed = amount - paid;
     if (owed <= 0) return;
@@ -898,6 +932,9 @@ function checkWin(room) {
     room.stats.endedAt = Date.now();
     room.pendingAction = null;
     room.pendingCard = null;
+    // Nothing left to hurry along, and a clock still ticking on the winner's
+    // name would be the last thing anyone sees.
+    room.idle = null;
     snapshotNetWorth(room);
     // A surviving team is named by its members, since there's no one winner.
     const names = alive.map((p) => p.name).join(' and ');
@@ -1116,6 +1153,7 @@ function advanceTurn(room) {
 
     if (livingSides(room).size <= 1) {
         checkWin(room);
+        armIdle(room);
         return;
     }
     let guard = 0;
@@ -1124,6 +1162,66 @@ function advanceTurn(room) {
         guard += 1;
     } while (room.players[room.turnIndex].bankrupt && guard <= room.players.length);
     room.phase = 'rolling';
+    // The clock starts with the turn, not with the first thing they do.
+    armIdle(room);
+}
+
+/* -------------------------------------------------------------- turn clock */
+
+/**
+ * Start the clock on whoever is up. Called wherever a turn begins, and cleared
+ * outright when the rule is off or there's nothing to wait for.
+ */
+function armIdle(room) {
+    const player = room.players[room.turnIndex];
+    if (!room.settings.turnTimer || room.phase === 'waiting' || room.phase === 'ended' || !player) {
+        room.idle = null;
+        return;
+    }
+    room.idle = { playerId: player.id, endsAt: Date.now() + IDLE_MS };
+}
+
+/** A sign of life from the player whose turn it is. */
+function noteActive(room, playerId) {
+    if (!room.idle || room.idle.playerId !== playerId) return {};
+    room.idle.endsAt = Date.now() + IDLE_MS;
+    return {};
+}
+
+/**
+ * Nobody has touched anything for a minute, so play the turn for them — roll,
+ * take the cheapest way out of whatever it lands on, and hand it on. All in one
+ * go rather than a minute per step, because three minutes to pass one empty
+ * turn is the stall this exists to prevent.
+ *
+ * A debt is the exception: only the player can decide what to sell, so the turn
+ * stays theirs. That's what the abandonment countdown is for.
+ */
+function expireIdle(room) {
+    const idle = room.idle;
+    if (!idle) return { error: 'No turn clock running' };
+    const player = findPlayer(room, idle.playerId);
+    room.idle = null;
+    if (!player || !isCurrent(room, player.id) || player.debt) {
+        armIdle(room);
+        return {};
+    }
+
+    log(room, `${player.name} was away — their turn was played for them`);
+    if (room.phase === 'rolling' && !room.hasRolled) rollDice(room, player.id);
+    // Whatever the roll turned up, take the passive option: don't buy, and get
+    // the card off the screen. An auction may open, which everyone else can
+    // still bid in.
+    if (room.pendingAction?.type === 'buy' && room.pendingAction.playerId === player.id) {
+        declinePurchase(room, player.id);
+    }
+    room.pendingCard = null;
+    // A roll can end the turn on its own — jail, or going bankrupt.
+    if (isCurrent(room, player.id) && room.phase !== 'ended' && !player.debt) {
+        endTurn(room, player.id);
+    }
+    armIdle(room);
+    return {};
 }
 
 function rollDice(room, playerId) {
@@ -1911,6 +2009,8 @@ function resetForRematch(room) {
     room.winnerTeam = null;
     room.auction = null;
     room.vote = null;
+    room.idle = null;
+    room.lastPayment = null;
     // Cooldowns are per-game grudges; the ban list is not — someone voted out
     // stays out of this room rather than reappearing for the next round.
     room.voteCooldown = {};
@@ -1961,6 +2061,10 @@ module.exports = {
     setProfile,
     taxFor,
     payBank,
+    transfer,
+    armIdle,
+    noteActive,
+    expireIdle,
     spectateReason,
     addSpectator,
     removeSpectator,

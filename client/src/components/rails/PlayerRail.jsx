@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Crown, Eye, Gavel, WifiOff } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
@@ -11,6 +12,24 @@ function note(player, state, isCurrent) {
     if (isCurrent) return 'now playing';
     const n = player.properties.length;
     return n === 0 ? 'no properties' : `${n} propert${n === 1 ? 'y' : 'ies'}`;
+}
+
+/**
+ * How long the turn clock has left, shown only once it's close. Counting down
+ * from a full minute would put a timer on the screen for every turn of the
+ * game; the point is to warn the table that one is about to play itself, and
+ * that only matters at the end.
+ */
+function IdleWarning({ endsAt }) {
+    const [left, setLeft] = useState(() => Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)));
+    useEffect(() => {
+        const tick = () => setLeft(Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)));
+        tick();
+        const t = setInterval(tick, 500);
+        return () => clearInterval(t);
+    }, [endsAt]);
+    if (left > 20) return null;
+    return <span className="label !text-[9.5px] text-[#ffb648]">· auto in {left}s</span>;
 }
 
 function Avatar({ player, size = 30, glow }) {
@@ -31,7 +50,7 @@ function Avatar({ player, size = 30, glow }) {
     );
 }
 
-function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlight, pinned, onPin }) {
+function Row({ player, state, order, compact, isCurrent, isMe, isHost, idleAt, onSpotlight, pinned, onPin }) {
     const lit = isCurrent || pinned;
     return (
         <motion.div
@@ -82,7 +101,12 @@ function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlig
                     {isHost && <Crown className="size-3 shrink-0 text-[#ffb648]" />}
                     {!player.connected && <WifiOff className="size-3 shrink-0 text-[#ff5c7c]" />}
                 </span>
-                {!compact && <span className="label !text-[9.5px]">{note(player, state, isCurrent)}</span>}
+                {!compact && (
+                    <span className="label flex items-center gap-1 !text-[9.5px]">
+                        {note(player, state, isCurrent)}
+                        {isCurrent && idleAt && <IdleWarning endsAt={idleAt} />}
+                    </span>
+                )}
             </div>
             <div className="flex shrink-0 flex-col items-end leading-tight">
                 {/* Owing money shows as a negative balance rather than $0 — see
@@ -157,6 +181,7 @@ export function PlayerRail({ onSpotlight, pinned, onPin, onVoteKick }) {
             player={p}
             state={state}
             order={order.get(p.id)}
+            idleAt={state.idle?.playerId === p.id ? state.idle.endsAt : null}
             compact={compact && p.id !== current?.id}
             isCurrent={p.id === current?.id}
             isMe={p.id === playerId}
