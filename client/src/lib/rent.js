@@ -1,7 +1,10 @@
 // Mirrors server/game/engine.js rentFor() for display purposes only —
 // the server stays authoritative for anything that moves money.
 
-import { priceOf } from './market';
+// Extension included so plain Node can import this file too — the trade
+// fairness check below is covered by server/test/lopsided.mjs, which loads this
+// module directly rather than keeping a second copy of the thresholds.
+import { priceOf } from './market.js';
 
 // Fallbacks only — the live tables come from the board the room is on, since
 // boards differ (Worldwide has a third utility).

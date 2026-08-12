@@ -1,3 +1,7 @@
 node_modules
 .env
 *.log
+
+# Room snapshots — the live one, and the throwaway ones the suites boot against.
+.state
+test/state-*

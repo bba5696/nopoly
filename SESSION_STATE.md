@@ -41,8 +41,8 @@ config to get wrong.
 - **Live update** — a client polls `/version` and reloads itself after a deploy.
 - **Persistence** — rooms survive a server restart.
 - **Audio** — full sound set including sounds for what *other* people do, plus
-  an optional background pad. Bench at `/sounds.html`.
-- **Payment flash** — rent and tax shown large on the board as they happen.
+  an optional background pad. Bench at `/sounds.html`. Money changing hands is
+  audible to the two people involved only.
 - **Mobile** — the turn's controls live in a bar under the board below `xl`.
 
 ### Deploying
@@ -165,56 +165,54 @@ window at boot, or the restart itself would kick someone out.
 
 ## 3. Active bugs, blockers and untested paths
 
-### ⚠️ BLOCKER — the test suite lives in a temp directory that will be lost
+### The tests (rescued — this was the blocker)
 
-Roughly **500 assertions** across 19 suites are in a session-scoped scratchpad:
+**21 suites, ~490 assertions**, now in `server/test/` and run with:
 
+```bash
+cd server && npm test          # everything
+npm test idle                  # only suites whose name contains "idle"
 ```
-C:\Users\Adel\AppData\Local\Temp\claude\C--Users-Adel-Desktop-nopoly\
-  93d139ce-88b9-4403-9a71-f4ca71b00d93\scratchpad\
-```
 
-Engine suites (`node <file>`, no server needed): `payment` 21, `idle` 31,
-`spectate` 39, `build` 26, `teams` 51, `vote` 57, `abandon` 34, `profile` 44,
-`leave` 26, `jail-persist` 27, `tax` 19, `presence` 22, `redeploy` 22,
-`lopsided.mjs` 20.
+`test/run.js` sorts out what each kind needs: engine suites run bare, the eight
+socket suites share one server it boots on **:3001** (with `NOPOLY_AWAY_MS` and
+`NOPOLY_IDLE_MS` shortened to 3s so `presence` and `idlewire` don't sit out real
+windows), and `redeploy` runs last because it drives its own processes.
 
-Socket suites (need a server on **:3001**): `votewire` 8, `leavewire` 6,
-`abandonwire` 9, `spectatewire` 16, `idlewire` 10.
+`test/fixture.js` writes staged rooms as a snapshot the server restores at boot
+— the documented way to set up a mid-game position, since rolling for one is a
+coin flip dressed up as a test.
 
-**They are not in the repo and the next session will not know where they are.**
-Nothing else guards the engine. Moving them into `server/test/` with an npm
-script should be the first thing anyone does.
-
-Two need environment overrides to run quickly:
-`NOPOLY_AWAY_MS=3000` (presence), `NOPOLY_IDLE_MS=3000` (idlewire).
+`socket.io-client` is now a **devDependency of the server**; the suites used to
+reach into `client/node_modules` by absolute path.
 
 ### Known open issues
 
-1. **Two pre-existing lint errors**, present all session and never addressed:
-   `client/src/components/board/TileIcon.jsx:147` and
-   `client/src/components/ui/button.jsx:57`, both
-   `react-refresh/only-export-components`. Fix by moving the non-component
-   export into its own file. Every "lint is clean" claim in this session means
-   "clean apart from these two".
-
-2. **Mobile side-tile names are unreadable.** Rotated inside a ~25px slot.
+1. **Mobile side-tile names are unreadable.** Rotated inside a ~25px slot.
    Fixing it properly means dropping names on the left and right rows and
    leaning on the colour bar and flag — a real design change, deliberately not
    made unilaterally.
 
-3. **The SIGTERM save path has never been executed.** Node on Windows
+2. **The SIGTERM save path has never been executed.** Node on Windows
    terminates on SIGTERM *without running exit handlers*, so it cannot be tested
    locally. `redeploy.test.js` covers the same `persist.save()` via the 15s
    autosave instead. The graceful-shutdown branch itself is unverified.
 
-4. **Persistence has never been round-tripped on the VM.** First boot printed
+3. **Persistence has never been round-tripped on the VM.** First boot printed
    `State: no rooms to resume`, which is correct but proves only the empty case.
    Nobody has confirmed `State: resumed N room(s)` in production.
 
-5. **An auto-declined purchase that opens an auction costs another full 60s.**
+4. **An auto-declined purchase that opens an auction costs another full 60s.**
    The turn can't end until the auction resolves, so the clock re-arms and fires
    again. Correct, but slow. Documented in `idle.test.js`.
+
+5. **An idle turn that rolls doubles costs another full 60s**, for the same
+   shape of reason: `endTurn` re-arms for the extra roll instead of advancing,
+   so `expireIdle` hands the away player another clock rather than playing the
+   whole turn as it intends to. Found by `idle.test.js`, which was failing one
+   run in six on it until the dice were pinned. Looping `expireIdle` until the
+   turn actually ends would fix it — it terminates, since three doubles is jail
+   — but that is a behaviour change and hasn't been made.
 
 6. **Background music is unjudged by ear over time.** The user approved the
    sound effects ("i think the sounds are set"). Nobody has listened to the pad
@@ -227,19 +225,16 @@ Two need environment overrides to run quickly:
 
 ### First, in order
 
-1. **Deploy `b1692c2`.** It touches `server/`, so it needs the restart:
+1. **Deploy.** Touches `server/`, so it needs the restart:
    ```bash
    git pull && npm --prefix client run build && sudo systemctl restart nopoly
    ```
-2. **Rescue the tests.** Copy the scratchpad suites into `server/test/`, add
-   `"test": "node --test"` or a small runner to `package.json`, and commit. This
-   is the single highest-value thing available and it is currently one temp
-   sweep away from being lost.
-3. **Play a real game with friends** and watch two things specifically:
-   - Does the 60s turn clock ever fire on someone who *is* paying attention?
-     If so, the activity ping is missing an interaction type.
-   - Is the payment flash satisfying, or is it in the way? It sits at `top-26%`
-     of the board for 1.7s (`client/src/components/board/PaymentFlash.jsx`).
+   Worth watching the first deploy after this one: the live-update reload was
+   broken and is now fixed, so open tabs should refresh themselves for the first
+   time in a while.
+2. **Play a real game with friends** and watch one thing specifically: does the
+   60s turn clock ever fire on someone who *is* paying attention? If so, the
+   activity ping is missing an interaction type.
 
 ### Then — the open product question
 
@@ -249,7 +244,7 @@ The user was asked which QoL features to build next and answered:
 |---|---|
 | Emote reactions | **No** — "we just use Discord" |
 | Turn clock | **Done** (`b1692c2`) |
-| Make rent land | **Done** (`b1692c2`) |
+| Make rent land | **Reverted** — the payment flash was built, then removed on sight. The sounds for money moving stayed. |
 | Mortgaging | **No** — declined on religious grounds (riba). Do not re-propose. |
 | Season leaderboard | **Undecided** — "might be good but not sure" |
 
