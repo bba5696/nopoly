@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { alpha, initials } from '@/lib/color';
-import { saveIdentity } from '@/lib/socket';
+import { loadIdentity, loadMeta, saveIdentity } from '@/lib/socket';
 
 /**
  * Your initials and your colour.
@@ -17,28 +17,48 @@ import { saveIdentity } from '@/lib/socket';
 // Mounted only while open, so the draft is seeded once from what the server
 // says and never has to be resynced — a live `me` would otherwise reset the
 // field under the cursor on every broadcast.
-export function ProfileModal({ onClose }) {
+export function ProfileModal({ onClose, fallbackName }) {
     const { state, playerId, send } = useGame();
-    const me = state?.players.find((p) => p.id === playerId) || null;
-    const palette = state?.playerColors || [];
-    const locked = !!state && state.phase !== 'waiting';
-    const teamColours = !!state?.settings?.teams;
+    const seated = state?.players.find((p) => p.id === playerId) || null;
+    // Off the home screen there's no room to read from, so what the browser
+    // remembers stands in — it's what a join would send anyway.
+    const stored = loadIdentity();
+    const me = seated || {
+        name: fallbackName || stored.name || 'player',
+        initials: stored.initials || null,
+        baseColor: stored.color || null,
+        color: stored.color || null,
+    };
+    const locked = !!seated && state.phase !== 'waiting';
+    const teamColours = !!seated && !!state?.settings?.teams;
 
-    const [letters, setLetters] = useState(() => me?.initials || '');
-    const [colour, setColour] = useState(() => me?.baseColor || null);
-
-    if (!me) return null;
+    const [letters, setLetters] = useState(() => me.initials || '');
+    const [colour, setColour] = useState(() => me.baseColor || null);
+    // In a room the palette rides along with the state; before that it's
+    // fetched, so the picker and the server's validation stay one list.
+    const [fetched, setFetched] = useState(null);
+    useEffect(() => {
+        if (state?.playerColors) return;
+        let live = true;
+        loadMeta().then((meta) => live && setFetched(meta.playerColors || []));
+        return () => (live = false);
+    }, [state?.playerColors]);
+    const palette = state?.playerColors || fetched || [];
 
     const shown = letters || initials(me.name);
-    const preview = colour || me.color;
+    // Nothing picked yet and no seat to take one from — the swatches are the
+    // only colour on screen until they choose.
+    const preview = colour || me.color || palette[0] || '#7c5cff';
+    // Nobody to clash with until you're in a room together.
+    const others = seated ? state.players.filter((p) => p.id !== playerId) : [];
 
     const save = () => {
         const patch = { initials: letters };
         if (!locked && !teamColours && colour) patch.color = colour;
-        send('room:profile', patch);
-        // Kept locally too, so it comes with you into the next room rather than
-        // having to be set up again every game.
+        // Saved locally either way, so it comes with you into the next room
+        // rather than having to be set up again every game.
         saveIdentity({ initials: letters || null, color: patch.color ?? null });
+        if (seated) send('room:profile', patch);
         onClose();
     };
 
@@ -85,9 +105,7 @@ export function ProfileModal({ onClose }) {
                                     // Who else is already on it, so picking a
                                     // shared colour is a choice rather than a
                                     // surprise when the shades move.
-                                    const sharers = state.players.filter(
-                                        (p) => p.id !== playerId && p.baseColor === c,
-                                    );
+                                    const sharers = others.filter((p) => p.baseColor === c);
                                     return (
                                         <button
                                             key={c}

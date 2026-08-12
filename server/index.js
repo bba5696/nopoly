@@ -98,6 +98,14 @@ app.get('/auth/required', (req, res) => {
     res.json({ required: auth.enabled() });
 });
 
+// Everything the client needs before it has a room to get it from — which right
+// now is the colour palette, for the profile editor on the home screen. Served
+// rather than duplicated in the client, so the list the picker draws and the
+// list the server validates against can't drift apart.
+app.get('/meta', (req, res) => {
+    res.json({ playerColors: engine.PLAYER_COLORS });
+});
+
 app.post('/auth/login', (req, res) => {
     if (!auth.enabled()) return res.json({ token: 'open' });
 

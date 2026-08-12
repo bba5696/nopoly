@@ -1,17 +1,22 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { Pencil } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { BuildTag } from '@/components/ui/build-tag';
 import { PresencePill } from '@/components/ui/presence';
+import { ProfileModal } from '@/components/modals/ProfileModal';
 import { loadIdentity } from '@/lib/socket';
-import { initials } from '@/lib/color';
+import { alpha, initials } from '@/lib/color';
 
 export function Home() {
     const { createRoom, joinRoom, joining, connected } = useGame();
-    const saved = loadIdentity();
+    // Re-read when the editor closes rather than held as a snapshot, or the
+    // preview keeps showing what you had before you changed it.
+    const [saved, setSaved] = useState(() => loadIdentity());
     const [name, setName] = useState(saved.name || '');
     const [code, setCode] = useState('');
+    const [profileOpen, setProfileOpen] = useState(false);
 
     const trimmed = name.trim();
     const ready = trimmed.length > 0 && connected && !joining;
@@ -34,14 +39,30 @@ export function Home() {
                 <div className="flex flex-col gap-3">
                     <span className="label">Your name</span>
                     <div className="flex items-center gap-3">
-                        <div
-                            className="mono flex size-13 shrink-0 items-center justify-center rounded-full border border-white/10 bg-primary/15 text-sm font-semibold text-primary"
-                            style={{ width: 52, height: 52 }}
+                        {/* Doubles as the way into the profile — the thing it
+                            previews is the thing it edits, so there's nowhere
+                            else the control would belong. */}
+                        <button
+                            type="button"
+                            title="Change your initials and colour"
+                            onClick={() => setProfileOpen(true)}
+                            className="mono relative flex size-13 shrink-0 items-center justify-center rounded-full border border-white/10 text-sm font-semibold transition-transform hover:scale-105"
+                            style={{
+                                width: 52,
+                                height: 52,
+                                // Your colour once you've picked one; the old
+                                // faint primary tint until then.
+                                background: saved.color
+                                    ? `linear-gradient(160deg, ${saved.color}, ${alpha(saved.color, 0.65)})`
+                                    : 'color-mix(in oklab, var(--primary) 15%, transparent)',
+                                color: saved.color ? '#fff' : 'var(--primary)',
+                            }}
                         >
                             {/* Whatever you last set, so the preview matches
                                 what the table will actually see. */}
                             {saved.initials || (trimmed ? initials(trimmed) : '··')}
-                        </div>
+                            <Pencil className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-background p-0.5 text-muted-foreground" />
+                        </button>
                         <input
                             value={name}
                             onChange={(e) => setName(e.target.value.slice(0, 16))}
@@ -83,6 +104,15 @@ export function Home() {
                     <BuildTag />
                 </div>
             </motion.div>
+            {profileOpen && (
+                <ProfileModal
+                    fallbackName={trimmed}
+                    onClose={() => {
+                        setProfileOpen(false);
+                        setSaved(loadIdentity());
+                    }}
+                />
+            )}
         </div>
     );
 }

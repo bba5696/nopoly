@@ -35,6 +35,19 @@ export async function authRequired() {
     }
 }
 
+/**
+ * The colour palette, for the profile editor on the home screen where there's
+ * no room state to read it from. Fetched once and shared — the list never
+ * changes while the page is open.
+ */
+let metaPromise = null;
+export function loadMeta() {
+    metaPromise ??= fetch(`${SERVER_URL}/meta`)
+        .then((r) => r.json())
+        .catch(() => ({ playerColors: [] }));
+    return metaPromise;
+}
+
 export async function login(password) {
     const res = await fetch(`${SERVER_URL}/auth/login`, {
         method: 'POST',
