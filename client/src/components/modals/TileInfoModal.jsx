@@ -40,7 +40,7 @@ function RentRows({ state, tile, color }) {
 }
 
 export function TileInfoModal({ tile, onClose }) {
-    const { state, me, board, send } = useGame();
+    const { state, me, board, isMyTurn, send } = useGame();
     if (!tile) return null;
 
     const owner = state.players.find((p) => p.id === tile.ownerId);
@@ -51,7 +51,9 @@ export function TileInfoModal({ tile, onClose }) {
     const mine = !!me && tile.ownerId === me.id;
     const ours = !!me && sameSide(state, tile.ownerId, me.id);
     const buildable = tile.type === 'property';
-    const upgradeOk = ours && canBuild(state, me, tile);
+    // Turn-gated, matching the server — an Upgrade button that only ever
+    // returns an error is worse than no button.
+    const upgradeOk = ours && isMyTurn && canBuild(state, me, tile);
     const downgradeOk = mine && canSell(state, me, tile);
     const sellOk = mine && tile.houses === 0;
     const priced = tile.price > 0;
@@ -111,8 +113,12 @@ export function TileInfoModal({ tile, onClose }) {
                             )}
                         </div>
 
-                        {/* only the moves actually available right now show up */}
-                        {mine && (upgradeOk || downgradeOk || sellOk) && (
+                        {/* Only the moves actually available right now show up.
+                            Not gated on owning the deed: each flag already
+                            carries its own rule, and wrapping them in one that
+                            demands the deed is what hid Upgrade on a
+                            teammate's property — the case teams exist for. */}
+                        {(upgradeOk || downgradeOk || sellOk) && (
                             <div className="flex gap-2">
                                 {upgradeOk && (
                                     <Button

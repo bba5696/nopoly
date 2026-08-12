@@ -1279,6 +1279,13 @@ function buildHouse(room, playerId, tileId) {
     const tile = room.tiles[tileId];
     if (!player || !tile) return { error: 'Unknown tile' };
     if (room.paused) return { error: 'Game is paused' };
+    // Your own turn only. Nothing enforced this before, so a set could be built
+    // up in the middle of someone else's roll — including in the seconds
+    // between them landing on it and the rent being worked out.
+    //
+    // Selling is deliberately not gated the same way: rent lands on you during
+    // other people's turns, and clearing a debt has to be possible when it does.
+    if (!isCurrent(room, playerId)) return { error: 'You can only build on your own turn' };
     if (player.debt) return { error: DEBT_BLOCKED };
     if (!canBuild(room, player, tile)) return { error: 'Cannot build there' };
     player.cash -= tile.houseCost;
