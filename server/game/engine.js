@@ -80,6 +80,13 @@ const MIN_VOTERS = 3;
  * would veto every vote.
  */
 const VOTE_CAP = 4;
+/**
+ * How long someone who has dropped out gets to come back before a kick called
+ * on them goes through on its own. Generous on purpose — a phone changing
+ * networks, a laptop closing its lid or a router restarting all cost a couple
+ * of minutes, and none of them should cost you the game.
+ */
+const ABANDON_MS = 5 * 60_000;
 
 /* ------------------------------------------------------------------ rooms */
 
@@ -333,6 +340,8 @@ function addPlayer(room, { name, playerId }) {
         existing.connected = true;
         existing.disconnectedAt = null;
         if (name && name !== existing.name) existing.name = name;
+        // Beating a countdown called on you is the whole way out of it.
+        cancelAbandon(room, existing.id);
         return { player: existing, rejoined: true };
     }
     if (room.phase !== 'waiting') return { error: 'Game already in progress' };
@@ -670,6 +679,9 @@ function goBankrupt(room, player) {
     }
     log(room, `${player.name} went bankrupt — ${estate.length} properties returned to the bank`);
     dropTradesFor(room, player.id);
+    // Nothing left to decide about someone already out — and a countdown left
+    // pointing at them would block every other vote for five minutes.
+    dropVoteFor(room, player.id);
     // One fewer voter changes what a majority is, and can settle a running
     // vote outright. Safe from recursion: finishVote clears room.vote before
     // it ever gets here.
@@ -1397,7 +1409,17 @@ function startVoteKick(room, byId, targetId) {
     if (by.bankrupt) return { error: 'You are out of the game' };
     if (target.bankrupt) return { error: `${target.name} is already out` };
 
-    if (voters(room, targetId).length + 1 < MIN_VOTERS) {
+    // Someone who isn't connected can't put their case, and there's nothing for
+    // the table to weigh — either they come back or they don't. So the ballot is
+    // replaced by a clock, and the only vote that counts is theirs: reconnect
+    // and it's dropped.
+    //
+    // The three-player floor doesn't apply to that. It exists so a kick can't be
+    // one player's decision, and a countdown isn't one — it's the absence that
+    // decides. It's also the only way out of a two-player game whose other half
+    // has gone for good.
+    const abandoned = !target.connected;
+    if (!abandoned && voters(room, targetId).length + 1 < MIN_VOTERS) {
         return { error: `Needs at least ${MIN_VOTERS} players in the game` };
     }
     const until = room.voteCooldown?.[targetId] || 0;
@@ -1408,18 +1430,59 @@ function startVoteKick(room, byId, targetId) {
     room.vote = {
         targetId,
         byId,
-        yes: [byId], // calling the vote is a vote
+        mode: abandoned ? 'abandon' : 'ballot',
+        yes: abandoned ? [] : [byId], // calling the vote is a vote
         no: [],
-        needed: votesNeeded(room, targetId),
-        endsAt: Date.now() + VOTE_MS,
+        needed: abandoned ? 0 : votesNeeded(room, targetId),
+        // Both ends of the window, so the client can draw how far through it is
+        // without having to know how long either kind runs for.
+        startedAt: Date.now(),
+        endsAt: Date.now() + (abandoned ? ABANDON_MS : VOTE_MS),
     };
-    log(room, `${by.name} started a vote to kick ${target.name}`);
+    log(
+        room,
+        abandoned
+            ? `${by.name} started a countdown on ${target.name}, who has dropped out`
+            : `${by.name} started a vote to kick ${target.name}`,
+    );
     return resolveVoteIfDecided(room) || {};
+}
+
+/** A vote on someone no longer in play has nothing left to decide. */
+function dropVoteFor(room, playerId) {
+    if (room.vote?.targetId !== playerId) return false;
+    room.vote = null;
+    return true;
+}
+
+/**
+ * They came back. Nothing to decide any more, and no cooldown either — if the
+ * table still wants them gone, that's now an ordinary vote they can answer.
+ */
+function cancelAbandon(room, playerId) {
+    const vote = room.vote;
+    if (!vote || vote.mode !== 'abandon' || vote.targetId !== playerId) return false;
+    room.vote = null;
+    const target = findPlayer(room, playerId);
+    log(room, `${target ? target.name : 'They'} made it back — the countdown was dropped`);
+    return true;
+}
+
+/**
+ * A restore hands every player back disconnected, so an inherited countdown
+ * would run out before anyone had a chance to reconnect. Give it back its full
+ * length from the moment the server is up.
+ */
+function refreshAbandonDeadline(room) {
+    if (room.vote?.mode !== 'abandon') return;
+    room.vote.startedAt = Date.now();
+    room.vote.endsAt = Date.now() + ABANDON_MS;
 }
 
 function castVote(room, playerId, agree) {
     const vote = room.vote;
     if (!vote) return { error: 'No vote running' };
+    if (vote.mode === 'abandon') return { error: 'Nothing to vote on — they have to reconnect' };
     if (playerId === vote.targetId) return { error: 'You cannot vote on your own removal' };
     const player = findPlayer(room, playerId);
     if (!player || player.bankrupt) return { error: 'You are out of the game' };
@@ -1436,6 +1499,9 @@ function castVote(room, playerId, agree) {
 function resolveVoteIfDecided(room) {
     const vote = room.vote;
     if (!vote) return null;
+    // A countdown has no tally to settle — it ends when the clock does, or the
+    // moment they reconnect.
+    if (vote.mode === 'abandon') return null;
     // Recounted every time: someone may have gone bankrupt mid-vote, which
     // changes how many people are left to agree.
     const eligible = voters(room, vote.targetId).length;
@@ -1451,8 +1517,15 @@ function resolveVoteIfDecided(room) {
 
 /** Called by the room's vote timer when the clock runs out. */
 function expireVote(room) {
-    if (!room.vote) return { error: 'No vote running' };
-    return finishVote(room, room.vote.yes.length >= room.vote.needed);
+    const vote = room.vote;
+    if (!vote) return { error: 'No vote running' };
+    if (vote.mode === 'abandon') {
+        // Checked here rather than trusted from when the clock started: they
+        // may have slipped back in on the last second.
+        const target = findPlayer(room, vote.targetId);
+        return finishVote(room, !!target && !target.connected);
+    }
+    return finishVote(room, vote.yes.length >= vote.needed);
 }
 
 function finishVote(room, passed) {
@@ -1462,16 +1535,28 @@ function finishVote(room, passed) {
     const target = findPlayer(room, vote.targetId);
     if (!target) return {};
 
+    const abandoned = vote.mode === 'abandon';
+
     if (!passed) {
         room.voteCooldown[vote.targetId] = Date.now() + VOTE_COOLDOWN_MS;
-        log(room, `The vote to kick ${target.name} failed (${vote.yes.length}/${vote.needed})`);
+        log(
+            room,
+            abandoned
+                ? `${target.name} came back in time`
+                : `The vote to kick ${target.name} failed (${vote.yes.length}/${vote.needed})`,
+        );
         return {};
     }
 
     // Banned, not merely removed — otherwise they reconnect two seconds later
     // and the vote meant nothing.
     if (!room.banned.includes(target.id)) room.banned.push(target.id);
-    log(room, `${target.name} was voted out (${vote.yes.length}/${vote.needed})`);
+    log(
+        room,
+        abandoned
+            ? `${target.name} never came back and is out`
+            : `${target.name} was voted out (${vote.yes.length}/${vote.needed})`,
+    );
 
     if (room.phase === 'waiting') {
         removePlayer(room, target.id);
@@ -1546,6 +1631,7 @@ function removePlayer(room, playerId) {
     }
 
     room.players = room.players.filter((p) => p.id !== playerId);
+    dropVoteFor(room, playerId);
     log(room, `${player.name} left`);
     // The room outlives its host — otherwise the rules are frozen for everyone
     // left behind and nobody can start.
@@ -1654,6 +1740,8 @@ module.exports = {
     startVoteKick,
     castVote,
     expireVote,
+    cancelAbandon,
+    refreshAbandonDeadline,
     sameSide,
     teammate,
     startAuction,

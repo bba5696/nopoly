@@ -127,7 +127,14 @@ export function PlayerRail({ onSpotlight, pinned, onPin, onVoteKick }) {
     const { state, playerId, current } = useGame();
     const compact = state.players.length > 8;
     const me = state.players.find((p) => p.id === playerId);
-    const canVote = !!onVoteKick && !me?.bankrupt && state.players.filter((p) => !p.bankrupt).length >= 3;
+    // Three players for a ballot — below that a kick would be one person's
+    // decision. A countdown on someone who has already dropped out isn't one,
+    // so it stays available however few of you are left.
+    const inPlay = state.players.filter((p) => !p.bankrupt);
+    const canVote =
+        !!onVoteKick &&
+        !me?.bankrupt &&
+        (inPlay.length >= 3 || inPlay.some((p) => p.id !== playerId && !p.connected));
 
     // With teams on, players are already seated in interleaved order — which is
     // exactly what you don't want in a roster. Group them back up by team here;

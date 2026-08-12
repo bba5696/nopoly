@@ -437,6 +437,9 @@ function joinRoom(socket, room, { name, playerId }, cb) {
         state: engine.publicState(room),
     });
     broadcast(room);
+    // Reconnecting can have just called off a countdown, so its timer has to go
+    // with it.
+    scheduleVote(room);
     pushPresence();
 }
 
@@ -460,6 +463,10 @@ function restoreRooms() {
             p.activity = null;
         }
         rooms.set(room.roomCode, room);
+        // Everyone above was just marked disconnected, which is exactly what an
+        // abandonment countdown is watching for — so give it its full length
+        // back before arming it, or the restart itself kicks someone out.
+        engine.refreshAbandonDeadline(room);
         // endsAt is absolute on both, so anything that expired during the
         // restart resolves immediately rather than hanging forever.
         scheduleAuction(room);
