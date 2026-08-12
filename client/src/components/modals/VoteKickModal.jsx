@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, Gavel, X } from 'lucide-react';
+
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
@@ -63,34 +64,37 @@ export function VoteKickPicker({ open, onClose }) {
     );
 }
 
-/**
- * The running vote. Not dismissable for anyone who still has a say — a vote you
- * can click away is a vote that never resolves until the clock runs out. The
- * person on trial gets to watch, because finding out only when it lands is
- * worse.
- */
-export function VoteKickModal() {
-    const { state, playerId, send } = useGame();
+/** Your standing in the running vote, which decides what you're shown. */
+function useVoteRole() {
+    const { state, playerId } = useGame();
     const vote = state.vote;
-    const left = useCountdown(vote?.endsAt ?? 0);
     if (!vote) return null;
-
     const target = state.players.find((p) => p.id === vote.targetId);
-    const me = state.players.find((p) => p.id === playerId);
     if (!target) return null;
-
+    const me = state.players.find((p) => p.id === playerId);
     const isTarget = playerId === vote.targetId;
     const voted = vote.yes.includes(playerId) || vote.no.includes(playerId);
-    const canVote = !isTarget && !voted && !!me && !me.bankrupt;
+    return { vote, target, isTarget, voted, canVote: !isTarget && !voted && !!me && !me.bankrupt };
+}
+
+/**
+ * The ballot. Only ever shown to someone who still has a decision to make, and
+ * it closes the instant they've made it.
+ *
+ * It blocks the board on purpose while it's up — a vote you can click away is a
+ * vote that hangs until the clock runs out. But once you've voted there's
+ * nothing left to decide, so keeping it up is pure obstruction; the tally moves
+ * to the header instead and the game carries on.
+ */
+export function VoteKickModal() {
+    const { send } = useGame();
+    const role = useVoteRole();
+    const left = useCountdown(role?.vote.endsAt ?? 0);
+    if (!role?.canVote) return null;
+    const { vote, target } = role;
 
     return (
-        <Modal
-            open
-            dismissable={false}
-            subtitle={isTarget ? 'The table is voting' : 'Vote to remove'}
-            title={isTarget ? 'You are being voted out' : `Kick ${target.name}?`}
-            width={420}
-        >
+        <Modal open dismissable={false} subtitle="Vote to remove" title={`Kick ${target.name}?`} width={420}>
             <div className="flex flex-col gap-5 p-5">
                 <div className="flex items-center justify-between">
                     <span className="mono text-[15px]">
@@ -100,35 +104,54 @@ export function VoteKickModal() {
                     <span className="mono text-[13px] text-muted-foreground">{left}s</span>
                 </div>
 
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                    <div
-                        className="h-full rounded-full transition-[width] duration-300"
-                        style={{
-                            width: `${Math.min(100, (vote.yes.length / Math.max(vote.needed, 1)) * 100)}%`,
-                            background: '#ff5c7c',
-                        }}
-                    />
+                <div className="flex gap-2">
+                    <Button variant="destructive" className="h-11 flex-1" onClick={() => send('vote:cast', { agree: true })}>
+                        <Check /> Kick
+                    </Button>
+                    <Button variant="outline" className="h-11 flex-1" onClick={() => send('vote:cast', { agree: false })}>
+                        <X /> Keep
+                    </Button>
                 </div>
-
-                {canVote ? (
-                    <div className="flex gap-2">
-                        <Button variant="destructive" className="h-11 flex-1" onClick={() => send('vote:cast', { agree: true })}>
-                            <Check /> Kick
-                        </Button>
-                        <Button variant="outline" className="h-11 flex-1" onClick={() => send('vote:cast', { agree: false })}>
-                            <X /> Keep
-                        </Button>
-                    </div>
-                ) : (
-                    <span className="text-center text-[13px] text-muted-foreground">
-                        {isTarget
-                            ? 'You cannot vote on your own removal.'
-                            : voted
-                              ? 'Vote cast — waiting on the others.'
-                              : "You're out of the game, so you don't get a vote."}
-                    </span>
-                )}
             </div>
         </Modal>
+    );
+}
+
+/**
+ * The tally, once you have nothing left to do about it — you've voted, you're
+ * the one on trial, or you're out and don't get a say. Lives in the header
+ * beside the room code so the board stays clear and playable.
+ */
+export function VoteStatusChip() {
+    const role = useVoteRole();
+    const left = useCountdown(role?.vote.endsAt ?? 0);
+    if (!role || role.canVote) return null;
+    const { vote, target, isTarget } = role;
+    const pct = Math.min(100, (vote.yes.length / Math.max(vote.needed, 1)) * 100);
+
+    return (
+        <span
+            className="relative flex items-center gap-2 overflow-hidden rounded-md border px-2.5 py-1.5"
+            style={{ borderColor: 'rgba(255,92,124,.4)', background: 'rgba(255,92,124,.08)' }}
+            title={isTarget ? 'The table is voting on you' : `Vote to kick ${target.name}`}
+        >
+            {/* Fills toward the threshold, so the state is readable without
+                stopping to parse the numbers. */}
+            <span
+                className="absolute inset-y-0 left-0 transition-[width] duration-300"
+                style={{ width: `${pct}%`, background: 'rgba(255,92,124,.18)' }}
+            />
+            <Gavel className="relative size-3.5 shrink-0 text-[#ff9db2]" />
+            {/* The name is the first thing to go on a phone — the header is
+                already carrying the room code and the bankrupt button, and the
+                tally is what you're actually watching. */}
+            <span className="mono relative hidden max-w-[7em] truncate text-[12px] text-[#ff9db2] sm:inline">
+                {isTarget ? 'you' : target.name}
+            </span>
+            <span className="mono relative text-[12px] text-[#ff9db2]">
+                {vote.yes.length}/{vote.needed}
+            </span>
+            <span className="mono relative text-[11px] text-muted-foreground">{left}s</span>
+        </span>
     );
 }

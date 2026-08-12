@@ -26,7 +26,7 @@ import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { AuctionModal } from '@/components/modals/AuctionModal';
 import { BailoutModal } from '@/components/modals/BailoutModal';
-import { VoteKickModal, VoteKickPicker } from '@/components/modals/VoteKickModal';
+import { VoteKickModal, VoteKickPicker, VoteStatusChip } from '@/components/modals/VoteKickModal';
 import { Button } from '@/components/ui/button';
 
 // Narrow screens can't fit the three-column layout, so the rails collapse into
@@ -126,6 +126,9 @@ export function Game() {
                             <WifiOff className="size-3" /> reconnecting
                         </span>
                     )}
+                    {/* Where a running vote goes once you've had your say —
+                        visible without standing on top of the board. */}
+                    <VoteStatusChip />
                     <span className="mono rounded-md border border-dashed border-white/15 px-3 py-1.5 text-[12px] tracking-[0.2em]">
                         {state.roomCode}
                     </span>
