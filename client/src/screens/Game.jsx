@@ -6,17 +6,19 @@ import {
     MessageSquare,
     TrendingDown,
     Users,
+    Music,
     Volume2,
     VolumeX,
     Wallet,
     WifiOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { isMuted, playStart, playTrade, playTurn, setMuted, unlock } from '@/lib/sound';
+import { isMuted, isMusicOn, playStart, playTrade, playTurn, setMuted, setMusicOn, stopMusic, unlock } from '@/lib/sound';
 import { Modal } from '@/components/ui/modal';
 import { useGame } from '@/lib/game-context';
 import { loadIdentity } from '@/lib/socket';
 import { useTokenPositions } from '@/lib/use-token-positions';
+import { useTableSounds } from '@/lib/use-table-sounds';
 import { Board } from '@/components/board/Board';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
 import { useTurn } from '@/lib/use-turn';
@@ -50,8 +52,11 @@ export function Game() {
     const [confirmBankrupt, setConfirmBankrupt] = useState(false);
     // Mirrors the stored setting so the icon re-renders when it's toggled.
     const [quiet, setQuiet] = useState(isMuted);
+    const [music, setMusic] = useState(isMusicOn);
     const { display, moving } = useTokenPositions(state.players, state.tiles.length, state.lastMove);
     const turn = useTurn(moving);
+    // What everyone else is doing, made audible — see use-table-sounds.
+    useTableSounds(state, playerId);
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
@@ -118,10 +123,20 @@ export function Game() {
     // turn ping fires from a state change rather than a gesture — so the very
     // first interaction, whatever it is, opens the audio context.
     useEffect(() => {
-        const once = () => unlock();
+        const once = () => {
+            unlock();
+            // The bed can only start behind a gesture too, so it waits for the
+            // same one rather than trying and failing on mount.
+            if (isMusicOn() && !isMuted()) setMusicOn(true);
+        };
         window.addEventListener('pointerdown', once, { once: true });
         return () => window.removeEventListener('pointerdown', once);
     }, []);
+
+    // Silence on the way out, without forgetting they wanted it — `setMusicOn`
+    // would write the preference off and they'd have to find the button again
+    // next game.
+    useEffect(() => () => stopMusic(), []);
 
     return (
         <div className="flex h-svh flex-col overflow-hidden">
@@ -144,6 +159,24 @@ export function Game() {
                     <span className="mono hidden rounded-md border border-white/10 px-3 py-1.5 text-[12px] text-muted-foreground sm:inline-block">
                         turn {state.stats.turnCount + 1}
                     </span>
+                    {/* Separate from mute on purpose: wanting the table to
+                        make noise and wanting a soundtrack are different
+                        wants, and the second one is the one people switch off
+                        after ten minutes. */}
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        className={cn('h-8 px-2', music && !quiet ? 'text-[#a68cff]' : 'text-muted-foreground')}
+                        title={music ? 'Background music on' : 'Background music off'}
+                        disabled={quiet}
+                        onClick={() => {
+                            const next = !music;
+                            setMusic(next);
+                            setMusicOn(next);
+                        }}
+                    >
+                        <Music />
+                    </Button>
                     <Button
                         size="sm"
                         variant="ghost"

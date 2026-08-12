@@ -27,6 +27,10 @@ export function setMuted(next) {
     } catch {
         // private mode — the setting just won't survive a reload
     }
+    // Mute is the master: it silences the bed too, and unmuting brings it back
+    // only if it was wanted in the first place.
+    if (next) stopMusic();
+    else if (musicOn) startMusic();
 }
 
 function audio() {
@@ -118,6 +122,108 @@ function playNoise(bursts) {
     for (const [offset, duration, opts] of bursts) noise(t0 + offset, duration, opts);
 }
 
+/* ---------------------------------------------------------------- music */
+
+/**
+ * A background bed for the long waits between your turns.
+ *
+ * Synthesised like everything else here, which rules out anything with a tune —
+ * a melody you can hum is a melody you'll hate on the fortieth loop, and a
+ * game runs for an hour. So it's four slow chords on a soft triangle pad, each
+ * held for eight seconds, drifting through a progression that doesn't resolve.
+ * It's meant to be noticed once and then not again.
+ *
+ * Off by default. Background music is the most personal setting in any game,
+ * and starting it unasked in a room where someone is on a call is worse than
+ * not having it.
+ */
+const MUSIC_KEY = 'nopoly:music';
+/** Root notes of the progression, in Hz — Am, F, C, G, low and wide apart. */
+const CHORDS = [
+    [220.0, 261.63, 329.63],
+    [174.61, 220.0, 261.63],
+    [196.0, 261.63, 329.63],
+    [196.0, 246.94, 293.66],
+];
+const CHORD_SECONDS = 8;
+
+let musicOn = (() => {
+    try {
+        return localStorage.getItem(MUSIC_KEY) === '1';
+    } catch {
+        return false;
+    }
+})();
+let musicTimer = null;
+let musicGain = null;
+let chordAt = 0;
+
+export const isMusicOn = () => musicOn;
+
+/** Schedule the next chord a little ahead of when it's needed. */
+function scheduleChord() {
+    const c = audio();
+    if (!c || !musicGain) return;
+    const chord = CHORDS[chordAt % CHORDS.length];
+    chordAt += 1;
+    const at = c.currentTime + 0.1;
+    for (const freq of chord) {
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        // Long fades both ways, so chords bleed into each other rather than
+        // arriving — the seam is what would make a loop audible as a loop.
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.055, at + CHORD_SECONDS * 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + CHORD_SECONDS * 1.05);
+        osc.connect(gain).connect(musicGain);
+        osc.start(at);
+        osc.stop(at + CHORD_SECONDS * 1.1);
+    }
+}
+
+export function startMusic() {
+    const c = audio();
+    if (!c || musicTimer) return;
+    if (!musicGain) {
+        musicGain = c.createGain();
+        // Under everything else by a wide margin: this is a floor, not a layer
+        // you're meant to listen to.
+        musicGain.gain.value = 0.5;
+        musicGain.connect(c.destination);
+    }
+    scheduleChord();
+    musicTimer = setInterval(scheduleChord, CHORD_SECONDS * 1000);
+}
+
+export function stopMusic() {
+    clearInterval(musicTimer);
+    musicTimer = null;
+    if (musicGain) {
+        // Faded rather than cut, or the pad stops mid-swell with a thud.
+        const c = audio();
+        if (c) {
+            musicGain.gain.setValueAtTime(musicGain.gain.value, c.currentTime);
+            musicGain.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 1.2);
+        }
+        const dying = musicGain;
+        musicGain = null;
+        setTimeout(() => dying.disconnect(), 1600);
+    }
+}
+
+export function setMusicOn(next) {
+    musicOn = next;
+    try {
+        localStorage.setItem(MUSIC_KEY, next ? '1' : '0');
+    } catch {
+        // private mode — the setting just won't survive a reload
+    }
+    if (next && !muted) startMusic();
+    else stopMusic();
+}
+
 /** Your turn: a rising two-note figure, the most attention-getting of the set. */
 export function playTurn() {
     play([
@@ -180,12 +286,69 @@ export function playEndTurn() {
  * Dice: a whoosh with two clacks in it. The sweep up and back down is what
  * makes the noise read as a throw rather than a hiss, and the clacks land late
  * so they sound like the dice settling rather than leaving your hand.
+ *
+ * `distant` is the same throw heard from across the table — someone else's.
+ * It has to be quiet enough to be background and present enough to say the
+ * game is still moving, because waiting for your turn used to be silent.
  */
-export function playRoll() {
+export function playRoll(distant = false) {
+    const k = distant ? 0.42 : 1;
     playNoise([
-        [0, 0.34, { from: 320, to: 1500, peak: 0.075, q: 0.9 }],
-        [0.19, 0.05, { from: 2600, to: 1200, peak: 0.09, q: 1.6 }],
-        [0.27, 0.05, { from: 2200, to: 900, peak: 0.075, q: 1.6 }],
+        [0, 0.34, { from: 320, to: 1500, peak: 0.075 * k, q: 0.9 }],
+        [0.19, 0.05, { from: 2600, to: 1200, peak: 0.09 * k, q: 1.6 }],
+        [0.27, 0.05, { from: 2200, to: 900, peak: 0.075 * k, q: 1.6 }],
     ]);
-    buzz(35);
+    if (!distant) buzz(35);
+}
+
+/** Someone else bought something — the purchase sparkle, held back. */
+export function playRivalBuy() {
+    play([
+        [0, 880, 0.09, 0.045],
+        [0.07, 1174.66, 0.13, 0.04],
+    ]);
+}
+
+/**
+ * A colour set completed — the moment rent doubles and building starts, and
+ * the most consequential thing that happens in a game.
+ *
+ * Two versions, because it means opposite things depending on whose it is. Ana
+ * ascending major arpeggio for yours; the same shape falling, and darker, for
+ * a rival's. Everyone hears one or the other: a set changing hands is news for
+ * the whole table, not just the person it happened to.
+ */
+export function playSet() {
+    play([
+        [0, 523.25, 0.14, 0.12],
+        [0.09, 659.25, 0.14, 0.12],
+        [0.18, 783.99, 0.14, 0.12],
+        [0.27, 1046.5, 0.42, 0.13],
+    ]);
+    buzz([50, 40, 50, 40, 90]);
+}
+
+export function playRivalSet() {
+    play([
+        [0, 622.25, 0.14, 0.075],
+        [0.1, 466.16, 0.16, 0.075],
+        [0.21, 311.13, 0.44, 0.08],
+    ]);
+}
+
+/** Someone went to jail: a flat, unmusical clack. */
+export function playJail() {
+    playNoise([
+        [0, 0.07, { from: 1800, to: 700, peak: 0.075, q: 2.2 }],
+        [0.09, 0.16, { from: 500, to: 180, peak: 0.06, q: 1.4 }],
+    ]);
+}
+
+/** Someone is out. Low and slow — the only sound in the set that sits still. */
+export function playBankrupt() {
+    play([
+        [0, 349.23, 0.2, 0.09],
+        [0.16, 261.63, 0.24, 0.09],
+        [0.34, 174.61, 0.6, 0.1],
+    ]);
 }
