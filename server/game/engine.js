@@ -796,10 +796,10 @@ function charge(room, player, creditor, amount, reason) {
     const who = creditor ? ` to ${creditor.name}` : '';
     log(room, `${player.name} paid $${paid}${who}${reason ? ` — ${reason}` : ''}`);
 
-    // The most consequential thing that happens in the game arrived as a line
-    // in the feed and two balances quietly changing. Broadcast it as an event
-    // so the client can make it land; the sequence number is what lets a
-    // repeat of the same amount between the same two people animate again.
+    // Broadcast as an event rather than left to be inferred from two balances
+    // changing, so the client can sound it for the two people involved. The
+    // sequence number is what lets a repeat of the same amount between the same
+    // two people fire again instead of looking like the state hadn't changed.
     // `|| 0` for rooms restored from a snapshot written before this existed.
     room.paySeq = (room.paySeq || 0) + 1;
     room.lastPayment = {

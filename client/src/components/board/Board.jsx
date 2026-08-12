@@ -6,7 +6,6 @@ import { gridFor } from '@/lib/board-layout';
 import { Tile } from './Tile';
 import { TokenLayer } from './TokenLayer';
 import { BoardCenter } from './BoardCenter';
-import { PaymentFlash } from './PaymentFlash';
 
 const PAD = 10;
 const GAP = 3;
@@ -97,7 +96,6 @@ export function Board({ display, moving, spotlight, onSelectTile }) {
                 ))}
                 <BoardCenter moving={moving} dim={!!spotlight} />
             </div>
-            <PaymentFlash />
             <TokenLayer
                 players={state.players}
                 display={display}

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { playBankrupt, playJail, playRivalBuy, playRivalSet, playRoll, playSet } from './sound';
+import { playBankrupt, playCashIn, playCashOut, playJail, playRivalBuy, playRivalSet, playRoll, playSet } from './sound';
 
 /**
  * Everything the rest of the table does, made audible.
@@ -25,6 +25,7 @@ export function useTableSounds(state, playerId) {
         const now = {
             move: state.lastMove?.seq ?? 0,
             mover: state.lastMove?.playerId ?? null,
+            pay: state.lastPayment?.seq ?? 0,
             owned: state.tiles.filter((t) => t.ownerId).length,
             sets: state.completedGroups || {},
             jailed: state.players.filter((p) => p.inJail).map((p) => p.id),
@@ -37,6 +38,17 @@ export function useTableSounds(state, playerId) {
         // Someone else's dice. Tied to the move sequence rather than the dice
         // values, which repeat and would swallow a roll of the same numbers.
         if (now.move !== was.move && now.mover && now.mover !== playerId) playRoll(true);
+
+        // Money changing hands. Only the two people involved hear it — rent is
+        // a private disaster, and a chime on every table-wide charge would fire
+        // several times a lap for everyone. Sequenced rather than compared by
+        // value, since the same rent to the same rival twice in a lap is common
+        // and would otherwise sound once.
+        const pay = state.lastPayment;
+        if (pay && now.pay !== was.pay && pay.amount > 0) {
+            if (pay.fromId === playerId) playCashOut();
+            else if (pay.toId === playerId) playCashIn();
+        }
 
         // A deed changed hands. Counting owned tiles catches a purchase and an
         // auction alike, and misses a trade — which is right, a trade already
