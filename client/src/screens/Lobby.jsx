@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Percent, Scale, ShieldOff, TrendingUp, Users } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Percent, Scale, ShieldOff, TrendingUp, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -104,6 +104,13 @@ const RULES = [
         hint: 'Houses and hotels must be built up and sold off evenly within a property set',
     },
     {
+        key: 'teams',
+        icon: UsersRound,
+        label: 'Teams',
+        hint: 'Pairs share properties, monopolies and a colour, but keep separate balances. Rent goes to whoever holds the deed, and a teammate can bail you out of a debt you can’t cover',
+        beta: true,
+    },
+    {
         key: 'dynamicValues',
         icon: TrendingUp,
         label: 'Dynamic property values',
@@ -121,6 +128,46 @@ const RULES = [
 
 const CORE_RULES = RULES.filter((r) => !r.beta);
 const BETA_RULES = RULES.filter((r) => r.beta);
+
+/**
+ * The team picker on a roster row. Letters rather than names because the row is
+ * already carrying an avatar, a name and two badges — and the letter is what
+ * the team is called everywhere else in the game.
+ */
+function TeamPicker({ player, teamIds, teamColors, full, disabled, onPick }) {
+    return (
+        <span className="flex shrink-0 gap-1">
+            {teamIds.map((id) => {
+                const active = player.teamId === id;
+                // A full team is still selectable if you're already on it —
+                // that's the un-pick, and disabling it would trap you.
+                const blocked = !active && full[id];
+                return (
+                    <button
+                        key={id}
+                        type="button"
+                        disabled={disabled || blocked}
+                        title={blocked ? `Team ${id} is full` : `Move ${player.name} to team ${id}`}
+                        onClick={() => onPick(active ? null : id)}
+                        className={cn(
+                            'mono size-7 rounded-md border text-[11px] transition-colors',
+                            active ? 'text-black/85' : 'text-muted-foreground',
+                            !active && !blocked && !disabled && 'hover:border-white/30 hover:text-foreground',
+                            blocked && 'opacity-25',
+                            disabled && 'cursor-default',
+                        )}
+                        style={{
+                            background: active ? teamColors[id][0] : 'transparent',
+                            borderColor: active ? teamColors[id][0] : 'rgba(255,255,255,.12)',
+                        }}
+                    >
+                        {id}
+                    </button>
+                );
+            })}
+        </span>
+    );
+}
 
 /** One line of the settings list: icon, label, explanation, control. */
 function SettingRow({ icon: Icon, label, hint, beta, children }) {
@@ -180,6 +227,43 @@ export function Lobby() {
 
     const patch = (key) => (value) => send('room:settings', { [key]: value });
 
+    const teamIds = state.teamIds || [];
+    const teamColors = state.teamColors || {};
+    const teamSize = state.teamSize || 2;
+
+    // Grouped under team headers when teams are on, one flat group otherwise —
+    // so the roster you set up here is laid out the way the rail will be.
+    const roster = settings.teams
+        ? [
+              ...teamIds
+                  .map((id) => ({
+                      key: id,
+                      teamId: id,
+                      players: state.players.filter((p) => p.teamId === id),
+                  }))
+                  .filter((g) => g.players.length),
+              { key: 'unassigned', teamId: null, players: state.players.filter((p) => !p.teamId) },
+          ].filter((g) => g.players.length)
+        : [{ key: 'all', teamId: null, players: state.players }];
+
+    const teamFull = Object.fromEntries(
+        teamIds.map((id) => [id, state.players.filter((p) => p.teamId === id).length >= teamSize]),
+    );
+
+    // Why the button is dead, in the same words the server would use.
+    const blockedReason = (() => {
+        if (state.players.length < 2) return 'need at least 2 players';
+        if (!settings.teams) return null;
+        const short = teamIds.find((id) => {
+            const n = state.players.filter((p) => p.teamId === id).length;
+            return n > 0 && n !== teamSize;
+        });
+        if (short) return `team ${short} needs exactly ${teamSize} players`;
+        if (state.players.some((p) => !p.teamId)) return 'everyone needs a team';
+        if (roster.length < 2) return 'need at least 2 teams';
+        return null;
+    })();
+
     return (
         // The panel is capped to the viewport and scrolls internally, so a long
         // player list or a long rule list never drags the whole page into a
@@ -214,23 +298,51 @@ export function Lobby() {
                         <span className="label shrink-0">
                             Players ({state.players.length}/{settings.maxPlayers})
                         </span>
-                        {state.players.map((p) => (
-                            <motion.div
-                                layout
-                                key={p.id}
-                                className="flex shrink-0 items-center gap-3.5 rounded-xl border px-4 py-3"
-                                style={{ borderColor: alpha(p.color, 0.35), background: alpha(p.color, 0.07) }}
-                            >
-                                <span
-                                    className="mono flex size-9 items-center justify-center rounded-full text-xs font-semibold text-white"
-                                    style={{ background: `linear-gradient(160deg, ${p.color}, ${alpha(p.color, 0.6)})` }}
-                                >
-                                    {initials(p.name)}
-                                </span>
-                                <span className="flex-1 truncate text-lg">{p.name}</span>
-                                {p.id === playerId && <span className="label">you</span>}
-                                {p.id === state.hostId && <Crown className="size-4 text-[#ffb648]" />}
-                            </motion.div>
+                        {roster.map((group) => (
+                            <div key={group.key} className="flex shrink-0 flex-col gap-2">
+                                {group.teamId && (
+                                    <span className="label flex items-center gap-2 pt-1">
+                                        <span
+                                            className="size-2 rounded-full"
+                                            style={{ background: teamColors[group.teamId][0] }}
+                                        />
+                                        Team {group.teamId}
+                                        {group.players.length !== teamSize && (
+                                            <span className="normal-case opacity-70">
+                                                needs {teamSize - group.players.length} more
+                                            </span>
+                                        )}
+                                    </span>
+                                )}
+                                {group.players.map((p) => (
+                                    <motion.div
+                                        layout
+                                        key={p.id}
+                                        className="flex shrink-0 items-center gap-3 rounded-xl border px-4 py-3"
+                                        style={{ borderColor: alpha(p.color, 0.35), background: alpha(p.color, 0.07) }}
+                                    >
+                                        <span
+                                            className="mono flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                                            style={{ background: `linear-gradient(160deg, ${p.color}, ${alpha(p.color, 0.6)})` }}
+                                        >
+                                            {initials(p.name)}
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate text-lg">{p.name}</span>
+                                        {p.id === playerId && <span className="label shrink-0">you</span>}
+                                        {p.id === state.hostId && <Crown className="size-4 shrink-0 text-[#ffb648]" />}
+                                        {settings.teams && (
+                                            <TeamPicker
+                                                player={p}
+                                                teamIds={teamIds}
+                                                teamColors={teamColors}
+                                                full={teamFull}
+                                                disabled={!isHost}
+                                                onPick={(teamId) => send('room:team', { playerId: p.id, teamId })}
+                                            />
+                                        )}
+                                    </motion.div>
+                                ))}
+                            </div>
                         ))}
                         {state.players.length < settings.maxPlayers && (
                             <div className="flex shrink-0 items-center justify-center rounded-xl border border-dashed border-white/12 px-4 py-4 text-[15px] text-muted-foreground">
@@ -375,17 +487,13 @@ export function Lobby() {
                         <Button
                             className="mt-3 shrink-0 text-lg"
                             style={{ height: 52 }}
-                            disabled={!isHost || state.players.length < 2}
+                            disabled={!isHost || !!blockedReason}
                             onClick={() => send('game:start')}
                         >
                             Start game
                         </Button>
                         <span className="label mt-1 text-center">
-                            {isHost
-                                ? state.players.length < 2
-                                    ? 'need at least 2 players'
-                                    : 'you are the host'
-                                : 'only the host can change the rules'}
+                            {isHost ? blockedReason || 'you are the host' : 'only the host can change the rules'}
                         </span>
                     </div>
                 </div>

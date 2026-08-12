@@ -69,6 +69,8 @@ export function Board({ display, moving, spotlight, onSelectTile }) {
                     gridTemplateRows: track,
                 }}
             >
+                {/* `setOwned` compares by side, not by owner: with teams on, a
+                    complete set can be split between two teammates. */}
                 {state.tiles.map((tile) => (
                     <Tile
                         key={tile.id}
@@ -78,7 +80,7 @@ export function Board({ display, moving, spotlight, onSelectTile }) {
                         fontSize={tileFont}
                         nameSize={nameSize}
                         owner={tile.ownerId ? ownerOf[tile.ownerId] : null}
-                        setOwned={!!tile.groupId && state.completedGroups[tile.groupId] === tile.ownerId}
+                        setOwned={!!tile.groupId && state.completedGroups[tile.groupId] === tile.side}
                         onSelect={onSelectTile}
                         dim={!!spotlight && tile.ownerId !== spotlight}
                         lit={!!spotlight && tile.ownerId === spotlight}

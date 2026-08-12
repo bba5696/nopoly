@@ -41,6 +41,11 @@ function ChartTooltip({ active, payload, label }) {
 export function GameOver() {
     const { state, isHost, send, leaveRoom } = useGame();
     const winner = state.players.find((p) => p.id === state.winnerId);
+    // A team wins as a team — both names on the trophy, not just whoever the
+    // server happened to list first.
+    const winners = state.winnerTeam
+        ? state.players.filter((p) => p.teamId === state.winnerTeam && !p.bankrupt)
+        : [winner].filter(Boolean);
 
     const standings = useMemo(
         () =>
@@ -92,17 +97,20 @@ export function GameOver() {
                             <Trophy className="size-7" />
                         </div>
                         <div className="flex flex-col gap-1">
-                            <span className="label">Winner</span>
-                            <div className="flex items-center gap-2.5">
-                                {winner && (
-                                    <span
-                                        className="mono flex size-7 items-center justify-center rounded-full text-[10px] text-white"
-                                        style={{ background: winner.color }}
-                                    >
-                                        {initials(winner.name)}
+                            <span className="label">{state.winnerTeam ? `Winning team · ${state.winnerTeam}` : 'Winner'}</span>
+                            <div className="flex flex-wrap items-center gap-2.5">
+                                {winners.map((w) => (
+                                    <span key={w.id} className="flex items-center gap-2">
+                                        <span
+                                            className="mono flex size-7 items-center justify-center rounded-full text-[10px] text-white"
+                                            style={{ background: w.color }}
+                                        >
+                                            {initials(w.name)}
+                                        </span>
+                                        <span className="text-3xl font-medium">{w.name}</span>
                                     </span>
-                                )}
-                                <span className="text-3xl font-medium">{winner?.name || 'Nobody'}</span>
+                                ))}
+                                {winners.length === 0 && <span className="text-3xl font-medium">Nobody</span>}
                             </div>
                         </div>
                     </section>

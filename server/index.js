@@ -191,6 +191,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('room:settings', (patch = {}) => act(socket, (room, pid) => engine.updateSettings(room, pid, patch)));
+    socket.on('room:team', ({ playerId, teamId } = {}) =>
+        act(socket, (room, pid) => engine.setTeam(room, pid, playerId, teamId ?? null)),
+    );
     socket.on('auction:bid', ({ amount } = {}) => act(socket, (room, pid) => engine.placeBid(room, pid, amount)));
 
     socket.on('game:start', () => act(socket, engine.startGame));
@@ -204,6 +207,12 @@ io.on('connection', (socket) => {
     // for as long as they liked. `engine.togglePause` is left in place so this
     // is one line to restore once it's gated to the host or time-limited.
     socket.on('game:bankrupt', () => act(socket, engine.declareBankruptcy));
+    socket.on('game:sendCash', ({ toId, amount } = {}) =>
+        act(socket, (room, pid) => engine.sendCash(room, pid, toId, amount)),
+    );
+    socket.on('game:bailout', ({ accept } = {}) =>
+        act(socket, (room, pid) => engine.respondBailout(room, pid, !!accept)),
+    );
     socket.on('game:dismissCard', () =>
         act(socket, (room) => {
             room.pendingCard = null;

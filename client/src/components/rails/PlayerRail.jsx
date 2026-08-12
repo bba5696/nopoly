@@ -105,33 +105,72 @@ function Row({ player, state, order, compact, isCurrent, isMe, isHost, onSpotlig
     );
 }
 
+/**
+ * Team header. Carries the combined net worth, which is the number that
+ * actually says who's winning — two separate balances don't compare against a
+ * solo player's, and the team is the thing that wins.
+ */
+function TeamHeader({ team, out }) {
+    return (
+        <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+            <span className="size-2 shrink-0 rounded-full" style={{ background: team.color, opacity: out ? 0.3 : 1 }} />
+            <span className="label flex-1" style={{ opacity: out ? 0.45 : 1 }}>
+                Team {team.id}
+                {out && ' · out'}
+            </span>
+            {!out && <span className="label !text-[9.5px] opacity-70">net {shortMoney(team.netWorth)}</span>}
+        </div>
+    );
+}
+
 export function PlayerRail({ onSpotlight, pinned, onPin }) {
     const { state, playerId, current } = useGame();
     const compact = state.players.length > 8;
+
+    // With teams on, players are already seated in interleaved order — which is
+    // exactly what you don't want in a roster. Group them back up by team here;
+    // the turn number on each row still shows the real order.
+    const order = new Map(state.players.map((p, i) => [p.id, i + 1]));
+    const groups = state.teams
+        ? Object.values(state.teams).map((team) => ({
+              key: team.id,
+              team,
+              players: team.playerIds.map((id) => state.players.find((p) => p.id === id)).filter(Boolean),
+          }))
+        : [{ key: 'all', team: null, players: state.players }];
+
+    const row = (p) => (
+        <Row
+            key={p.id}
+            player={p}
+            state={state}
+            order={order.get(p.id)}
+            compact={compact && p.id !== current?.id}
+            isCurrent={p.id === current?.id}
+            isMe={p.id === playerId}
+            isHost={p.id === state.hostId}
+            onSpotlight={onSpotlight}
+            pinned={pinned === p.id}
+            onPin={onPin}
+        />
+    );
 
     return (
         // Leaving the list at all clears the spotlight — sliding off a row onto
         // the panel padding shouldn't leave the board stuck dark.
         <section className="panel flex flex-col" onMouseLeave={() => onSpotlight?.(null)}>
             <header className="panel-divider flex items-center justify-between px-4 py-3">
-                <span className="label">Players ({state.players.length})</span>
+                <span className="label">
+                    {state.teams ? `Teams (${groups.length})` : `Players (${state.players.length})`}
+                </span>
                 <span className="label opacity-60">turn {state.stats.turnCount + 1}</span>
             </header>
             <div className={`scroll-thin flex flex-col gap-0.5 overflow-y-auto p-2 ${compact ? 'max-h-[340px]' : ''}`}>
-                {state.players.map((p, i) => (
-                    <Row
-                        key={p.id}
-                        player={p}
-                        state={state}
-                        order={i + 1}
-                        compact={compact && p.id !== current?.id}
-                        isCurrent={p.id === current?.id}
-                        isMe={p.id === playerId}
-                        isHost={p.id === state.hostId}
-                        onSpotlight={onSpotlight}
-                        pinned={pinned === p.id}
-                        onPin={onPin}
-                    />
+                {groups.map((group) => (
+                    <div key={group.key} className="flex flex-col gap-0.5">
+                        {group.team && <TeamHeader team={group.team} out={group.team.out} />}
+                        {group.players.map(row)}
+                    </div>
                 ))}
             </div>
         </section>

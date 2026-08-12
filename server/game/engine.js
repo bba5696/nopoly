@@ -12,6 +12,23 @@ const PLAYER_COLORS = [
     '#f59e0b', '#2dd4bf',
 ];
 
+/**
+ * Team ids, and the pair of shades each one wears. Teammates share a hue so the
+ * board reads as "theirs" at a glance, and differ in lightness so two tokens on
+ * the same tile are still two tokens — a single flat colour would make the
+ * board honest about the team and useless about the player.
+ */
+const TEAM_IDS = ['A', 'B', 'C', 'D'];
+const TEAM_COLORS = {
+    A: ['#7c5cff', '#b9a8ff'],
+    B: ['#ff5c7c', '#ffa8b9'],
+    C: ['#3ddc97', '#9df0ca'],
+    D: ['#ffb648', '#ffd9a3'],
+};
+const TEAM_SIZE = 2;
+/** Charged on a transfer made outside your own turn. */
+const OFF_TURN_FEE = 0.1;
+
 const STARTING_CASH = 1500;
 const PASS_START_BONUS = 200;
 const JAIL_FINE = 50;
@@ -34,6 +51,7 @@ const DEFAULT_SETTINGS = {
     evenBuild: true,
     dynamicValues: false,
     auctionBalance: false,
+    teams: false,
     board: DEFAULT_BOARD,
 };
 
@@ -83,6 +101,7 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         chat: [],
         decks: makeDecks(board),
         winnerId: null,
+        winnerTeam: null,
         auction: null,        // { tileId, bid, bidderId, endsAt }
         vacationPot: 0,       // taxes and fines waiting on Vacation
         settings: { ...DEFAULT_SETTINGS },
@@ -120,14 +139,86 @@ function log(room, text) {
     if (room.log.length > 200) room.log.shift();
 }
 
+/* ------------------------------------------------------------------ teams */
+
+// Deeds stay in the name of whoever bought them even in a team game — the buyer
+// pays for it out of their own cash, they alone may sell it, and the log can
+// still say who did what. What teams change is who a deed *counts for*, and
+// that is entirely this one predicate.
+
+/** The team a player belongs to, or null in a free-for-all. */
+function teamOf(room, playerId) {
+    if (!room.settings.teams || !playerId) return null;
+    return findPlayer(room, playerId)?.teamId || null;
+}
+
+/**
+ * Identity for anything that owns as a unit: the team if there is one, the
+ * player otherwise. Sets, wins and turn order are all counted per side.
+ */
+function sideKey(room, playerId) {
+    if (!playerId) return null;
+    return teamOf(room, playerId) ? `team:${teamOf(room, playerId)}` : `p:${playerId}`;
+}
+
+/** Do these two ids own as one? True for a player and themselves. */
+function sameSide(room, a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const ta = teamOf(room, a);
+    return !!ta && ta === teamOf(room, b);
+}
+
+/** The other member of a player's team, if they have one and it's still alive. */
+function teammate(room, player) {
+    if (!player?.teamId || !room.settings.teams) return null;
+    return room.players.find((p) => p.id !== player.id && p.teamId === player.teamId) || null;
+}
+
+function livingTeammate(room, player) {
+    const mate = teammate(room, player);
+    return mate && !mate.bankrupt ? mate : null;
+}
+
+/** Every side with at least one player still in the game. */
+function livingSides(room) {
+    return new Set(activePlayers(room).map((p) => sideKey(room, p.id)));
+}
+
+/**
+ * Per-team roster and combined worth, so the rail can group players without
+ * re-deriving the teams on every render.
+ */
+function teamSummary(room) {
+    const out = {};
+    for (const p of room.players) {
+        if (!p.teamId) continue;
+        const team = (out[p.teamId] ||= {
+            id: p.teamId,
+            color: TEAM_COLORS[p.teamId][0],
+            playerIds: [],
+            cash: 0,
+            netWorth: 0,
+            out: true,
+        });
+        team.playerIds.push(p.id);
+        if (p.bankrupt) continue;
+        team.out = false;
+        team.cash += p.cash;
+        team.netWorth += netWorth(room, p);
+    }
+    return out;
+}
+
 function groupTiles(room, groupId) {
     return room.tiles.filter((t) => t.groupId === groupId);
 }
 
+/** A set counts as complete when one *side* holds all of it, not one player. */
 function ownsFullGroup(room, playerId, groupId) {
     if (!groupId) return false;
     const tiles = groupTiles(room, groupId);
-    return tiles.length > 0 && tiles.every((t) => t.ownerId === playerId);
+    return tiles.length > 0 && tiles.every((t) => sameSide(room, t.ownerId, playerId));
 }
 
 function netWorth(room, player) {
@@ -140,13 +231,19 @@ function netWorth(room, player) {
     return estate - (player.debt?.amount ?? 0);
 }
 
-/** Full ownership map of colour sets, used by the client for the set-glow. */
+/**
+ * Which side holds each completed colour set, used by the client for the
+ * set-glow. Keyed by side rather than by player so a set split across two
+ * teammates still lights up.
+ */
 function completedGroups(room) {
     const out = {};
     for (const groupId of Object.keys(groupsOf(room))) {
         const tiles = groupTiles(room, groupId);
         const owner = tiles[0]?.ownerId;
-        if (owner && tiles.every((t) => t.ownerId === owner)) out[groupId] = owner;
+        if (owner && tiles.every((t) => sameSide(room, t.ownerId, owner))) {
+            out[groupId] = sideKey(room, owner);
+        }
     }
     return out;
 }
@@ -160,9 +257,13 @@ function publicState(room) {
         players: room.players.map((p) => ({ ...p, netWorth: netWorth(room, p) })),
         // `price` stays the book value; the market numbers ride alongside it so
         // the client can show both what a tile costs and which way it's moving.
+        // `side` is what the client compares against `completedGroups` — with
+        // teams, the owner of a tile in a completed set may not be the only
+        // owner of that set.
         tiles: room.tiles.map((t) => ({
             ...t,
-            ...market.marketView(room, t, !!t.groupId && sets[t.groupId] === t.ownerId),
+            side: sideKey(room, t.ownerId),
+            ...market.marketView(room, t, !!t.groupId && sets[t.groupId] === sideKey(room, t.ownerId)),
         })),
         turnIndex: room.turnIndex,
         paused: room.paused,
@@ -181,6 +282,12 @@ function publicState(room) {
         log: room.log,
         chat: room.chat,
         winnerId: room.winnerId,
+        winnerTeam: room.winnerTeam,
+        teams: room.settings.teams ? teamSummary(room) : null,
+        teamIds: TEAM_IDS,
+        teamColors: TEAM_COLORS,
+        teamSize: TEAM_SIZE,
+        offTurnFee: OFF_TURN_FEE,
         settings: room.settings,
         // Board meta rides along with the state rather than being handed out
         // once on join, since the host can swap boards in the lobby.
@@ -213,6 +320,8 @@ function addPlayer(room, { name, playerId }) {
         id: playerId || uid(),
         name: (name || 'player').slice(0, 16),
         color,
+        // Assigned by the host in the lobby; null in a free-for-all.
+        teamId: null,
         cash: room.settings.startingCash,
         position: 0,
         properties: [],
@@ -271,6 +380,9 @@ function updateSettings(room, playerId, patch = {}) {
         }
         if (typeof DEFAULT_SETTINGS[key] === 'boolean') {
             room.settings[key] = !!raw;
+            // Toggling teams reshuffles everyone's colour, so it can't just be
+            // a flag — pair people up now and let the host swap from there.
+            if (key === 'teams') autoAssignTeams(room);
             continue;
         }
         const limit = SETTING_LIMITS[key];
@@ -286,10 +398,91 @@ function updateSettings(room, playerId, patch = {}) {
     return {};
 }
 
+/**
+ * Deal the seating out so the teams alternate: A1, B1, A2, B2 rather than both
+ * of A then both of B. Two turns back to back is a real edge when auctions and
+ * jail timing are involved, and it's free to avoid.
+ */
+function interleaveTeams(room) {
+    const order = [];
+    const byTeam = new Map();
+    for (const p of room.players) {
+        if (!byTeam.has(p.teamId)) byTeam.set(p.teamId, []);
+        byTeam.get(p.teamId).push(p);
+    }
+    const queues = [...byTeam.values()];
+    for (let slot = 0; queues.some((q) => q.length > slot); slot++) {
+        for (const q of queues) if (q[slot]) order.push(q[slot]);
+    }
+    room.players = order;
+}
+
+function teamsReady(room) {
+    const counts = {};
+    for (const p of room.players) {
+        if (!p.teamId) return { error: `${p.name} is not on a team` };
+        counts[p.teamId] = (counts[p.teamId] || 0) + 1;
+    }
+    const short = Object.entries(counts).find(([, n]) => n !== TEAM_SIZE);
+    if (short) return { error: `Team ${short[0]} needs exactly ${TEAM_SIZE} players` };
+    if (Object.keys(counts).length < 2) return { error: 'Need at least 2 teams' };
+    return {};
+}
+
+/**
+ * Teammates wear the same hue in two shades, so `player.color` stays the single
+ * source of truth for every existing token, tile marker and rail row.
+ */
+function recolourTeams(room) {
+    if (!room.settings.teams) {
+        const used = new Set();
+        for (const p of room.players) {
+            p.color = PLAYER_COLORS.find((c) => !used.has(c)) || PLAYER_COLORS[0];
+            used.add(p.color);
+        }
+        return;
+    }
+    const slots = {};
+    for (const p of room.players) {
+        if (!p.teamId) continue;
+        const slot = (slots[p.teamId] = (slots[p.teamId] ?? -1) + 1);
+        p.color = TEAM_COLORS[p.teamId][Math.min(slot, TEAM_COLORS[p.teamId].length - 1)];
+    }
+}
+
+/** Host-only, lobby-only. Pass a null team to take someone off a team. */
+function setTeam(room, hostId, playerId, teamId) {
+    if (room.hostId !== hostId) return { error: 'Only the host can pick teams' };
+    if (room.phase !== 'waiting') return { error: 'Teams are locked once the game starts' };
+    if (!room.settings.teams) return { error: 'Teams are off' };
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (teamId !== null && !TEAM_IDS.includes(teamId)) return { error: 'Unknown team' };
+    if (teamId && room.players.filter((p) => p.teamId === teamId && p.id !== playerId).length >= TEAM_SIZE) {
+        return { error: `Team ${teamId} is full` };
+    }
+    player.teamId = teamId;
+    recolourTeams(room);
+    return {};
+}
+
+/** Fill the teams top to bottom in seating order — the host can then swap. */
+function autoAssignTeams(room) {
+    room.players.forEach((p, i) => {
+        p.teamId = room.settings.teams ? TEAM_IDS[Math.floor(i / TEAM_SIZE)] || null : null;
+    });
+    recolourTeams(room);
+}
+
 function startGame(room, playerId) {
     if (room.hostId !== playerId) return { error: 'Only the host can start' };
     if (room.phase !== 'waiting') return { error: 'Already started' };
     if (room.players.length < 2) return { error: 'Need at least 2 players' };
+    if (room.settings.teams) {
+        const ready = teamsReady(room);
+        if (ready.error) return ready;
+        interleaveTeams(room);
+    }
     room.phase = 'rolling';
     room.turnIndex = 0;
     room.hasRolled = false;
@@ -357,13 +550,29 @@ function charge(room, player, creditor, amount, reason) {
     const owed = amount - paid;
     if (owed <= 0) return;
 
-    player.debt = { amount: owed, toId: creditor && !creditor.bankrupt ? creditor.id : null };
-    if (liquidValue(room, player) < owed) {
+    player.debt = { amount: owed, toId: creditor && !creditor.bankrupt ? creditor.id : null, bailout: null };
+    if (liquidValue(room, player) >= owed) {
+        log(room, `${player.name} owes $${owed} — sell buildings or property to cover it`);
+        return;
+    }
+
+    // Short on their own. In a free-for-all that's the end of it; on a team it
+    // becomes the teammate's decision, and only a team that provably can't
+    // raise the money between them goes down.
+    const mate = livingTeammate(room, player);
+    if (!mate) {
         log(room, `${player.name} owes $${owed} and can't cover it`);
         goBankrupt(room, player);
         return;
     }
-    log(room, `${player.name} owes $${owed} — sell buildings or property to cover it`);
+    if (liquidValue(room, player) + liquidValue(room, mate) < owed) {
+        log(room, `${player.name} and ${mate.name} together can't cover $${owed}`);
+        goBankrupt(room, player);
+        goBankrupt(room, mate);
+        return;
+    }
+    player.debt.bailout = 'offered';
+    log(room, `${player.name} owes $${owed} — ${mate.name} can cover it`);
 }
 
 /** Push whatever cash is in hand at an outstanding debt. Called after a sale. */
@@ -380,9 +589,48 @@ function payDownDebt(room, player) {
 }
 
 /**
+ * A teammate answering the "cover their debt?" prompt.
+ *
+ * Accepting moves the debt across rather than moving cash: the debtor is free
+ * again immediately and the teammate is the one whose turn is now blocked until
+ * they've sold enough. That's why accepting is only allowed once the teammate
+ * can actually raise the amount on their own — the debtor sells their own
+ * estate down first, which is what shrinks the debt to something coverable.
+ */
+function respondBailout(room, playerId, accept) {
+    const mate = findPlayer(room, playerId);
+    if (!mate || mate.bankrupt) return { error: 'You are out of the game' };
+    const debtor = room.players.find(
+        (p) => p.debt?.bailout === 'offered' && p.teamId && p.teamId === mate.teamId && p.id !== mate.id,
+    );
+    if (!debtor) return { error: 'Nothing to cover' };
+
+    if (!accept) {
+        log(room, `${mate.name} declined to cover ${debtor.name}'s debt`);
+        goBankrupt(room, debtor);
+        if (room.phase !== 'ended' && isCurrent(room, debtor.id)) endTurnAuto(room);
+        return {};
+    }
+
+    const owed = debtor.debt.amount;
+    if (mate.debt) return { error: 'Settle your own debt first' };
+    if (liquidValue(room, mate) < owed) {
+        return { error: `You can't raise $${owed} — ${debtor.name} has to sell down first` };
+    }
+
+    mate.debt = { amount: owed, toId: debtor.debt.toId, bailout: null };
+    debtor.debt = null;
+    log(room, `${mate.name} took on ${debtor.name}'s $${owed} debt`);
+    // Whatever they're holding goes straight at it; the rest they sell for.
+    payDownDebt(room, mate);
+    return {};
+}
+
+/**
  * Out of the game. The estate goes back to the bank and the tiles are vacant
  * again — a creditor doesn't inherit it, so nothing can be handed to a friend
- * on the way out and no one wins the game by being owed money.
+ * on the way out and no one wins the game by being owed money. A teammate
+ * doesn't inherit it either, which is what makes declining a bailout expensive.
  */
 function goBankrupt(room, player) {
     if (player.bankrupt) return;
@@ -402,19 +650,23 @@ function goBankrupt(room, player) {
 }
 
 
+/** Last side standing — one player in a free-for-all, one team otherwise. */
 function checkWin(room) {
+    if (room.phase === 'waiting' || room.phase === 'ended') return false;
     const alive = activePlayers(room);
-    if (alive.length <= 1 && room.phase !== 'waiting' && room.phase !== 'ended') {
-        room.phase = 'ended';
-        room.winnerId = alive[0]?.id || null;
-        room.stats.endedAt = Date.now();
-        room.pendingAction = null;
-        room.pendingCard = null;
-        snapshotNetWorth(room);
-        log(room, alive[0] ? `${alive[0].name} wins!` : 'Game over');
-        return true;
-    }
-    return false;
+    if (livingSides(room).size > 1) return false;
+
+    room.phase = 'ended';
+    room.winnerId = alive[0]?.id || null;
+    room.winnerTeam = alive[0]?.teamId || null;
+    room.stats.endedAt = Date.now();
+    room.pendingAction = null;
+    room.pendingCard = null;
+    snapshotNetWorth(room);
+    // A surviving team is named by its members, since there's no one winner.
+    const names = alive.map((p) => p.name).join(' and ');
+    log(room, names ? `${names} win${alive.length > 1 ? '' : 's'}!` : 'Game over');
+    return true;
 }
 
 function sendToJail(room, player) {
@@ -451,9 +703,13 @@ function taxFor(room, player, tile) {
     return rule.amount || 0;
 }
 
-/** How many tiles of this kind the owner holds, and whether that's all of them. */
+/**
+ * How many tiles of this kind the owner's *side* holds, and whether that's all
+ * of them. Airports and utilities scale with the count, so a team splitting
+ * three airports between them still collects the three-airport rate.
+ */
 function holdingOf(room, owner, type, total) {
-    const owned = owner.properties.filter((id) => room.tiles[id].type === type).length;
+    const owned = room.tiles.filter((t) => t.type === type && sameSide(room, t.ownerId, owner.id)).length;
     return { owned, complete: owned >= total };
 }
 
@@ -519,7 +775,8 @@ function resolveLanding(room, player, dice) {
         }
         return;
     }
-    if (tile.ownerId === player.id) return;
+    // Your own tile, or your teammate's — either way the side already owns it.
+    if (sameSide(room, tile.ownerId, player.id)) return;
     const owner = findPlayer(room, tile.ownerId);
     if (!owner || owner.bankrupt) return;
     if (owner.inJail && room.settings.noRentInPrison) {
@@ -599,8 +856,7 @@ function advanceTurn(room) {
     room.hasRolled = false;
     room.pendingAction = null;
 
-    const alive = activePlayers(room);
-    if (alive.length <= 1) {
+    if (livingSides(room).size <= 1) {
         checkWin(room);
         return;
     }
@@ -722,6 +978,11 @@ function placeBid(room, playerId, amount) {
     if (!player || player.bankrupt) return { error: 'You are out of the game' };
     if (player.debt) return { error: DEBT_BLOCKED };
 
+    // Bidding your own teammate up is only ever burning team money.
+    if (auction.bidderId && auction.bidderId !== playerId && sameSide(room, auction.bidderId, playerId)) {
+        return { error: 'Your teammate holds the high bid' };
+    }
+
     const bid = Math.round(Number(amount));
     if (!Number.isFinite(bid) || bid < auction.nextBid) return { error: 'Bid is too low' };
     if (bid > player.cash) return { error: 'Not enough cash' };
@@ -808,8 +1069,13 @@ function useJailCard(room, playerId) {
 
 /* ---------------------------------------------------------------- building */
 
+/**
+ * Anyone on the side may develop a set the side owns, paying from their own
+ * cash — the rent still goes to whoever's name is on the deed. Selling is the
+ * asymmetric half: see sellHouse.
+ */
 function canBuild(room, player, tile) {
-    if (tile.type !== 'property' || tile.ownerId !== player.id) return false;
+    if (tile.type !== 'property' || !sameSide(room, tile.ownerId, player.id)) return false;
     if (!ownsFullGroup(room, player.id, tile.groupId)) return false;
     if (tile.houses >= 5) return false;
     if (player.cash < tile.houseCost) return false;
@@ -836,6 +1102,11 @@ function sellHouse(room, playerId, tileId) {
     const player = findPlayer(room, playerId);
     const tile = room.tiles[tileId];
     if (!player || !tile) return { error: 'Unknown tile' };
+    // Building on a teammate's deed is allowed; selling off it is not, or a
+    // teammate could strip your set to raise cash for themselves.
+    if (tile.ownerId !== playerId && sameSide(room, tile.ownerId, playerId)) {
+        return { error: 'Only the owner can sell buildings on that' };
+    }
     if (tile.ownerId !== playerId || tile.houses < 1) return { error: 'Nothing to sell' };
     if (room.settings.evenBuild) {
         const max = Math.max(...groupTiles(room, tile.groupId).map((t) => t.houses));
@@ -863,6 +1134,37 @@ function sellProperty(room, playerId, tileId) {
     player.cash += value;
     log(room, `${player.name} sold ${tile.name} back to the bank for $${value}`);
     payDownDebt(room, player);
+    return {};
+}
+
+/* --------------------------------------------------------------- transfers */
+
+/**
+ * Hand cash to your teammate. Free on your own turn; outside it there's a fee
+ * to the bank, so bailing someone out mid-crisis costs the team something even
+ * when it works — otherwise two separate balances are just one balance with
+ * extra clicks.
+ */
+function sendCash(room, fromId, toId, amount) {
+    if (room.paused) return { error: 'Game is paused' };
+    const from = findPlayer(room, fromId);
+    const to = findPlayer(room, toId);
+    if (!from || !to || from.id === to.id) return { error: 'Unknown player' };
+    if (!room.settings.teams || !sameSide(room, fromId, toId)) return { error: 'Not your teammate' };
+    if (from.bankrupt || to.bankrupt) return { error: 'Player is out' };
+    if (from.debt) return { error: DEBT_BLOCKED };
+
+    const value = Math.floor(Number(amount));
+    if (!Number.isFinite(value) || value <= 0) return { error: 'Nothing to send' };
+    const fee = isCurrent(room, fromId) ? 0 : Math.ceil(value * OFF_TURN_FEE);
+    if (from.cash < value + fee) return { error: 'Not enough cash' };
+
+    from.cash -= value + fee;
+    to.cash += value;
+    // The fee leaves the game the same way a tax does.
+    if (fee > 0 && room.settings.vacationCash) room.vacationPot += fee;
+    log(room, `${from.name} sent $${value} to ${to.name}${fee ? ` (+$${fee} fee)` : ''}`);
+    payDownDebt(room, to);
     return {};
 }
 
@@ -894,6 +1196,14 @@ function createTrade(room, fromId, { toId, give, get, counterOf }) {
     const to = findPlayer(room, toId);
     if (!from || !to || from.id === to.id) return { error: 'Unknown player' };
     if (from.bankrupt || to.bankrupt) return { error: 'Player is out' };
+    // Without this, a player about to go under could gift their whole estate to
+    // their teammate for nothing and then go bankrupt owning air — which would
+    // hand the team everything the bank is supposed to take back, and make
+    // declining a bailout free. Selling to the bank or taking the bailout are
+    // the ways out of a debt; laundering the estate isn't.
+    if (from.debt && sameSide(room, fromId, toId)) {
+        return { error: 'You cannot trade with your teammate while you owe money' };
+    }
 
     const giveSide = normaliseSide(room, from, give);
     const getSide = normaliseSide(room, to, get);
@@ -947,6 +1257,11 @@ function respondTrade(room, playerId, tradeId, response) {
         return {};
     }
     if (response !== 'accept') return { error: 'Unknown response' };
+    // The debt may have appeared after the offer was made — see createTrade.
+    if ((from.debt || to.debt) && sameSide(room, from.id, to.id)) {
+        dropTrade(room, tradeId);
+        return { error: 'Teammates cannot trade while either of you owes money' };
+    }
 
     // Re-validate: ownership and cash may have changed since the offer.
     const giveOk = trade.give.tiles.every((id) => room.tiles[id].ownerId === from.id) && from.cash >= trade.give.cash;
@@ -1072,6 +1387,7 @@ function resetForRematch(room) {
     room.lastMove = null;
     room.trades = [];
     room.winnerId = null;
+    room.winnerTeam = null;
     room.auction = null;
     room.vacationPot = 0;
     room.log = [];
@@ -1095,15 +1411,25 @@ function resetForRematch(room) {
     if (room.players.length && !room.players.some((p) => p.id === room.hostId)) {
         room.hostId = room.players[0].id;
     }
+    // Someone may not have come back, which can leave a team a player short.
+    if (room.settings.teams && teamsReady(room).error) autoAssignTeams(room);
     log(room, 'New game — back to the lobby');
 }
 
 module.exports = {
     PLAYER_COLORS,
+    TEAM_IDS,
+    TEAM_COLORS,
+    TEAM_SIZE,
     JAIL_FINE,
     BID_STEPS,
     DEFAULT_SETTINGS,
     updateSettings,
+    setTeam,
+    sendCash,
+    respondBailout,
+    sameSide,
+    teammate,
     startAuction,
     placeBid,
     resolveAuction,

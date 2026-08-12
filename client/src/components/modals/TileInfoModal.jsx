@@ -3,7 +3,7 @@ import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { money } from '@/lib/board-layout';
-import { rentTable, ownsFullGroup, canBuild, canSell } from '@/lib/rent';
+import { rentTable, ownsFullGroup, canBuild, canSell, sameSide } from '@/lib/rent';
 import { alpha } from '@/lib/color';
 import { priceOf, trendColor, trendOf } from '@/lib/market';
 
@@ -46,9 +46,12 @@ export function TileInfoModal({ tile, onClose }) {
     const owner = state.players.find((p) => p.id === tile.ownerId);
     const group = board?.groups?.[tile.groupId];
     const color = group?.color || (tile.type === 'airport' ? '#9aa0b5' : tile.type === 'utility' ? '#7dd3fc' : '#5a5a70');
+    // Building goes by side, selling by deed: a teammate can develop your set
+    // out of their own pocket, but only you can sell any of it off.
     const mine = !!me && tile.ownerId === me.id;
+    const ours = !!me && sameSide(state, tile.ownerId, me.id);
     const buildable = tile.type === 'property';
-    const upgradeOk = mine && canBuild(state, me, tile);
+    const upgradeOk = ours && canBuild(state, me, tile);
     const downgradeOk = mine && canSell(state, me, tile);
     const sellOk = mine && tile.houses === 0;
     const priced = tile.price > 0;

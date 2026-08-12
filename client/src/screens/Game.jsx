@@ -25,6 +25,7 @@ import { TradeBuilder } from '@/components/modals/TradeBuilder';
 import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { AuctionModal } from '@/components/modals/AuctionModal';
+import { BailoutModal } from '@/components/modals/BailoutModal';
 import { Button } from '@/components/ui/button';
 
 // Narrow screens can't fit the three-column layout, so the rails collapse into
@@ -250,6 +251,9 @@ export function Game() {
             <BuyModal open={buyOpen} />
             <CardModal open={cardOpen} />
             <AuctionModal />
+            {/* Last, so it sits over anything else already open — the debtor's
+                turn is frozen until this is answered. */}
+            <BailoutModal />
             <TileInfoModal tile={tile} onClose={() => setTileId(null)} />
             {viewTradeId && (
                 <TradeViewModal

@@ -1,6 +1,8 @@
 // Mirrors server/game/engine.js rentFor() for display purposes only —
 // the server stays authoritative for anything that moves money.
 
+import { priceOf } from './market';
+
 // Fallbacks only — the live tables come from the board the room is on, since
 // boards differ (Worldwide has a third utility).
 const DEFAULT_AIRPORT_RENT = [25, 50, 100, 200];
@@ -10,10 +12,41 @@ const airportRent = (state) => state?.board?.airportRent || DEFAULT_AIRPORT_RENT
 const utilityMultiplier = (state) => state?.board?.utilityMultiplier || DEFAULT_UTILITY_MULTIPLIER;
 const step = (table, owned) => table[Math.min(Math.max(owned - 1, 0), table.length - 1)];
 
+/**
+ * Do these two ids own as one? Mirrors engine.sameSide — with teams on, a deed
+ * held by your teammate counts towards your sets and your airport tally.
+ */
+export function sameSide(state, a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (!state.settings?.teams) return false;
+    const team = (id) => state.players.find((p) => p.id === id)?.teamId || null;
+    const ta = team(a);
+    return !!ta && ta === team(b);
+}
+
 export function ownsFullGroup(state, ownerId, groupId) {
     if (!groupId || !ownerId) return false;
     const tiles = state.tiles.filter((t) => t.groupId === groupId);
-    return tiles.length > 0 && tiles.every((t) => t.ownerId === ownerId);
+    return tiles.length > 0 && tiles.every((t) => sameSide(state, t.ownerId, ownerId));
+}
+
+/**
+ * What a player's estate would raise if it were all sold right now — buildings
+ * come back at half. Mirrors engine.liquidValue, and unlike net worth it's the
+ * number that decides whether a debt can actually be covered.
+ */
+export function liquidValue(state, player) {
+    if (!player) return 0;
+    return player.properties.reduce((sum, id) => {
+        const tile = state.tiles[id];
+        return sum + priceOf(tile) + tile.houses * Math.floor((tile.houseCost || 0) / 2);
+    }, player.cash);
+}
+
+/** How many tiles of a kind the owner's whole side holds. */
+function sideHolding(state, ownerId, type) {
+    return state.tiles.filter((t) => t.type === type && sameSide(state, t.ownerId, ownerId)).length;
 }
 
 /**
@@ -33,12 +66,12 @@ export function currentRent(state, tile) {
         return { label: `$${value}`, value };
     }
     if (tile.type === 'airport') {
-        const owned = owner.properties.filter((id) => state.tiles[id].type === 'airport').length;
+        const owned = sideHolding(state, owner.id, 'airport');
         const value = liveRent(tile, step(airportRent(state), owned));
         return { label: `$${value}`, value };
     }
     if (tile.type === 'utility') {
-        const owned = owner.properties.filter((id) => state.tiles[id].type === 'utility').length;
+        const owned = sideHolding(state, owner.id, 'utility');
         return { label: `×${diceMult(tile, step(utilityMultiplier(state), owned))}`, value: 0 };
     }
     return null;
@@ -92,8 +125,9 @@ export function rentTable(state, tile) {
     return [];
 }
 
+/** Anyone on the side can develop the side's set, out of their own cash. */
 export function canBuild(state, player, tile) {
-    if (!player || tile.type !== 'property' || tile.ownerId !== player.id) return false;
+    if (!player || tile.type !== 'property' || !sameSide(state, tile.ownerId, player.id)) return false;
     if (!ownsFullGroup(state, player.id, tile.groupId)) return false;
     if (tile.houses >= 5) return false;
     if (player.cash < tile.houseCost) return false;
