@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Crown, WifiOff } from 'lucide-react';
+import { Crown, Gavel, WifiOff } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { alpha, initials } from '@/lib/color';
 import { money, shortMoney } from '@/lib/board-layout';
@@ -123,9 +123,11 @@ function TeamHeader({ team, out }) {
     );
 }
 
-export function PlayerRail({ onSpotlight, pinned, onPin }) {
+export function PlayerRail({ onSpotlight, pinned, onPin, onVoteKick }) {
     const { state, playerId, current } = useGame();
     const compact = state.players.length > 8;
+    const me = state.players.find((p) => p.id === playerId);
+    const canVote = !!onVoteKick && !me?.bankrupt && state.players.filter((p) => !p.bankrupt).length >= 3;
 
     // With teams on, players are already seated in interleaved order — which is
     // exactly what you don't want in a roster. Group them back up by team here;
@@ -163,7 +165,19 @@ export function PlayerRail({ onSpotlight, pinned, onPin }) {
                 <span className="label">
                     {state.teams ? `Teams (${groups.length})` : `Players (${state.players.length})`}
                 </span>
-                <span className="label opacity-60">turn {state.stats.turnCount + 1}</span>
+                <span className="flex items-center gap-2">
+                    <span className="label opacity-60">turn {state.stats.turnCount + 1}</span>
+                    {canVote && (
+                        <button
+                            type="button"
+                            title="Start a vote to kick someone"
+                            onClick={onVoteKick}
+                            className="text-muted-foreground transition-colors hover:text-[#ff5c7c]"
+                        >
+                            <Gavel className="size-3.5" />
+                        </button>
+                    )}
+                </span>
             </header>
             <div className={`scroll-thin flex flex-col gap-0.5 overflow-y-auto p-2 ${compact ? 'max-h-[340px]' : ''}`}>
                 {groups.map((group) => (

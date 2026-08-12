@@ -46,6 +46,8 @@ const rooms = new Map();
 const graceTimers = new Map();
 /** roomCode -> timeout handle closing the running auction. */
 const auctionTimers = new Map();
+/** roomCode -> timeout handle closing the running vote-kick. */
+const voteTimers = new Map();
 
 const DISCONNECT_GRACE_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
@@ -170,6 +172,22 @@ function scheduleAuction(room) {
     );
 }
 
+/** Same idea for the vote-kick clock, which resolves on its own if ignored. */
+function scheduleVote(room) {
+    clearTimeout(voteTimers.get(room.roomCode));
+    voteTimers.delete(room.roomCode);
+    if (!room.vote) return;
+    const delay = Math.max(room.vote.endsAt - Date.now(), 0);
+    voteTimers.set(
+        room.roomCode,
+        setTimeout(() => {
+            voteTimers.delete(room.roomCode);
+            engine.expireVote(room);
+            broadcast(room);
+        }, delay),
+    );
+}
+
 /** Run an engine action for a socket's room, then broadcast the new state. */
 function act(socket, fn) {
     const room = getRoom(socket.data.roomCode);
@@ -178,6 +196,7 @@ function act(socket, fn) {
     if (result.error) socket.emit('error:game', result.error);
     broadcast(room);
     scheduleAuction(room);
+    scheduleVote(room);
     return result;
 }
 
@@ -193,6 +212,8 @@ function sweepEmptyRooms() {
         else if (now - room.emptySince > EMPTY_ROOM_TTL_MS) {
             clearTimeout(auctionTimers.get(code));
             auctionTimers.delete(code);
+            clearTimeout(voteTimers.get(code));
+            voteTimers.delete(code);
             rooms.delete(code);
         }
     }
@@ -249,6 +270,10 @@ io.on('connection', (socket) => {
     socket.on('game:bailout', ({ accept } = {}) =>
         act(socket, (room, pid) => engine.respondBailout(room, pid, !!accept)),
     );
+    socket.on('vote:start', ({ targetId } = {}) =>
+        act(socket, (room, pid) => engine.startVoteKick(room, pid, targetId)),
+    );
+    socket.on('vote:cast', ({ agree } = {}) => act(socket, (room, pid) => engine.castVote(room, pid, !!agree)));
     socket.on('game:dismissCard', () =>
         act(socket, (room) => {
             room.pendingCard = null;
@@ -345,9 +370,10 @@ function restoreRooms() {
             p.activity = null;
         }
         rooms.set(room.roomCode, room);
-        // endsAt is absolute, so an auction that expired during the restart
-        // resolves immediately rather than hanging.
+        // endsAt is absolute on both, so anything that expired during the
+        // restart resolves immediately rather than hanging forever.
         scheduleAuction(room);
+        scheduleVote(room);
     }
     // Consumed: if we crash before the next save, replaying a stale snapshot
     // would drop the table back into a game they'd already moved past.

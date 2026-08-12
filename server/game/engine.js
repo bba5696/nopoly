@@ -67,6 +67,14 @@ const uid = () => crypto.randomUUID();
 /** Shown whenever a player tries to carry on with a debt outstanding. */
 const DEBT_BLOCKED = 'Settle your debt first — sell buildings or property';
 
+/* Vote-kick. Long enough that someone mid-turn can still weigh in, short
+ * enough that a vote nobody answers doesn't sit on screen all game. */
+const VOTE_MS = 45_000;
+/** A failed vote can't be re-run on the same player straight away. */
+const VOTE_COOLDOWN_MS = 3 * 60_000;
+/** Below this a vote is just one player removing another, so it's refused. */
+const MIN_VOTERS = 3;
+
 /* ------------------------------------------------------------------ rooms */
 
 function makeRoomCode() {
@@ -103,6 +111,9 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         winnerId: null,
         winnerTeam: null,
         auction: null,        // { tileId, bid, bidderId, endsAt }
+        vote: null,           // { targetId, byId, yes: [], no: [], endsAt }
+        banned: [],           // player ids a vote removed; they can't come back
+        voteCooldown: {},     // targetId -> when they may be voted on again
         vacationPot: 0,       // taxes and fines waiting on Vacation
         settings: { ...DEFAULT_SETTINGS },
         stats: {
@@ -276,6 +287,8 @@ function publicState(room) {
         pendingCard: room.pendingCard,
         lastMove: room.lastMove,
         auction: room.auction,
+        vote: room.vote,
+        voteMs: VOTE_MS,
         vacationPot: room.vacationPot,
         bidSteps: BID_STEPS,
         trades: room.trades,
@@ -301,6 +314,11 @@ function publicState(room) {
 /* --------------------------------------------------------------- lobby ops */
 
 function addPlayer(room, { name, playerId }) {
+    // Checked before the rejoin path, or a kicked player walks straight back in
+    // on their stored id.
+    if (playerId && room.banned?.includes(playerId)) {
+        return { error: 'You were removed from this game' };
+    }
     const existing = playerId ? findPlayer(room, playerId) : null;
     if (existing) {
         // Declaring bankruptcy is final — no coming back into this game.
@@ -646,6 +664,10 @@ function goBankrupt(room, player) {
     }
     log(room, `${player.name} went bankrupt — ${estate.length} properties returned to the bank`);
     dropTradesFor(room, player.id);
+    // One fewer voter changes what a majority is, and can settle a running
+    // vote outright. Safe from recursion: finishVote clears room.vote before
+    // it ever gets here.
+    resolveVoteIfDecided(room);
     checkWin(room);
 }
 
@@ -1336,6 +1358,131 @@ function declareBankruptcy(room, playerId) {
     return {};
 }
 
+/* -------------------------------------------------------------- vote-kick */
+
+/**
+ * Everyone entitled to a say: still in the game, and not the person on trial.
+ * Bankrupt players are out of it — they have nothing left to lose by voting.
+ */
+function voters(room, targetId) {
+    return activePlayers(room).filter((p) => p.id !== targetId);
+}
+
+/** Strict majority of the people who could vote, so a tie fails. */
+const votesNeeded = (room, targetId) => Math.floor(voters(room, targetId).length / 2) + 1;
+
+function startVoteKick(room, byId, targetId) {
+    if (room.phase === 'ended') return { error: 'Game is over' };
+    if (room.vote) return { error: 'A vote is already running' };
+    const by = findPlayer(room, byId);
+    const target = findPlayer(room, targetId);
+    if (!by || !target) return { error: 'Unknown player' };
+    if (by.id === target.id) return { error: 'You cannot vote yourself out' };
+    if (by.bankrupt) return { error: 'You are out of the game' };
+    if (target.bankrupt) return { error: `${target.name} is already out` };
+
+    // Two people can't gang up on a third in a game that small — from three
+    // players up, a majority means more than one person actually agreed.
+    if (voters(room, targetId).length + 1 < MIN_VOTERS) {
+        return { error: `Needs at least ${MIN_VOTERS} players in the game` };
+    }
+    const until = room.voteCooldown?.[targetId] || 0;
+    if (until > Date.now()) {
+        return { error: `${target.name} was just voted on — try again in ${Math.ceil((until - Date.now()) / 1000)}s` };
+    }
+
+    room.vote = {
+        targetId,
+        byId,
+        yes: [byId], // calling the vote is a vote
+        no: [],
+        needed: votesNeeded(room, targetId),
+        endsAt: Date.now() + VOTE_MS,
+    };
+    log(room, `${by.name} started a vote to kick ${target.name}`);
+    // At three players the caller alone is already a majority of the two
+    // eligible voters, so this can resolve immediately.
+    return resolveVoteIfDecided(room) || {};
+}
+
+function castVote(room, playerId, agree) {
+    const vote = room.vote;
+    if (!vote) return { error: 'No vote running' };
+    if (playerId === vote.targetId) return { error: 'You cannot vote on your own removal' };
+    const player = findPlayer(room, playerId);
+    if (!player || player.bankrupt) return { error: 'You are out of the game' };
+    if (vote.yes.includes(playerId) || vote.no.includes(playerId)) return { error: 'You already voted' };
+
+    (agree ? vote.yes : vote.no).push(playerId);
+    return resolveVoteIfDecided(room) || {};
+}
+
+/**
+ * Close the vote the moment the outcome can't change, rather than making
+ * everyone sit out the clock on a decision that's already settled.
+ */
+function resolveVoteIfDecided(room) {
+    const vote = room.vote;
+    if (!vote) return null;
+    // Recounted every time: someone may have gone bankrupt mid-vote, which
+    // changes what a majority is.
+    const eligible = voters(room, vote.targetId).length;
+    const needed = Math.floor(eligible / 2) + 1;
+    vote.needed = needed;
+
+    if (vote.yes.length >= needed) return finishVote(room, true);
+    // Can't reach the bar even if every remaining voter says yes.
+    const undecided = eligible - vote.yes.length - vote.no.length;
+    if (vote.yes.length + undecided < needed) return finishVote(room, false);
+    return null;
+}
+
+/** Called by the room's vote timer when the clock runs out. */
+function expireVote(room) {
+    if (!room.vote) return { error: 'No vote running' };
+    return finishVote(room, room.vote.yes.length >= room.vote.needed);
+}
+
+function finishVote(room, passed) {
+    const vote = room.vote;
+    if (!vote) return { error: 'No vote running' };
+    room.vote = null;
+    const target = findPlayer(room, vote.targetId);
+    if (!target) return {};
+
+    if (!passed) {
+        room.voteCooldown[vote.targetId] = Date.now() + VOTE_COOLDOWN_MS;
+        log(room, `The vote to kick ${target.name} failed (${vote.yes.length}/${vote.needed})`);
+        return {};
+    }
+
+    // Banned, not merely removed — otherwise they reconnect two seconds later
+    // and the vote meant nothing.
+    if (!room.banned.includes(target.id)) room.banned.push(target.id);
+    log(room, `${target.name} was voted out (${vote.yes.length}/${vote.needed})`);
+
+    if (room.phase === 'waiting') {
+        removePlayer(room, target.id);
+        return {};
+    }
+    // Mid-game it's the same exit as resigning: the estate goes back to the
+    // bank, so being kicked can't become a way to hand a friend your property.
+    const wasCurrent = isCurrent(room, target.id);
+    target.resigned = true;
+    goBankrupt(room, target);
+    if (room.auction?.bidderId === target.id) {
+        room.auction.bidderId = null;
+        room.auction.bid = 0;
+        room.auction.nextBid = room.auction.opening ?? market.MIN_OPENING_BID;
+    }
+    if (room.phase !== 'ended' && wasCurrent) {
+        room.pendingAction = null;
+        room.pendingCard = null;
+        advanceTurn(room);
+    }
+    return {};
+}
+
 /* ------------------------------------------------------------ misc actions */
 
 function togglePause(room, playerId) {
@@ -1449,6 +1596,10 @@ function resetForRematch(room) {
     room.winnerId = null;
     room.winnerTeam = null;
     room.auction = null;
+    room.vote = null;
+    // Cooldowns are per-game grudges; the ban list is not — someone voted out
+    // stays out of this room rather than reappearing for the next round.
+    room.voteCooldown = {};
     room.vacationPot = 0;
     room.log = [];
     room.stats = {
@@ -1488,6 +1639,9 @@ module.exports = {
     setTeam,
     sendCash,
     respondBailout,
+    startVoteKick,
+    castVote,
+    expireVote,
     sameSide,
     teammate,
     startAuction,

@@ -44,6 +44,46 @@ export function liquidValue(state, player) {
     }, player.cash);
 }
 
+/**
+ * Rough worth of one side of a trade: cash plus what the properties would cost
+ * to buy, with buildings at what they cost to put up.
+ *
+ * Deliberately crude. A completed set is worth far more than the sum of its
+ * deeds and this doesn't try to know that — it only exists to catch the offer
+ * that is obviously lopsided, and being clever here would start second-guessing
+ * trades that are actually fine.
+ */
+export function sideValue(state, side) {
+    const tiles = (side?.tiles || []).reduce((sum, id) => {
+        const tile = state.tiles[id];
+        if (!tile) return sum;
+        return sum + priceOf(tile) + tile.houses * (tile.houseCost || 0);
+    }, 0);
+    return tiles + (side?.cash || 0);
+}
+
+/** Below this the gap isn't worth a prompt, however lopsided the ratio looks. */
+const LOPSIDED_FLOOR = 120;
+/** Giving this many times what you get back is what counts as lopsided. */
+const LOPSIDED_RATIO = 1.5;
+
+/**
+ * Is this offer bad enough for the person accepting that they should be asked
+ * twice? Returns null when it's fine, or the two values when it isn't.
+ *
+ * Only ever flags a trade against the accepter — talking someone *into* a good
+ * deal is not something to warn about.
+ */
+export function lopsidedFor(state, trade, playerId) {
+    if (!trade || trade.toId !== playerId) return null;
+    // `give` is what the sender hands over, so it's what the accepter receives.
+    const getting = sideValue(state, trade.give);
+    const giving = sideValue(state, trade.get);
+    if (giving - getting < LOPSIDED_FLOOR) return null;
+    if (giving < getting * LOPSIDED_RATIO) return null;
+    return { giving, getting, gap: giving - getting };
+}
+
 /** How many tiles of a kind the owner's whole side holds. */
 function sideHolding(state, ownerId, type) {
     return state.tiles.filter((t) => t.type === type && sameSide(state, t.ownerId, ownerId)).length;

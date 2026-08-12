@@ -26,6 +26,7 @@ import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { AuctionModal } from '@/components/modals/AuctionModal';
 import { BailoutModal } from '@/components/modals/BailoutModal';
+import { VoteKickModal, VoteKickPicker } from '@/components/modals/VoteKickModal';
 import { Button } from '@/components/ui/button';
 
 // Narrow screens can't fit the three-column layout, so the rails collapse into
@@ -55,6 +56,7 @@ export function Game() {
     // the list.
     const [hovered, setHovered] = useState(null);
     const [pinned, setPinned] = useState(null);
+    const [kickOpen, setKickOpen] = useState(false);
     const spotlight = pinned ?? hovered;
     const tile = tileId === null ? null : state.tiles[tileId];
 
@@ -198,6 +200,7 @@ export function Game() {
                             onSpotlight={setHovered}
                             pinned={pinned}
                             onPin={(id) => setPinned((cur) => (cur === id ? null : id))}
+                            onVoteKick={() => setKickOpen(true)}
                         />
                     </div>
                     <div className={cn('min-h-0 flex-1 flex-col xl:contents', tab === 'chat' ? 'flex' : 'hidden')}>
@@ -251,9 +254,11 @@ export function Game() {
             <BuyModal open={buyOpen} />
             <CardModal open={cardOpen} />
             <AuctionModal />
-            {/* Last, so it sits over anything else already open — the debtor's
-                turn is frozen until this is answered. */}
+            <VoteKickPicker open={kickOpen} onClose={() => setKickOpen(false)} />
+            {/* Last, so they sit over anything else already open — both freeze
+                someone's turn until they're answered. */}
             <BailoutModal />
+            <VoteKickModal />
             <TileInfoModal tile={tile} onClose={() => setTileId(null)} />
             {viewTradeId && (
                 <TradeViewModal
