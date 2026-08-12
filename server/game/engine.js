@@ -103,6 +103,9 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         roomCode: code,
         hostId: null,
         players: [],
+        // Watching, not playing: people who arrived after the game started, and
+        // people who are out of it but still want to see how it ends.
+        spectators: [],
         board,
         tiles: makeTiles(board),
         turnIndex: 0,
@@ -279,6 +282,9 @@ function publicState(room) {
         roomCode: room.roomCode,
         hostId: room.hostId,
         players: room.players.map((p) => ({ ...p, netWorth: netWorth(room, p) })),
+        // Names only — there's nothing else about a watcher worth sending, and
+        // the table should be able to see who's looking over their shoulder.
+        spectators: room.spectators.map(({ id, name, seated }) => ({ id, name, seated })),
         // `price` stays the book value; the market numbers ride alongside it so
         // the client can show both what a tile costs and which way it's moving.
         // `side` is what the client compares against `completedGroups` — with
@@ -349,6 +355,8 @@ function addPlayer(room, { name, playerId, initials, color }) {
         if (initials !== undefined || color !== undefined) setProfile(room, existing.id, { initials, color });
         // Beating a countdown called on you is the whole way out of it.
         cancelAbandon(room, existing.id);
+        // You're at the table now, not behind it.
+        removeSpectator(room, existing.id);
         return { player: existing, rejoined: true };
     }
     if (room.phase !== 'waiting') return { error: 'Game already in progress' };
@@ -388,6 +396,8 @@ function addPlayer(room, { name, playerId, initials, color }) {
         activity: null,
     };
     room.players.push(player);
+    // A watcher taking a seat when the lobby reopens after a rematch.
+    removeSpectator(room, player.id);
     if (!room.hostId) room.hostId = player.id;
     // Their pick may be one somebody already has, so everyone's shade is
     // settled here rather than at the moment of choosing.
@@ -395,6 +405,58 @@ function addPlayer(room, { name, playerId, initials, color }) {
     log(room, `${player.name} joined`);
     return { player, rejoined: false };
 }
+
+/* -------------------------------------------------------------- spectating */
+
+/**
+ * Whether a seat is out of reach but the room isn't — turning "no" into "not
+ * as a player", which is the whole point of this.
+ *
+ * Being voted out is the one exception. A kick is the table saying they don't
+ * want you here; handing you a window back into the same game would undo it.
+ */
+function spectateReason(room, playerId) {
+    if (playerId && room.banned?.includes(playerId)) return null;
+    const existing = playerId ? findPlayer(room, playerId) : null;
+    // Someone who resigned or went bankrupt is still sitting at the table
+    // watching — they only need this if they closed the tab and came back.
+    if (existing?.resigned) return 'You resigned from this game';
+    if (existing) return null;
+    if (room.phase !== 'waiting') return 'The game has already started';
+    if (room.players.length >= room.settings.maxPlayers) return 'The room is full';
+    return null;
+}
+
+/**
+ * Join without a seat. Spectators are kept apart from `players` on purpose:
+ * everything that matters — turn order, net worth, who has won, what a vote
+ * needs — is counted off that list, and a watcher belongs in none of it.
+ */
+function addSpectator(room, { name, playerId } = {}) {
+    const id = playerId || uid();
+    // Never both at once. Someone who is out of the game is already in
+    // `players`, and listing them twice would double them up everywhere.
+    const seated = findPlayer(room, id);
+    const label = String(name || seated?.name || 'someone').slice(0, 16);
+    const existing = room.spectators.find((s) => s.id === id);
+    if (existing) {
+        existing.name = label;
+        return { spectator: existing, rejoined: true };
+    }
+    const spectator = { id, name: label, seated: !!seated };
+    room.spectators.push(spectator);
+    // Not logged for someone already at the table — they never left it.
+    if (!seated) log(room, `${label} is watching`);
+    return { spectator, rejoined: false };
+}
+
+function removeSpectator(room, id) {
+    const before = room.spectators.length;
+    room.spectators = room.spectators.filter((s) => s.id !== id);
+    return room.spectators.length !== before;
+}
+
+const isSpectator = (room, id) => room.spectators.some((s) => s.id === id);
 
 /* --------------------------------------------------------------- profiles */
 
@@ -1733,10 +1795,13 @@ function togglePause(room, playerId) {
 }
 
 function addChat(room, playerId, text) {
-    const player = findPlayer(room, playerId);
+    // Watchers get to talk. Being out of the game is not the same as being out
+    // of the room, and half the reason to stay is to say something about it.
+    const player = findPlayer(room, playerId) || room.spectators.find((s) => s.id === playerId);
     const body = String(text || '').trim().slice(0, 240);
     if (!player || !body) return { error: 'Empty message' };
-    room.chat.push({ id: uid(), playerId, name: player.name, color: player.color, text: body, at: Date.now() });
+    const color = player.color || '#9aa0b5';
+    room.chat.push({ id: uid(), playerId, name: player.name, color, text: body, at: Date.now() });
     if (room.chat.length > 200) room.chat.shift();
     room.stats.chatMessages += 1;
     return {};
@@ -1887,6 +1952,10 @@ module.exports = {
     cancelAbandon,
     refreshAbandonDeadline,
     setProfile,
+    spectateReason,
+    addSpectator,
+    removeSpectator,
+    isSpectator,
     sameSide,
     teammate,
     startAuction,

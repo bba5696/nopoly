@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
     ArrowLeftRight,
+    Eye,
+    LogOut,
     MessageSquare,
     TrendingDown,
     Users,
@@ -13,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { isMuted, playStart, playTrade, playTurn, setMuted, unlock } from '@/lib/sound';
 import { Modal } from '@/components/ui/modal';
 import { useGame } from '@/lib/game-context';
+import { loadIdentity } from '@/lib/socket';
 import { useTokenPositions } from '@/lib/use-token-positions';
 import { Board } from '@/components/board/Board';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
@@ -36,13 +39,14 @@ import { Button } from '@/components/ui/button';
 // up, where all four are on screen at once.
 const TABS = [
     { id: 'players', label: 'Players', Icon: Users },
-    { id: 'you', label: 'You', Icon: Wallet },
-    { id: 'trades', label: 'Trades', Icon: ArrowLeftRight },
+    // Nothing of your own and nothing to offer when you're only watching.
+    { id: 'you', label: 'You', Icon: Wallet, seated: true },
+    { id: 'trades', label: 'Trades', Icon: ArrowLeftRight, seated: true },
     { id: 'chat', label: 'Chat', Icon: MessageSquare },
 ];
 
 export function Game() {
-    const { state, me, playerId, connected, send } = useGame();
+    const { state, me, playerId, connected, spectating, leaveRoom, joinRoom, send } = useGame();
     const [confirmBankrupt, setConfirmBankrupt] = useState(false);
     // Mirrors the stored setting so the icon re-renders when it's toggled.
     const [quiet, setQuiet] = useState(isMuted);
@@ -156,8 +160,31 @@ export function Game() {
                     >
                         {quiet ? <VolumeX /> : <Volume2 />}
                     </Button>
-                    {/* No leave button in-game: walking out mid-game strands
-                        everyone else, and Bankrupt is the way out. */}
+                    {/* A watcher has no stake to walk out on, so unlike a
+                        player they get a plain way out — and a way in, if the
+                        table lands back in the lobby after a rematch. */}
+                    {spectating && (
+                        <>
+                            <span className="label flex items-center gap-1.5 text-[#a68cff]">
+                                <Eye className="size-3.5" /> <span className="hidden sm:inline">watching</span>
+                            </span>
+                            {state.phase === 'waiting' && (
+                                <Button
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => joinRoom(state.roomCode, loadIdentity().name || 'player')}
+                                >
+                                    Take a seat
+                                </Button>
+                            )}
+                            <Button size="sm" variant="ghost" className="h-8 text-muted-foreground" onClick={leaveRoom}>
+                                <LogOut /> Leave
+                            </Button>
+                        </>
+                    )}
+                    {/* No leave button in-game for a player: walking out
+                        mid-game strands everyone else, and Bankrupt is the way
+                        out. */}
                     {me && !me.bankrupt && (
                         <Button
                             size="sm"
@@ -225,10 +252,14 @@ export function Game() {
                     </div>
                 </aside>
 
+                {/* Nothing of your own and nobody to trade with when you're
+                    only watching — on a phone the tabs are gone, and this is
+                    the same call for the column they'd have opened. */}
                 <aside
                     className={cn(
-                        'scroll-thin min-h-0 flex-1 flex-col gap-3 overflow-y-auto xl:col-start-3 xl:row-start-1 xl:flex',
-                        tab === 'you' || tab === 'trades' ? 'flex' : 'hidden',
+                        'scroll-thin min-h-0 flex-1 flex-col gap-3 overflow-y-auto xl:col-start-3 xl:row-start-1',
+                        spectating ? 'hidden' : 'xl:flex',
+                        !spectating && (tab === 'you' || tab === 'trades') ? 'flex' : 'hidden',
                     )}
                 >
                     <div className={cn('min-h-0 flex-col gap-3 xl:contents', tab === 'you' ? 'flex' : 'hidden')}>
@@ -247,7 +278,7 @@ export function Game() {
             {/* Bottom-anchored so it's in thumb reach, and padded past the home
                 indicator on iPhones. */}
             <nav className="flex shrink-0 gap-1 border-t border-white/8 px-2 pt-1.5 pb-[max(6px,env(safe-area-inset-bottom))] xl:hidden">
-                {TABS.map(({ id, label, Icon }) => (
+                {TABS.filter((t) => !t.seated || !spectating).map(({ id, label, Icon }) => (
                     <button
                         key={id}
                         type="button"

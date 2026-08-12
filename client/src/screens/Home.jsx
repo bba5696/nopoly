@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Pencil } from 'lucide-react';
+import { Eye, Pencil } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { BuildTag } from '@/components/ui/build-tag';
 import { PresencePill } from '@/components/ui/presence';
 import { ProfileModal } from '@/components/modals/ProfileModal';
@@ -10,13 +11,15 @@ import { loadIdentity } from '@/lib/socket';
 import { alpha, initials } from '@/lib/color';
 
 export function Home() {
-    const { createRoom, joinRoom, joining, connected } = useGame();
+    const { createRoom, joinRoom, spectate, joining, connected } = useGame();
     // Re-read when the editor closes rather than held as a snapshot, or the
     // preview keeps showing what you had before you changed it.
     const [saved, setSaved] = useState(() => loadIdentity());
     const [name, setName] = useState(saved.name || '');
     const [code, setCode] = useState('');
     const [profileOpen, setProfileOpen] = useState(false);
+    // Why the join was refused, when watching is still on the table.
+    const [watchOffer, setWatchOffer] = useState(null);
 
     const trimmed = name.trim();
     const ready = trimmed.length > 0 && connected && !joining;
@@ -79,9 +82,12 @@ export function Home() {
                     </Button>
                     <form
                         className="flex gap-3"
-                        onSubmit={(e) => {
+                        onSubmit={async (e) => {
                             e.preventDefault();
-                            if (ready && code.trim()) joinRoom(code, trimmed);
+                            if (!ready || !code.trim()) return;
+                            const res = await joinRoom(code, trimmed);
+                            // No seat going, but the room will still have us.
+                            if (res?.canSpectate) setWatchOffer(res.reason || res.error);
                         }}
                     >
                         <input
@@ -104,6 +110,39 @@ export function Home() {
                     <BuildTag />
                 </div>
             </motion.div>
+            {/* Offered rather than assumed: watching a game you meant to play
+                in is a different evening, and being dropped into it silently
+                would read as the join having half-worked. */}
+            <Modal
+                open={!!watchOffer}
+                onClose={() => setWatchOffer(null)}
+                subtitle="No seat available"
+                title={watchOffer || ''}
+                width={400}
+            >
+                <div className="flex flex-col gap-5 p-5">
+                    <p className="text-[14px] leading-relaxed text-muted-foreground">
+                        You can still watch {code.trim().toUpperCase()} — the board, the money and the history, live.
+                        You won't have a turn, and you can leave whenever you like.
+                    </p>
+                    <div className="flex gap-2">
+                        <Button variant="outline" className="h-11 flex-1" onClick={() => setWatchOffer(null)}>
+                            Never mind
+                        </Button>
+                        <Button
+                            className="h-11 flex-1"
+                            disabled={joining}
+                            onClick={() => {
+                                spectate(code, trimmed);
+                                setWatchOffer(null);
+                            }}
+                        >
+                            <Eye /> Watch
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
             {profileOpen && (
                 <ProfileModal
                     fallbackName={trimmed}

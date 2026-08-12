@@ -269,9 +269,16 @@ function scheduleVote(room) {
 }
 
 /** Run an engine action for a socket's room, then broadcast the new state. */
-function act(socket, fn) {
+function act(socket, fn, { watchers = false } = {}) {
     const room = getRoom(socket.data.roomCode);
     if (!room) return socket.emit('error:game', 'Room not found');
+    // Most engine calls would refuse a watcher anyway, since they aren't in
+    // `players` and every one of them starts by looking themselves up. One
+    // check here is worth more than trusting that to hold for every action
+    // added later — and it's the one place to make the exceptions.
+    if (socket.data.spectating && !watchers) {
+        return socket.emit('error:game', 'You are watching, not playing');
+    }
     const result = fn(room, socket.data.playerId) || {};
     if (result.error) socket.emit('error:game', result.error);
     broadcast(room);
@@ -309,25 +316,65 @@ io.on('connection', (socket) => {
         while (rooms.has(code)) code = engine.makeRoomCode();
         const room = engine.createRoom(code);
         rooms.set(code, room);
-        joinRoom(socket, room, { name, playerId, initials, color }, cb);
+        const result = engine.addPlayer(room, { name, playerId, initials, color });
+        if (result.error) return cb?.({ error: result.error });
+        seat(socket, room, result, cb);
     });
 
     socket.on('room:join', ({ roomCode, name, playerId, initials, color } = {}, cb) => {
         const room = getRoom(roomCode);
         if (!room) return cb?.({ error: 'No room with that code' });
-        joinRoom(socket, room, { name, playerId, initials, color }, cb);
+        const result = engine.addPlayer(room, { name, playerId, initials, color });
+        if (result.error) {
+            // A closed door isn't the same as a locked one. When the only thing
+            // missing is a seat, say so and let the client offer the other way
+            // in rather than turning them away outright.
+            const watchable = engine.spectateReason(room, playerId);
+            return cb?.({ error: result.error, canSpectate: !!watchable, reason: watchable });
+        }
+        seat(socket, room, result, cb);
+    });
+
+    socket.on('room:spectate', ({ roomCode, name, playerId } = {}, cb) => {
+        const room = getRoom(roomCode);
+        if (!room) return cb?.({ error: 'No room with that code' });
+        if (!engine.spectateReason(room, playerId)) {
+            // There's a seat going, or they're barred outright — either way
+            // this isn't the door they want.
+            return cb?.({ error: 'Join the game instead' });
+        }
+        const { spectator } = engine.addSpectator(room, { name, playerId });
+        socket.data.playerId = spectator.id;
+        socket.data.roomCode = room.roomCode;
+        socket.data.spectating = true;
+        socket.join(room.roomCode);
+        cb?.({
+            roomCode: room.roomCode,
+            playerId: spectator.id,
+            spectating: true,
+            state: engine.publicState(room),
+        });
+        broadcast(room);
+        pushPresence();
     });
 
     socket.on('room:leave', () => {
         const room = getRoom(socket.data.roomCode);
         if (room) {
             socket.leave(room.roomCode);
-            // Pressing Leave in the lobby gives the seat up for real; mid-game
-            // it can only mean "gone for now", and removePlayer knows which.
-            engine.removePlayer(room, socket.data.playerId);
+            if (socket.data.spectating) {
+                // Nothing to hold open for a watcher — no seat, no turn.
+                engine.removeSpectator(room, socket.data.playerId);
+            } else {
+                // Pressing Leave in the lobby gives the seat up for real;
+                // mid-game it can only mean "gone for now", and removePlayer
+                // knows which.
+                engine.removePlayer(room, socket.data.playerId);
+            }
             broadcast(room);
         }
         socket.data.roomCode = null;
+        socket.data.spectating = false;
         pushPresence();
     });
 
@@ -394,7 +441,9 @@ io.on('connection', (socket) => {
         pushPresence();
     });
 
-    socket.on('chat:send', ({ text } = {}) => act(socket, (room, pid) => engine.addChat(room, pid, text)));
+    socket.on('chat:send', ({ text } = {}) =>
+        act(socket, (room, pid) => engine.addChat(room, pid, text), { watchers: true }),
+    );
     socket.on('game:activity', (payload = {}) => act(socket, (room, pid) => engine.setActivity(room, pid, payload)));
 
     socket.on('disconnect', () => {
@@ -409,6 +458,13 @@ io.on('connection', (socket) => {
             (s) => s.id !== socket.id && s.data.playerId === playerId && s.data.roomCode === room.roomCode,
         );
         if (stillHere) return;
+
+        // A watcher leaving is just gone — there's no seat to hold for them and
+        // no turn to skip, so none of the grace-period machinery applies.
+        if (socket.data.spectating) {
+            if (engine.removeSpectator(room, playerId)) broadcast(room);
+            return;
+        }
 
         engine.markDisconnected(room, playerId);
         broadcast(room);
@@ -428,12 +484,11 @@ io.on('connection', (socket) => {
     });
 });
 
-function joinRoom(socket, room, { name, playerId, initials, color }, cb) {
-    const result = engine.addPlayer(room, { name, playerId, initials, color });
-    if (result.error) return cb?.({ error: result.error });
-
+/** Sit a socket down in a room it has just been admitted to. */
+function seat(socket, room, result, cb) {
     socket.data.playerId = result.player.id;
     socket.data.roomCode = room.roomCode;
+    socket.data.spectating = false;
     socket.join(room.roomCode);
     clearTimeout(graceTimers.get(result.player.id));
     graceTimers.delete(result.player.id);
@@ -471,6 +526,9 @@ function restoreRooms() {
             p.connected = false;
             p.activity = null;
         }
+        // Watchers are tracked by live socket and nothing else, so a snapshot's
+        // list is stale on arrival. They reconnect and re-announce themselves.
+        room.spectators = [];
         rooms.set(room.roomCode, room);
         // Everyone above was just marked disconnected, which is exactly what an
         // abandonment countdown is watching for — so give it its full length

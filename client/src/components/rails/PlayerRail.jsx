@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Crown, Gavel, WifiOff } from 'lucide-react';
+import { Crown, Eye, Gavel, WifiOff } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { alpha, tag } from '@/lib/color';
 import { money, shortMoney } from '@/lib/board-layout';
@@ -131,9 +131,12 @@ export function PlayerRail({ onSpotlight, pinned, onPin, onVoteKick }) {
     // decision. A countdown on someone who has already dropped out isn't one,
     // so it stays available however few of you are left.
     const inPlay = state.players.filter((p) => !p.bankrupt);
+    const watchers = (state.spectators || []).filter((s) => !s.seated);
     const canVote =
         !!onVoteKick &&
-        !me?.bankrupt &&
+        // `!me?.bankrupt` alone is true for a watcher, who has no `me` at all.
+        !!me &&
+        !me.bankrupt &&
         (inPlay.length >= 3 || inPlay.some((p) => p.id !== playerId && !p.connected));
 
     // With teams on, players are already seated in interleaved order — which is
@@ -194,6 +197,21 @@ export function PlayerRail({ onSpotlight, pinned, onPin, onVoteKick }) {
                     </div>
                 ))}
             </div>
+            {/* Who's looking on. Only those with no seat at all — someone who
+                went bankrupt is already a row above, and listing them twice
+                would read as two people. */}
+            {watchers.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-white/5 px-3 py-2">
+                    <span className="label flex items-center gap-1.5 text-muted-foreground">
+                        <Eye className="size-3" /> watching
+                    </span>
+                    {watchers.map((s) => (
+                        <span key={s.id} className="max-w-[9em] truncate text-[12px] text-muted-foreground">
+                            {s.name}
+                        </span>
+                    ))}
+                </div>
+            )}
         </section>
     );
 }

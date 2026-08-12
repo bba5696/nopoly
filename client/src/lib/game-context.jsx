@@ -13,6 +13,8 @@ export function GameProvider({ children }) {
     const [joining, setJoining] = useState(false);
     /** Server-wide head count, pushed whenever it changes. */
     const [presence, setPresence] = useState(null);
+    /** In the room without a seat — watching rather than playing. */
+    const [spectating, setSpectating] = useState(false);
 
     const flash = useCallback((text) => {
         setNotice({ text, at: Date.now() });
@@ -21,9 +23,10 @@ export function GameProvider({ children }) {
 
     const applyJoin = useCallback((res) => {
         if (!res || res.error) return res;
-        saveIdentity({ playerId: res.playerId, roomCode: res.roomCode });
+        saveIdentity({ playerId: res.playerId, roomCode: res.roomCode, spectating: !!res.spectating });
         setPlayerId(res.playerId);
         setRoomCode(res.roomCode);
+        setSpectating(!!res.spectating);
         setState(res.state);
         return res;
     }, []);
@@ -40,18 +43,31 @@ export function GameProvider({ children }) {
             setConnected(true);
             // A tab restored in the background connects already hidden.
             reportVisibility();
-            const { roomCode: stored, playerId: pid, name, initials, color } = loadIdentity();
-            if (stored) {
-                socket.emit('room:join', { roomCode: stored, playerId: pid, name, initials, color }, (res) => {
-                    if (res?.error) {
-                        clearRoom();
-                        setRoomCode(null);
-                        setState(null);
-                    } else {
-                        applyJoin(res);
-                    }
-                });
-            }
+            const { roomCode: stored, playerId: pid, name, initials, color, spectating: wasWatching } = loadIdentity();
+            if (!stored) return;
+
+            const dropOut = () => {
+                clearRoom();
+                setRoomCode(null);
+                setSpectating(false);
+                setState(null);
+            };
+            const watch = () =>
+                socket.emit('room:spectate', { roomCode: stored, playerId: pid, name }, (res) =>
+                    res?.error ? dropOut() : applyJoin(res),
+                );
+
+            // Straight back to watching if that's how we left. Asking for a
+            // seat first would be answered with the same refusal that sent us
+            // here, and would flash the prompt again on every reconnect.
+            if (wasWatching) return watch();
+            socket.emit('room:join', { roomCode: stored, playerId: pid, name, initials, color }, (res) => {
+                if (!res?.error) return applyJoin(res);
+                // A seat that vanished while we were away — a game that started
+                // without us, or a room that filled up — is still watchable.
+                if (res.canSpectate) return watch();
+                dropOut();
+            });
         };
         const onDisconnect = () => {
             setConnected(false);
@@ -63,11 +79,15 @@ export function GameProvider({ children }) {
         const onState = (next) => {
             // Dropped from the room (resigned, or not carried into a rematch) —
             // fall back to the home screen rather than showing a game we're
-            // no longer part of.
-            const pid = loadIdentity().playerId;
-            if (pid && !next.players.some((p) => p.id === pid)) {
+            // no longer part of. A watcher is never in `players` and is meant
+            // not to be, so this can't judge them by the same list.
+            const { playerId: pid, spectating: watching } = loadIdentity();
+            const gone = pid && !next.players.some((p) => p.id === pid);
+            const stillWatching = watching && next.spectators?.some((s) => s.id === pid);
+            if (gone && !stillWatching) {
                 clearRoom();
                 setRoomCode(null);
+                setSpectating(false);
                 setState(null);
                 return;
             }
@@ -122,6 +142,29 @@ export function GameProvider({ children }) {
                     { roomCode: code.toUpperCase().trim(), name, playerId: pid, initials, color },
                     (res) => {
                         setJoining(false);
+                        // A refusal that comes with a way in isn't a failure
+                        // yet — the caller offers the choice instead of a
+                        // toast that reads like a dead end.
+                        if (res?.error && !res.canSpectate) flash(res.error);
+                        else if (!res?.error) applyJoin(res);
+                        resolve(res);
+                    },
+                );
+            }),
+        [applyJoin, flash],
+    );
+
+    const spectate = useCallback(
+        (code, name) =>
+            new Promise((resolve) => {
+                setJoining(true);
+                saveIdentity({ name });
+                const { playerId: pid } = loadIdentity();
+                socket.emit(
+                    'room:spectate',
+                    { roomCode: code.toUpperCase().trim(), name, playerId: pid },
+                    (res) => {
+                        setJoining(false);
                         if (res?.error) flash(res.error);
                         else applyJoin(res);
                         resolve(res);
@@ -135,6 +178,7 @@ export function GameProvider({ children }) {
         socket.emit('room:leave');
         clearRoom();
         setRoomCode(null);
+        setSpectating(false);
         setState(null);
     }, []);
 
@@ -158,13 +202,15 @@ export function GameProvider({ children }) {
             current,
             isMyTurn: !!me && !!current && me.id === current.id && !state.paused,
             isHost: !!state && state.hostId === playerId,
+            spectating,
             createRoom,
             joinRoom,
+            spectate,
             leaveRoom,
             flash,
             send,
         };
-    }, [connected, joining, notice, presence, playerId, roomCode, state, createRoom, joinRoom, leaveRoom, flash, send]);
+    }, [connected, joining, notice, presence, playerId, roomCode, state, spectating, createRoom, joinRoom, spectate, leaveRoom, flash, send]);
 
     return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
