@@ -19,7 +19,12 @@ const GRACE_MS = 1800;
  */
 function loadedBundle() {
     for (const el of document.querySelectorAll('script[src]')) {
-        const match = el.getAttribute('src').match(/assets\/index-[A-Za-z0-9_-]+\.js/);
+        // `main` as well as `index`: vite names the entry chunk after its input
+        // key, and declaring inputs by name for the sound bench turned
+        // `index-<hash>.js` into `main-<hash>.js`. This returned null for every
+        // production build until that was noticed, and a null baseline is the
+        // one value that switches the whole update check off.
+        const match = el.getAttribute('src').match(/assets\/(?:index|main)-[A-Za-z0-9_-]+\.js/);
         if (match) return match[0];
     }
     return null;

@@ -78,7 +78,13 @@ function currentVersion() {
             const html = fs.readFileSync(file, 'utf8');
             // The hashed bundle name is the whole point — it is the identity of
             // the build. Fall back to the mtime if the shape ever changes.
-            const asset = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/);
+            //
+            // `main` as well as `index`: declaring named inputs in vite.config
+            // (which the sound bench needs) renames the entry chunk after the
+            // key, so a build emits `main-<hash>.js`. Matching only `index-`
+            // quietly fell through to the mtime here, and to *null* in the
+            // client's loadedBundle() — which disables the reload entirely.
+            const asset = html.match(/assets\/(?:index|main)-[A-Za-z0-9_-]+\.js/);
             versionCache = { mtime: mtimeMs, value: asset ? asset[0] : String(mtimeMs) };
         }
     } catch {
