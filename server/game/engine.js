@@ -1353,6 +1353,39 @@ function setActivity(room, playerId, activity = {}) {
     return {};
 }
 
+/**
+ * Give up a seat entirely. Only possible before the game starts — once it's
+ * running a player owns property and holds a place in the turn order, so
+ * leaving can only ever mean "disconnected", and the seat is held for them.
+ *
+ * In the lobby there's nothing to hold: keeping the row meant a leaver still
+ * took up a seat against the player cap, still filled a team slot, and — if
+ * they were the host — took the ability to change any setting or start the
+ * game with them.
+ */
+function removePlayer(room, playerId) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (room.phase !== 'waiting') {
+        markDisconnected(room, playerId);
+        return { kept: true };
+    }
+
+    room.players = room.players.filter((p) => p.id !== playerId);
+    log(room, `${player.name} left`);
+    // The room outlives its host — otherwise the rules are frozen for everyone
+    // left behind and nobody can start.
+    if (room.hostId === playerId) {
+        room.hostId = room.players[0]?.id || null;
+        if (room.hostId) log(room, `${findPlayer(room, room.hostId).name} is now the host`);
+    }
+    // Their team is a player short now; the remaining member keeps their slot
+    // and the host can re-pick. Colours only churn when teams are on, where
+    // they're derived rather than chosen.
+    if (room.settings.teams) recolourTeams(room);
+    return {};
+}
+
 function markDisconnected(room, playerId) {
     const player = findPlayer(room, playerId);
     if (!player) return;
@@ -1360,6 +1393,18 @@ function markDisconnected(room, playerId) {
     player.connected = false;
     player.disconnectedAt = Date.now();
     log(room, `${player.name} disconnected`);
+}
+
+/**
+ * Called after the grace period for someone who vanished from the lobby rather
+ * than pressing Leave — a closed tab, a dead connection. The grace period is
+ * what makes this safe against a refresh, which is also a disconnect.
+ */
+function dropIfStillGone(room, playerId) {
+    const player = findPlayer(room, playerId);
+    if (!player || player.connected || room.phase !== 'waiting') return false;
+    removePlayer(room, playerId);
+    return true;
 }
 
 /** Called after the grace period — skips their turn so the game can continue. */
@@ -1457,6 +1502,8 @@ module.exports = {
     setActivity,
     addChat,
     markDisconnected,
+    removePlayer,
+    dropIfStillGone,
     skipIfStillGone,
     resetForRematch,
     netWorth,

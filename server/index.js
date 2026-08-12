@@ -184,7 +184,9 @@ io.on('connection', (socket) => {
         const room = getRoom(socket.data.roomCode);
         if (room) {
             socket.leave(room.roomCode);
-            engine.markDisconnected(room, socket.data.playerId);
+            // Pressing Leave in the lobby gives the seat up for real; mid-game
+            // it can only mean "gone for now", and removePlayer knows which.
+            engine.removePlayer(room, socket.data.playerId);
             broadcast(room);
         }
         socket.data.roomCode = null;
@@ -259,7 +261,11 @@ io.on('connection', (socket) => {
             playerId,
             setTimeout(() => {
                 graceTimers.delete(playerId);
-                if (engine.skipIfStillGone(room, playerId)) broadcast(room);
+                // Phase decides which applies: an empty seat in the lobby is
+                // freed, a seat mid-game is kept and its turn skipped.
+                if (engine.dropIfStillGone(room, playerId) || engine.skipIfStillGone(room, playerId)) {
+                    broadcast(room);
+                }
             }, DISCONNECT_GRACE_MS),
         );
     });
