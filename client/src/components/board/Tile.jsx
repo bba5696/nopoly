@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 import { flagFor } from '@/lib/emblems';
 import { priceOf, trendColor, trendOf } from '@/lib/market';
 import { Slot, SlotBody, SlotEmblem, SlotJail, SlotName, SlotPrice } from '@/components/ui/slot';
-import { TileIcon, iconKindFor } from './TileIcon';
+import { iconKindFor } from '@/lib/tile-icon-kind';
+import { TileIcon } from './TileIcon';
 
 const VACANT_PILL = 'rgba(255,255,255,0.11)';
 const VACANT_SURFACE = 'rgba(255,255,255,0.055)';

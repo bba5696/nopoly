@@ -54,4 +54,7 @@ function Button({
   );
 }
 
-export { Button, buttonVariants }
+// `buttonVariants` stays module-local: shadcn scaffolds it as an export, but
+// nothing here imports it, and a non-component export in this file is what
+// stops react-refresh from fast-refreshing every screen that uses a Button.
+export { Button }

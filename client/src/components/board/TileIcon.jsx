@@ -5,6 +5,8 @@
  * colours, each with a matching glow, and they scale off font-size.
  */
 
+import { iconKindFor } from '@/lib/tile-icon-kind';
+
 const ICONS = {
     chance: {
         glow: '#ff5c9a',
@@ -128,28 +130,6 @@ const ICONS = {
         ),
     },
 };
-
-// Keyed by name rather than tile id — ids move between boards, names don't.
-const BY_NAME = {
-    'Income Tax': 'incomeTax',
-    'Earnings Tax': 'incomeTax',
-    'Luxury Tax': 'luxuryTax',
-    'Premium Tax': 'luxuryTax',
-    'Electric Company': 'electric',
-    'Power Company': 'electric',
-    'Gas Company': 'gas',
-    'Water Company': 'water',
-    Vacation: 'vacation',
-    'Go to Jail': 'goToJail',
-};
-
-/** Which icon a slot uses, or null for slots that draw themselves. */
-export function iconKindFor(tile) {
-    if (tile.type === 'chance') return 'chance';
-    if (tile.type === 'chest') return 'chest';
-    if (tile.type === 'airport') return 'airport';
-    return BY_NAME[tile.name] || null;
-}
 
 export function TileIcon({ tile, kind, className, style, glow = true }) {
     const key = kind || (tile && iconKindFor(tile));
