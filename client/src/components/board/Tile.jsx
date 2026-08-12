@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronsRight } from 'lucide-react';
-import { isCorner, jailIndex, tilePlacement } from '@/lib/board-layout';
+import { isCorner, jailIndex, taxLabel, tilePlacement } from '@/lib/board-layout';
 import { alpha } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { flagFor } from '@/lib/emblems';
@@ -138,6 +138,11 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                     <SlotName className="font-medium text-muted-foreground" style={{ fontSize: nameSize }}>
                         {tile.name}
                     </SlotName>
+                    {/* Tax tiles have no price to show, which used to leave the
+                        rate invisible until you landed on it. */}
+                    {tile.type === 'tax' && (
+                        <span className="mono text-[0.95em] leading-none text-[#ff9db2]">{taxLabel(tile)}</span>
+                    )}
                 </SlotBody>
             ) : (
                 <>

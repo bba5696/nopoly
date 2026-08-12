@@ -52,6 +52,17 @@ export const shortMoney = (n) => {
 export const HOUSE_LABEL = ['', '1 house', '2 houses', '3 houses', '4 houses', 'Hotel'];
 
 /** Short tag shown in the tile's band, mirroring the wireframe. */
+/**
+ * What a tax tile charges, short enough to sit on the slot itself — "10%" where
+ * a property carries its price. Now that the rate varies by board and by tile,
+ * a bare "TAX" is the one thing on the board that tells you nothing.
+ */
+export function taxLabel(tile) {
+    const rule = tile?.tax;
+    if (!rule) return '';
+    return rule.percent ? `${rule.percent}%` : `$${rule.amount || 0}`;
+}
+
 export function tileTag(tile, groups) {
     switch (tile.type) {
         case 'property':

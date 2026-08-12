@@ -2,7 +2,7 @@ import { Home, Hotel, ArrowDownRight, ArrowUpRight, Banknote } from 'lucide-reac
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { money } from '@/lib/board-layout';
+import { money, taxLabel } from '@/lib/board-layout';
 import { rentTable, ownsFullGroup, canBuild, canSell, sameSide } from '@/lib/rent';
 import { alpha } from '@/lib/color';
 import { priceOf, trendColor, trendOf } from '@/lib/market';
@@ -77,7 +77,14 @@ export function TileInfoModal({ tile, onClose }) {
                     style={{ background: `linear-gradient(180deg, ${alpha(color, 0.35)}, ${alpha(color, 0.08)})` }}
                 >
                     <span className="label" style={{ color }}>
-                        {owner ? `owned by ${owner.name}` : group?.name || tile.type}
+                        {/* The rate belongs in the header, where a property
+                            names its set — "tax" on its own says nothing now
+                            that the number varies by tile. */}
+                        {owner
+                            ? `owned by ${owner.name}`
+                            : tile.type === 'tax'
+                              ? `tax · ${taxLabel(tile)}`
+                              : group?.name || tile.type}
                     </span>
                     <h2 className="text-2xl font-medium">{tile.name}</h2>
                 </header>
