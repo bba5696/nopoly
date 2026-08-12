@@ -312,6 +312,9 @@ function publicState(room) {
         teams: room.settings.teams ? teamSummary(room) : null,
         teamIds: TEAM_IDS,
         teamColors: TEAM_COLORS,
+        // The palette to choose from, so the picker and the validation that
+        // guards it can't drift apart.
+        playerColors: PLAYER_COLORS,
         teamSize: TEAM_SIZE,
         offTurnFee: OFF_TURN_FEE,
         settings: room.settings,
@@ -326,7 +329,7 @@ function publicState(room) {
 
 /* --------------------------------------------------------------- lobby ops */
 
-function addPlayer(room, { name, playerId }) {
+function addPlayer(room, { name, playerId, initials, color }) {
     // Checked before the rejoin path, or a kicked player walks straight back in
     // on their stored id.
     if (playerId && room.banned?.includes(playerId)) {
@@ -340,6 +343,10 @@ function addPlayer(room, { name, playerId }) {
         existing.connected = true;
         existing.disconnectedAt = null;
         if (name && name !== existing.name) existing.name = name;
+        // Whatever they last set carries across a refresh with them. Errors are
+        // ignored on purpose — a colour their browser remembers is not worth
+        // refusing a reconnection over.
+        if (initials !== undefined || color !== undefined) setProfile(room, existing.id, { initials, color });
         // Beating a countdown called on you is the whole way out of it.
         cancelAbandon(room, existing.id);
         return { player: existing, rejoined: true };
@@ -347,12 +354,22 @@ function addPlayer(room, { name, playerId }) {
     if (room.phase !== 'waiting') return { error: 'Game already in progress' };
     if (room.players.length >= room.settings.maxPlayers) return { error: 'Room is full' };
 
-    const used = new Set(room.players.map((p) => p.color));
-    const color = PLAYER_COLORS.find((c) => !used.has(c)) || PLAYER_COLORS[room.players.length % PLAYER_COLORS.length];
+    // A free colour to start with, so nobody has to visit the picker to be
+    // told apart. It's only a default: picks are allowed to collide, and
+    // recolourPlayers sorts out the shades afterwards.
+    const used = new Set(room.players.map((p) => p.baseColor));
+    const fallback =
+        PLAYER_COLORS.find((c) => !used.has(c)) || PLAYER_COLORS[room.players.length % PLAYER_COLORS.length];
     const player = {
         id: playerId || uid(),
         name: (name || 'player').slice(0, 16),
-        color,
+        // What they chose, and what the board draws — the same until someone
+        // else wants the same colour.
+        baseColor: cleanColor(color) || fallback,
+        color: cleanColor(color) || fallback,
+        // Null means "work it out from my name", which is what most people
+        // will leave it as.
+        initials: cleanInitials(initials),
         // Assigned by the host in the lobby; null in a free-for-all.
         teamId: null,
         cash: room.settings.startingCash,
@@ -372,8 +389,52 @@ function addPlayer(room, { name, playerId }) {
     };
     room.players.push(player);
     if (!room.hostId) room.hostId = player.id;
+    // Their pick may be one somebody already has, so everyone's shade is
+    // settled here rather than at the moment of choosing.
+    recolourPlayers(room);
     log(room, `${player.name} joined`);
     return { player, rejoined: false };
+}
+
+/* --------------------------------------------------------------- profiles */
+
+/** Up to three characters, or null to fall back to the name. */
+function cleanInitials(value) {
+    const text = String(value ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+    return text || null;
+}
+
+/** Only colours from the palette — an open field is a way to render nothing. */
+function cleanColor(value) {
+    const hex = String(value ?? '').toLowerCase();
+    return PLAYER_COLORS.includes(hex) ? hex : null;
+}
+
+/**
+ * Your own initials and colour. Both are yours alone to set — there's nothing
+ * here for the host to arbitrate, and nothing another player can take from you
+ * by picking it first.
+ *
+ * The colour is locked once the game is running: property markers, tokens and
+ * the rail are all read by colour, and changing one mid-game would quietly
+ * rewrite who the board says owns what. Initials stay editable, since they only
+ * ever appear next to the name they stand in for.
+ */
+function setProfile(room, playerId, { initials, color } = {}) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+
+    if (initials !== undefined) player.initials = cleanInitials(initials);
+
+    if (color !== undefined && color !== null) {
+        if (room.phase !== 'waiting') return { error: 'Colours are locked once the game starts' };
+        if (room.settings.teams) return { error: 'Teams pick the colours' };
+        const picked = cleanColor(color);
+        if (!picked) return { error: 'Unknown colour' };
+        player.baseColor = picked;
+        recolourPlayers(room);
+    }
+    return {};
 }
 
 /**
@@ -462,17 +523,90 @@ function teamsReady(room) {
     return {};
 }
 
+/* ------------------------------------------------------------- shades */
+
+/** #rrggbb -> {h, s, l}, with h in degrees and s/l in percent. */
+function hexToHsl(hex) {
+    const h = String(hex || '').replace('#', '');
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    const n = parseInt(full, 16) || 0;
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l: l * 100 };
+    const d = max - min;
+    const s = d / (1 - Math.abs(2 * l - 1));
+    const hue = max === r ? ((g - b) / d + (g < b ? 6 : 0)) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return { h: hue * 60, s: s * 100, l: l * 100 };
+}
+
+function hslToHex(h, s, l) {
+    const S = s / 100;
+    const L = l / 100;
+    const c = (1 - Math.abs(2 * L - 1)) * S;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = L - c / 2;
+    const seg = Math.floor(((h % 360) + 360) % 360 / 60);
+    const [r, g, b] = [
+        [c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x],
+    ][seg];
+    const hex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+/** Kept off the extremes, where every colour turns into black or white. */
+const SHADE_MIN = 26;
+const SHADE_MAX = 84;
+/** How far apart two people who picked the same colour end up. */
+const SHADE_SPAN = 50;
+
+/**
+ * Lightnesses for `n` players who all picked the same colour, spread evenly
+ * around what they picked. Nobody keeps the exact shade once there's a clash —
+ * an even spread is the only arrangement that can't put two of them on the same
+ * value when the colour they chose is already near the top or bottom of the
+ * range, and two players wearing the same colour is the one outcome this
+ * exists to prevent.
+ */
+function shadeLevels(base, n) {
+    if (n <= 1) return [base];
+    const span = Math.min(SHADE_SPAN, SHADE_MAX - SHADE_MIN);
+    const start = Math.max(SHADE_MIN, Math.min(base - span / 2, SHADE_MAX - span));
+    return Array.from({ length: n }, (_, i) => start + (span * i) / (n - 1));
+}
+
+/**
+ * Derive everyone's rendered colour from the one they picked. Picks are free to
+ * collide — the board just has to be able to tell them apart afterwards.
+ */
+function recolourPlayers(room) {
+    const claimants = new Map();
+    for (const p of room.players) {
+        // A room restored from before picks existed only has a rendered colour;
+        // treat that as what they chose.
+        if (!p.baseColor) p.baseColor = p.color;
+        if (!claimants.has(p.baseColor)) claimants.set(p.baseColor, []);
+        claimants.get(p.baseColor).push(p);
+    }
+    for (const [base, players] of claimants) {
+        const { h, s, l } = hexToHsl(base);
+        const levels = shadeLevels(l, players.length);
+        players.forEach((p, i) => {
+            p.color = players.length === 1 ? base : hslToHex(h, s, levels[i]);
+        });
+    }
+}
+
 /**
  * Teammates wear the same hue in two shades, so `player.color` stays the single
  * source of truth for every existing token, tile marker and rail row.
  */
 function recolourTeams(room) {
     if (!room.settings.teams) {
-        const used = new Set();
-        for (const p of room.players) {
-            p.color = PLAYER_COLORS.find((c) => !used.has(c)) || PLAYER_COLORS[0];
-            used.add(p.color);
-        }
+        // Back to what everyone chose for themselves — the team colours were
+        // only ever on loan.
+        recolourPlayers(room);
         return;
     }
     const slots = {};
@@ -1642,7 +1776,10 @@ function removePlayer(room, playerId) {
     // Their team is a player short now; the remaining member keeps their slot
     // and the host can re-pick. Colours only churn when teams are on, where
     // they're derived rather than chosen.
+    // A seat freed can also free the colour that came with it, so whoever was
+    // sharing it goes back to wearing it plain.
     if (room.settings.teams) recolourTeams(room);
+    else recolourPlayers(room);
     return {};
 }
 
@@ -1742,6 +1879,7 @@ module.exports = {
     expireVote,
     cancelAbandon,
     refreshAbandonDeadline,
+    setProfile,
     sameSide,
     teammate,
     startAuction,

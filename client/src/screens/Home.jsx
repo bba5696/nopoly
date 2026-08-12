@@ -9,7 +9,8 @@ import { initials } from '@/lib/color';
 
 export function Home() {
     const { createRoom, joinRoom, joining, connected } = useGame();
-    const [name, setName] = useState(loadIdentity().name || '');
+    const saved = loadIdentity();
+    const [name, setName] = useState(saved.name || '');
     const [code, setCode] = useState('');
 
     const trimmed = name.trim();
@@ -37,7 +38,9 @@ export function Home() {
                             className="mono flex size-13 shrink-0 items-center justify-center rounded-full border border-white/10 bg-primary/15 text-sm font-semibold text-primary"
                             style={{ width: 52, height: 52 }}
                         >
-                            {trimmed ? initials(trimmed) : '··'}
+                            {/* Whatever you last set, so the preview matches
+                                what the table will actually see. */}
+                            {saved.initials || (trimmed ? initials(trimmed) : '··')}
                         </div>
                         <input
                             value={name}

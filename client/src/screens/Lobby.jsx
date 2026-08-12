@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Percent, Scale, ShieldOff, TrendingUp, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, TrendingUp, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
 import { PresencePill } from '@/components/ui/presence';
-import { alpha, initials } from '@/lib/color';
+import { ProfileModal } from '@/components/modals/ProfileModal';
+import { alpha, tag } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { playJoin, playPlayerJoined } from '@/lib/sound';
 
@@ -194,6 +195,7 @@ function SettingRow({ icon: Icon, label, hint, beta, children }) {
 export function Lobby() {
     const { state, playerId, isHost, send, leaveRoom } = useGame();
     const [copied, setCopied] = useState(false);
+    const [profileOpen, setProfileOpen] = useState(false);
 
     // Landing in the lobby is a gesture-adjacent moment — the click that got
     // you here has already opened the audio context.
@@ -327,17 +329,30 @@ export function Lobby() {
                                     <motion.div
                                         layout
                                         key={p.id}
-                                        className="flex shrink-0 items-center gap-3 rounded-xl border px-4 py-3"
+                                        // Your own row opens your profile. Nobody
+                                        // else's does anything, so there's no
+                                        // mis-tap to make.
+                                        role={p.id === playerId ? 'button' : undefined}
+                                        onClick={p.id === playerId ? () => setProfileOpen(true) : undefined}
+                                        className={cn(
+                                            'flex shrink-0 items-center gap-3 rounded-xl border px-4 py-3',
+                                            p.id === playerId && 'cursor-pointer transition-colors hover:border-white/40',
+                                        )}
                                         style={{ borderColor: alpha(p.color, 0.35), background: alpha(p.color, 0.07) }}
                                     >
                                         <span
                                             className="mono flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
                                             style={{ background: `linear-gradient(160deg, ${p.color}, ${alpha(p.color, 0.6)})` }}
                                         >
-                                            {initials(p.name)}
+                                            {tag(p)}
                                         </span>
                                         <span className="min-w-0 flex-1 truncate text-lg">{p.name}</span>
-                                        {p.id === playerId && <span className="label shrink-0">you</span>}
+                                        {p.id === playerId && (
+                                            <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                                                <span className="label">you</span>
+                                                <Pencil className="size-3.5" />
+                                            </span>
+                                        )}
                                         {p.id === state.hostId && <Crown className="size-4 shrink-0 text-[#ffb648]" />}
                                         {settings.teams && (
                                             <TeamPicker
@@ -507,6 +522,7 @@ export function Lobby() {
                     </div>
                 </div>
             </motion.div>
+            {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
         </div>
     );
 }

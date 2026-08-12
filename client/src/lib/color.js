@@ -7,3 +7,10 @@ export function alpha(hex, a) {
 }
 
 export const initials = (name) => (name || '?').trim().slice(0, 2).toUpperCase();
+
+/**
+ * What goes in someone's token. Their own initials if they set any, otherwise
+ * the first letters of their name — which is what everybody had before the
+ * profile existed and what most people will leave it as.
+ */
+export const tag = (player) => player?.initials || initials(player?.name);

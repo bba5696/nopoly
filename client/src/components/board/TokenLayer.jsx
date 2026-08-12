@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { gridFor, jailIndex, tilePlacement } from '@/lib/board-layout';
-import { alpha, initials } from '@/lib/color';
+import { alpha, tag } from '@/lib/color';
 
 /**
  * Jail is two places at once: the barred cell in the slot's inner corner, and
@@ -111,7 +111,7 @@ export function TokenLayer({ players, display, activeId, boardSize, geom, gap = 
                         }}
                         title={p.name}
                     >
-                        {initials(p.name)}
+                        {tag(p)}
                     </motion.div>
                 );
             })}

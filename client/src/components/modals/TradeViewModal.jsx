@@ -4,7 +4,7 @@ import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { money } from '@/lib/board-layout';
-import { alpha, initials } from '@/lib/color';
+import { alpha, tag } from '@/lib/color';
 import { priceOf } from '@/lib/market';
 import { lopsidedFor } from '@/lib/rent';
 
@@ -18,7 +18,7 @@ function Side({ player, side, tiles, groups }) {
                     className="mono flex size-7 items-center justify-center rounded-full text-[10px] text-white"
                     style={{ background: player.color }}
                 >
-                    {initials(player.name)}
+                    {tag(player)}
                 </span>
                 <span className="truncate text-lg">{player.name}</span>
             </div>

@@ -4,7 +4,7 @@ import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { money } from '@/lib/board-layout';
-import { alpha, initials } from '@/lib/color';
+import { alpha, tag } from '@/lib/color';
 import { priceOf } from '@/lib/market';
 
 function PropertyPicker({ player, tiles, selected, onToggle, groups }) {
@@ -141,7 +141,7 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
                                     className="mono flex size-5 items-center justify-center rounded-full text-[8px] text-white"
                                     style={{ background: p.color }}
                                 >
-                                    {initials(p.name)}
+                                    {tag(p)}
                                 </span>
                                 {p.name}
                             </button>
@@ -156,7 +156,7 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
                                 className="mono flex size-7 items-center justify-center rounded-full text-[10px] text-white"
                                 style={{ background: me.color }}
                             >
-                                {initials(me.name)}
+                                {tag(me)}
                             </span>
                             <span className="text-lg">You give</span>
                         </div>
@@ -182,7 +182,7 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
                                 className="mono flex size-7 items-center justify-center rounded-full text-[10px] text-white"
                                 style={{ background: target.color }}
                             >
-                                {initials(target.name)}
+                                {tag(target)}
                             </span>
                             <span className="text-lg">{target.name} gives</span>
                         </div>

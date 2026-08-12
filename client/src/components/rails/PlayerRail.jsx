@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Crown, Gavel, WifiOff } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
-import { alpha, initials } from '@/lib/color';
+import { alpha, tag } from '@/lib/color';
 import { money, shortMoney } from '@/lib/board-layout';
 
 function note(player, state, isCurrent) {
@@ -26,7 +26,7 @@ function Avatar({ player, size = 30, glow }) {
                 opacity: player.bankrupt ? 0.4 : 1,
             }}
         >
-            {initials(player.name)}
+            {tag(player)}
         </div>
     );
 }

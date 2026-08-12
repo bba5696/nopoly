@@ -296,18 +296,18 @@ setInterval(sweepEmptyRooms, 60_000).unref();
 io.on('connection', (socket) => {
     pushPresence();
 
-    socket.on('room:create', ({ name, playerId } = {}, cb) => {
+    socket.on('room:create', ({ name, playerId, initials, color } = {}, cb) => {
         let code = engine.makeRoomCode();
         while (rooms.has(code)) code = engine.makeRoomCode();
         const room = engine.createRoom(code);
         rooms.set(code, room);
-        joinRoom(socket, room, { name, playerId }, cb);
+        joinRoom(socket, room, { name, playerId, initials, color }, cb);
     });
 
-    socket.on('room:join', ({ roomCode, name, playerId } = {}, cb) => {
+    socket.on('room:join', ({ roomCode, name, playerId, initials, color } = {}, cb) => {
         const room = getRoom(roomCode);
         if (!room) return cb?.({ error: 'No room with that code' });
-        joinRoom(socket, room, { name, playerId }, cb);
+        joinRoom(socket, room, { name, playerId, initials, color }, cb);
     });
 
     socket.on('room:leave', () => {
@@ -323,6 +323,7 @@ io.on('connection', (socket) => {
         pushPresence();
     });
 
+    socket.on('room:profile', (patch = {}) => act(socket, (room, pid) => engine.setProfile(room, pid, patch)));
     socket.on('room:settings', (patch = {}) => act(socket, (room, pid) => engine.updateSettings(room, pid, patch)));
     socket.on('room:team', ({ playerId, teamId } = {}) =>
         act(socket, (room, pid) => engine.setTeam(room, pid, playerId, teamId ?? null)),
@@ -419,8 +420,8 @@ io.on('connection', (socket) => {
     });
 });
 
-function joinRoom(socket, room, { name, playerId }, cb) {
-    const result = engine.addPlayer(room, { name, playerId });
+function joinRoom(socket, room, { name, playerId, initials, color }, cb) {
+    const result = engine.addPlayer(room, { name, playerId, initials, color });
     if (result.error) return cb?.({ error: result.error });
 
     socket.data.playerId = result.player.id;

@@ -40,9 +40,9 @@ export function GameProvider({ children }) {
             setConnected(true);
             // A tab restored in the background connects already hidden.
             reportVisibility();
-            const { roomCode: stored, playerId: pid, name } = loadIdentity();
+            const { roomCode: stored, playerId: pid, name, initials, color } = loadIdentity();
             if (stored) {
-                socket.emit('room:join', { roomCode: stored, playerId: pid, name }, (res) => {
+                socket.emit('room:join', { roomCode: stored, playerId: pid, name, initials, color }, (res) => {
                     if (res?.error) {
                         clearRoom();
                         setRoomCode(null);
@@ -98,7 +98,10 @@ export function GameProvider({ children }) {
             new Promise((resolve) => {
                 setJoining(true);
                 saveIdentity({ name });
-                socket.emit('room:create', { name, playerId: loadIdentity().playerId }, (res) => {
+                // The profile travels with you into a new room rather than
+                // being set up again every game.
+                const { playerId: pid, initials, color } = loadIdentity();
+                socket.emit('room:create', { name, playerId: pid, initials, color }, (res) => {
                     setJoining(false);
                     if (res?.error) flash(res.error);
                     else applyJoin(res);
@@ -113,9 +116,10 @@ export function GameProvider({ children }) {
             new Promise((resolve) => {
                 setJoining(true);
                 saveIdentity({ name });
+                const { playerId: pid, initials, color } = loadIdentity();
                 socket.emit(
                     'room:join',
-                    { roomCode: code.toUpperCase().trim(), name, playerId: loadIdentity().playerId },
+                    { roomCode: code.toUpperCase().trim(), name, playerId: pid, initials, color },
                     (res) => {
                         setJoining(false);
                         if (res?.error) flash(res.error);

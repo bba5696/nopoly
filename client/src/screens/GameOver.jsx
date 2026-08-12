@@ -5,7 +5,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { money, shortMoney } from '@/lib/board-layout';
-import { alpha, initials } from '@/lib/color';
+import { alpha, tag } from '@/lib/color';
 
 function duration(stats) {
     if (!stats.startedAt) return '—';
@@ -105,7 +105,7 @@ export function GameOver() {
                                             className="mono flex size-7 items-center justify-center rounded-full text-[10px] text-white"
                                             style={{ background: w.color }}
                                         >
-                                            {initials(w.name)}
+                                            {tag(w)}
                                         </span>
                                         <span className="text-3xl font-medium">{w.name}</span>
                                     </span>
@@ -202,7 +202,7 @@ export function GameOver() {
                                         className="mono flex size-6 items-center justify-center rounded-full text-[9px] text-white"
                                         style={{ background: p.color, opacity: p.bankrupt ? 0.4 : 1 }}
                                     >
-                                        {initials(p.name)}
+                                        {tag(p)}
                                     </span>
                                     <span className="flex-1 truncate text-[16px]">{p.name}</span>
                                     <span className="mono text-[12px] text-muted-foreground">

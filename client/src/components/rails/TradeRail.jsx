@@ -4,7 +4,7 @@ import { ArrowLeftRight, Eye, Plus } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { money } from '@/lib/board-layout';
-import { alpha, initials } from '@/lib/color';
+import { alpha, tag } from '@/lib/color';
 
 function sideSummary(state, side) {
     const parts = side.tiles.map((id) => state.tiles[id]?.name).filter(Boolean);
@@ -44,7 +44,7 @@ function TradeCard({ trade, onOpen, onCounter }) {
                         className="mono flex size-5 items-center justify-center rounded-full text-[8px] text-white"
                         style={{ background: from.color }}
                     >
-                        {initials(from.name)}
+                        {tag(from)}
                     </span>
                     <span className="flex-1 truncate text-[13px]">{who}</span>
                     {watchers.map((w) => (

@@ -4,7 +4,7 @@ import { Check, Gavel, WifiOff, X } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { initials } from '@/lib/color';
+import { tag } from '@/lib/color';
 
 /** Seconds left, ticking locally between broadcasts. */
 function useCountdown(endsAt) {
@@ -56,7 +56,7 @@ export function VoteKickPicker({ open, onClose }) {
                                 className="mono flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] text-white"
                                 style={{ background: p.color }}
                             >
-                                {initials(p.name)}
+                                {tag(p)}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-[15px]">{p.name}</span>
                             {/* Which of the two this turns into, before you
