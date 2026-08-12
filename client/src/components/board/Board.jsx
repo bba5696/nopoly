@@ -42,7 +42,14 @@ export function Board({ display, moving, spotlight, onSelectTile }) {
 
     // One size for every name on the board — per-tile shrinking looked
     // arbitrary, with some names noticeably smaller than their neighbours.
-    const nameSize = useNameSize(state.tiles, narrow - 8, tileFont * 0.95);
+    //
+    // Measured against the name's real box, which is the slot less the body's
+    // own `0.25em` padding either side. Being a few pixels optimistic used to
+    // cost nothing, since a name that didn't quite fit simply hung over the
+    // edge; now that the name is held to the slot's width it breaks mid-word
+    // instead, so the allowance has to be honest.
+    const nameRoom = Math.max(narrow - tileFont * 0.5 - 8, 8);
+    const nameSize = useNameSize(state.tiles, nameRoom, tileFont * 0.95);
 
     const ownerOf = useMemo(() => {
         const map = {};

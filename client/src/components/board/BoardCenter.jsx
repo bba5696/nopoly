@@ -1,13 +1,9 @@
 import { motion } from 'framer-motion';
-import { Dices, SkipForward, KeyRound, Coins } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useGame } from '@/lib/game-context';
-import { playEndTurn, playRoll } from '@/lib/sound';
 import { gridFor } from '@/lib/board-layout';
 import { Dice } from './Dice';
 import { GameFeed } from './GameFeed';
-
-const JAIL_FINE = 50;
+import { TurnActions, DebtNotice } from './TurnActions';
 
 /**
  * A single line describing what the table is waiting on, most urgent first.
@@ -45,33 +41,21 @@ function statusLine({ state, current, moving }) {
 }
 
 /**
- * Wraps an action a debt has taken away. The title sits on a span rather than
- * on the button, because a disabled button gets `pointer-events: none` and a
- * tooltip attached to it would never fire.
+ * The hole in the middle of the ring.
+ *
+ * On a phone that hole is a couple of hundred pixels across, and it used to be
+ * asked to hold dice, a status line, a debt notice, the turn's buttons and the
+ * game feed. It couldn't: the column overflowed in both directions, so the dice
+ * sat on the top row of tiles and End turn sat on the bottom one, half off the
+ * board and barely pressable.
+ *
+ * So below xl it keeps what a glance needs — the dice, the line saying whose
+ * turn it is, and the feed — while everything you press moved to the bar under
+ * the board, where a thumb can reach it. Losing the buttons and the debt notice
+ * is what buys the rest of it room.
  */
-function Blocked({ when, children }) {
-    if (!when) return children;
-    return (
-        <span title="You are in debt" className="inline-flex cursor-not-allowed">
-            {children}
-        </span>
-    );
-}
-
 export function BoardCenter({ moving, dim }) {
-    const { state, me, current, isMyTurn, send } = useGame();
-    // A debt freezes the turn until it's cleared. The buttons still render so
-    // the turn still reads as yours — they're just dead, and say why on hover.
-    const debt = me?.debt || null;
-    const canRoll = isMyTurn && state.phase === 'rolling' && !moving;
-    const canEnd = isMyTurn && !moving && (state.phase === 'resolving' || (state.phase === 'rolling' && state.hasRolled));
-    const inJail = isMyTurn && me?.inJail && state.phase === 'rolling';
-    // A double earns another roll, but the server only re-arms it when the turn
-    // is handed back — so "End turn" is what you press to keep going, which
-    // reads like the opposite of what it does. Both the button that hands the
-    // turn back and the roll that follows say what's actually about to happen.
-    const rollingAgain =
-        isMyTurn && state.doublesCount > 0 && state.doublesCount < 3 && !me?.inJail && !me?.bankrupt;
+    const { state, current } = useGame();
     const status = statusLine({ state, current, moving });
     // Fill everything inside the ring — which is two tracks wider on the
     // 48-tile board than on the 40-tile one.
@@ -79,7 +63,7 @@ export function BoardCenter({ moving, dim }) {
 
     return (
         <div
-            className={`relative flex min-h-0 flex-col items-center justify-center gap-5 rounded-2xl border border-white/[0.05] bg-[#101018]/60 p-6 transition-opacity duration-200 ${
+            className={`relative flex min-h-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/[0.05] bg-[#101018]/60 p-3 transition-opacity duration-200 xl:gap-5 xl:p-6 ${
                 dim ? 'opacity-25' : ''
             }`}
             style={{ gridArea: `2 / 2 / ${grid} / ${grid}` }}
@@ -94,87 +78,15 @@ export function BoardCenter({ moving, dim }) {
                 key={status}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="min-h-8 text-center text-2xl font-medium"
+                className="min-h-0 text-center text-[13px] leading-tight font-medium text-balance sm:text-base xl:min-h-8 xl:text-2xl"
             >
                 {status}
             </motion.span>
 
-            {/* What to do about it, not just that it happened — the selling
-                lives in the You panel and there's nothing to click here. */}
-            {debt && (
-                <div className="flex max-w-[22em] flex-col items-center gap-1 rounded-xl border border-[#ff5c7c]/35 bg-[#ff5c7c]/10 px-5 py-3 text-center">
-                    <span className="mono text-[15px] text-[#ff9db2]">
-                        ${debt.amount} still owed{debt.toId ? ` to ${state.players.find((p) => p.id === debt.toId)?.name}` : ''}
-                    </span>
-                    <span className="text-[13px] leading-snug text-muted-foreground">
-                        Sell buildings or property from the You panel to cover it. Your turn is on hold until you do.
-                    </span>
-                </div>
-            )}
-
-            {/* only actions you can actually take are rendered — a row of dead
-                buttons tells you nothing */}
-            <div className="flex flex-wrap items-center justify-center gap-3 empty:hidden">
-                {inJail && me.cash >= JAIL_FINE && (
-                    <Button className="h-11 px-5 text-base" variant="secondary" onClick={() => send('game:payJail')}>
-                        <Coins /> Pay ${JAIL_FINE}
-                    </Button>
-                )}
-                {inJail && me.jailCards > 0 && (
-                    <Button className="h-11 px-5 text-base" variant="secondary" onClick={() => send('game:useJailCard')}>
-                        <KeyRound /> Use card
-                    </Button>
-                )}
-                {canRoll && (
-                    <Blocked when={!!debt}>
-                        <Button
-                            className="h-11 px-6 text-base"
-                            disabled={!!debt}
-                            onClick={() => {
-                                playRoll();
-                                send('game:roll');
-                            }}
-                        >
-                            <Dices /> {rollingAgain ? 'Roll again' : 'Roll'}
-                        </Button>
-                    </Blocked>
-                )}
-                {canEnd && (
-                    <Blocked when={!!debt}>
-                        {rollingAgain ? (
-                            // Two events, one press. The server needs the
-                            // resolve phase closed before it will re-arm the
-                            // roll, but making the player click twice — through
-                            // a button that says "Roll again" both times — is
-                            // just a worse way of saying "roll". Ordering is
-                            // safe: the socket delivers in order and the
-                            // handler is synchronous.
-                            <Button
-                                className="h-11 px-6 text-base"
-                                disabled={!!debt}
-                                onClick={() => {
-                                    playRoll();
-                                    send('game:endTurn');
-                                    send('game:roll');
-                                }}
-                            >
-                                <Dices /> Roll again
-                            </Button>
-                        ) : (
-                            <Button
-                                className="h-11 px-5 text-base"
-                                variant="outline"
-                                disabled={!!debt}
-                                onClick={() => {
-                                    playEndTurn();
-                                    send('game:endTurn');
-                                }}
-                            >
-                                <SkipForward /> End turn
-                            </Button>
-                        )}
-                    </Blocked>
-                )}
+            {/* Below xl these two are in the bar under the board instead. */}
+            <div className="hidden flex-col items-center gap-5 xl:flex">
+                <DebtNotice />
+                <TurnActions moving={moving} />
             </div>
 
             <GameFeed />

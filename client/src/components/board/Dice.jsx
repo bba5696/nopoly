@@ -16,12 +16,14 @@ function Die({ value, rolling, delay = 0 }) {
         <motion.div
             animate={rolling ? { rotate: [0, -14, 12, -6, 0], y: [0, -14, 0, -5, 0] } : { rotate: 0, y: 0 }}
             transition={{ duration: 0.55, delay, ease: 'easeOut' }}
-            className="grid size-[86px] grid-cols-3 grid-rows-3 place-items-center rounded-2xl border border-white/12 bg-gradient-to-br from-[#232333] to-[#15151e] p-2.5 shadow-[0_14px_30px_-14px_rgba(0,0,0,.9),inset_0_1px_0_rgba(255,255,255,.08)]"
+            // Two thirds the size on a phone, where they share the middle of
+            // the board with the status line and have a fraction of the room.
+            className="grid size-[56px] grid-cols-3 grid-rows-3 place-items-center rounded-xl border border-white/12 bg-gradient-to-br from-[#232333] to-[#15151e] p-1.5 shadow-[0_14px_30px_-14px_rgba(0,0,0,.9),inset_0_1px_0_rgba(255,255,255,.08)] xl:size-[86px] xl:rounded-2xl xl:p-2.5"
         >
             {Array.from({ length: 9 }).map((_, i) => (
                 <span
                     key={i}
-                    className={`size-2.5 rounded-full ${pips.includes(i) ? 'bg-foreground shadow-[0_0_7px_rgba(233,231,242,.5)]' : 'bg-transparent'}`}
+                    className={`size-1.5 rounded-full xl:size-2.5 ${pips.includes(i) ? 'bg-foreground shadow-[0_0_7px_rgba(233,231,242,.5)]' : 'bg-transparent'}`}
                 />
             ))}
         </motion.div>
@@ -31,7 +33,7 @@ function Die({ value, rolling, delay = 0 }) {
 export function Dice({ dice, rolling }) {
     const [a, b] = dice?.[0] ? dice : [1, 1];
     return (
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-3 xl:gap-5">
             <Die value={a} rolling={rolling} />
             <Die value={b} rolling={rolling} delay={0.07} />
         </div>

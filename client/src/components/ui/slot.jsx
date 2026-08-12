@@ -129,10 +129,22 @@ export function SlotName({ className, children, ...props }) {
     return (
         <span
             data-slot="slot-name"
-            // the handful of names too long for one line hyphenate rather than
-            // dragging every other name on the board down a size
+            // Hyphenation was meant to save the handful of names too long for
+            // one line. On a phone every slot is too narrow for its name and
+            // only the first clamped line survives, so the board turned into
+            // "Sal-", "Lux-ur-", "Sur-prise" — a trailing hyphen promises a
+            // rest of the word that never arrives.
+            //
+            // `break-words` rather than nothing at all: a long name with no
+            // space in it has no break to take, and it would spill out of the
+            // slot in both directions and show its middle ("alvado") instead
+            // of its start.
+            //
+            // `w-full` is what makes any of that work: the body centres its
+            // children, so without it the name is sized to its own text and
+            // simply grows past the slot — there is no line box to break.
             lang="en"
-            className={cn('line-clamp-2 hyphens-auto leading-[1.08]', className)}
+            className={cn('line-clamp-2 w-full leading-[1.08] break-words', className)}
             {...props}
         >
             {children}

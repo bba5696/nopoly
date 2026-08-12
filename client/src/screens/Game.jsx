@@ -15,6 +15,8 @@ import { Modal } from '@/components/ui/modal';
 import { useGame } from '@/lib/game-context';
 import { useTokenPositions } from '@/lib/use-token-positions';
 import { Board } from '@/components/board/Board';
+import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
+import { useTurn } from '@/lib/use-turn';
 import { PlayerRail } from '@/components/rails/PlayerRail';
 import { ChatLog } from '@/components/rails/ChatLog';
 import { YouRail } from '@/components/rails/YouRail';
@@ -45,6 +47,7 @@ export function Game() {
     // Mirrors the stored setting so the icon re-renders when it's toggled.
     const [quiet, setQuiet] = useState(isMuted);
     const { display, moving } = useTokenPositions(state.players, state.tiles.length, state.lastMove);
+    const turn = useTurn(moving);
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
@@ -191,6 +194,17 @@ export function Game() {
                         />
                     </div>
                 </main>
+
+                {/* The turn's controls, on every screen too narrow for the
+                    board's middle to hold them. Outside the tabbed panel on
+                    purpose: rolling is the one thing you must be able to do
+                    without first remembering which tab you left open. */}
+                {(turn.any || turn.debt) && (
+                    <div className="flex shrink-0 flex-col items-center gap-2 xl:hidden">
+                        <DebtNotice compact />
+                        <TurnActions moving={moving} wide />
+                    </div>
+                )}
 
                 <aside
                     className={cn(

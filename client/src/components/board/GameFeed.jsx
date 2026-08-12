@@ -25,13 +25,14 @@ export function GameFeed() {
         <div
             ref={scrollRef}
             // no frame — it sits straight on the board and only the scrollbar
-            // shows up, and only once there's enough history to scroll
-            className="scroll-thin flex max-h-[150px] w-full max-w-[380px] flex-col gap-1 overflow-y-auto px-3 text-center"
+            // shows up, and only once there's enough history to scroll.
+            // Shallower on a phone, where it shares the ring with the dice.
+            className="scroll-thin flex max-h-[84px] w-full max-w-[380px] flex-col gap-1 overflow-y-auto px-3 text-center xl:max-h-[150px]"
         >
             {entries.map((entry, i) => (
                 <p
                     key={entry.id}
-                    className="text-[12.5px] leading-snug"
+                    className="text-[11px] leading-snug xl:text-[12.5px]"
                     // the newest line reads brightest, the rest recede
                     style={{ color: i === 0 ? 'var(--foreground)' : 'var(--muted-foreground)' }}
                 >
