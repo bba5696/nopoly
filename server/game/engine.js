@@ -348,7 +348,13 @@ function publicState(room) {
         board: boardMeta(room.board),
         boards: BOARD_LIST,
         completedGroups: sets,
-        stats: room.stats,
+        // The net-worth history is the only part of the state with no bound on
+        // it — one entry per turn, each holding a value per player, and it ships
+        // with every broadcast. Since `act()` broadcasts after every action by
+        // anyone, a long game was re-sending tens of kilobytes of chart data
+        // hundreds of times over. Nothing reads it until the end screen draws
+        // the graph, so it only travels once there's a game over to explain.
+        stats: room.phase === 'ended' ? room.stats : { ...room.stats, netWorth: [] },
     };
 }
 
