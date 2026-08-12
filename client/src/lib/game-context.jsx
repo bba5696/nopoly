@@ -11,6 +11,8 @@ export function GameProvider({ children }) {
     const [state, setState] = useState(null);
     const [notice, setNotice] = useState(null);
     const [joining, setJoining] = useState(false);
+    /** Server-wide head count, pushed whenever it changes. */
+    const [presence, setPresence] = useState(null);
 
     const flash = useCallback((text) => {
         setNotice({ text, at: Date.now() });
@@ -44,7 +46,13 @@ export function GameProvider({ children }) {
                 });
             }
         };
-        const onDisconnect = () => setConnected(false);
+        const onDisconnect = () => {
+            setConnected(false);
+            // Whatever we last heard is now stale, and showing a count from
+            // before we dropped is worse than showing none.
+            setPresence(null);
+        };
+        const onPresence = (next) => setPresence(next);
         const onState = (next) => {
             // Dropped from the room (resigned, or not carried into a rematch) —
             // fall back to the home screen rather than showing a game we're
@@ -63,6 +71,7 @@ export function GameProvider({ children }) {
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
         socket.on('state', onState);
+        socket.on('presence', onPresence);
         socket.on('error:game', onError);
         if (socket.connected) onConnect();
 
@@ -70,6 +79,7 @@ export function GameProvider({ children }) {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
             socket.off('state', onState);
+            socket.off('presence', onPresence);
             socket.off('error:game', onError);
         };
     }, [applyJoin, flash]);
@@ -124,6 +134,7 @@ export function GameProvider({ children }) {
             connected,
             joining,
             notice,
+            presence,
             playerId,
             roomCode,
             state,
@@ -140,7 +151,7 @@ export function GameProvider({ children }) {
             flash,
             send,
         };
-    }, [connected, joining, notice, playerId, roomCode, state, createRoom, joinRoom, leaveRoom, flash, send]);
+    }, [connected, joining, notice, presence, playerId, roomCode, state, createRoom, joinRoom, leaveRoom, flash, send]);
 
     return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

@@ -53,7 +53,7 @@ const DISCONNECT_GRACE_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
 
 app.get('/health', (req, res) => {
-    res.json({ ok: true, rooms: rooms.size });
+    res.json({ ok: true, rooms: rooms.size, ...presence() });
 });
 
 /* ------------------------------------------------------------------ version */
@@ -149,6 +149,61 @@ function broadcast(room) {
     io.to(room.roomCode).emit('state', engine.publicState(room));
 }
 
+/* ----------------------------------------------------------------- presence */
+
+/**
+ * Who's on the server right now. Counted by person rather than by socket — a
+ * second tab is the same someone, and half the group plays with the board open
+ * on a laptop and their phone.
+ *
+ * Deliberately just numbers: room codes are the only thing keeping a game
+ * private, so nothing here can be used to find one.
+ */
+function presence() {
+    const sockets = [...io.sockets.sockets.values()];
+
+    // Two tabs of one browser can disagree about who they are: the one that
+    // joined knows its seat, the one still on the menu only knows the id the
+    // browser had stored. Resolve the stored id to the seat it became, or the
+    // pair counts as two people.
+    const seatOf = new Map();
+    for (const s of sockets) {
+        if (s.handshake.auth?.pid && s.data.playerId) seatOf.set(s.handshake.auth.pid, s.data.playerId);
+    }
+    const who = (s) =>
+        s.data.playerId || seatOf.get(s.handshake.auth?.pid) || s.handshake.auth?.pid || s.id;
+
+    const idle = new Set();
+    const playing = new Set();
+    for (const s of sockets) {
+        (s.data.roomCode && rooms.has(s.data.roomCode) ? playing : idle).add(who(s));
+    }
+    // Being in a game wins over an idle second tab.
+    for (const who of playing) idle.delete(who);
+
+    let games = 0;
+    for (const room of rooms.values()) if (room.players.some((p) => p.connected)) games += 1;
+    return { online: idle.size + playing.size, playing: playing.size, games };
+}
+
+// Coalesced and diffed: a reconnect storm after a redeploy would otherwise be
+// one broadcast per socket, all saying the same thing.
+let lastPresence = '';
+let presenceQueued = false;
+
+function pushPresence() {
+    if (presenceQueued) return;
+    presenceQueued = true;
+    setTimeout(() => {
+        presenceQueued = false;
+        const next = presence();
+        const key = JSON.stringify(next);
+        if (key === lastPresence) return;
+        lastPresence = key;
+        io.emit('presence', next);
+    }, 150).unref();
+}
+
 function getRoom(code) {
     return rooms.get(String(code || '').toUpperCase().trim());
 }
@@ -217,10 +272,13 @@ function sweepEmptyRooms() {
             rooms.delete(code);
         }
     }
+    pushPresence();
 }
 setInterval(sweepEmptyRooms, 60_000).unref();
 
 io.on('connection', (socket) => {
+    pushPresence();
+
     socket.on('room:create', ({ name, playerId } = {}, cb) => {
         let code = engine.makeRoomCode();
         while (rooms.has(code)) code = engine.makeRoomCode();
@@ -245,6 +303,7 @@ io.on('connection', (socket) => {
             broadcast(room);
         }
         socket.data.roomCode = null;
+        pushPresence();
     });
 
     socket.on('room:settings', (patch = {}) => act(socket, (room, pid) => engine.updateSettings(room, pid, patch)));
@@ -303,6 +362,9 @@ io.on('connection', (socket) => {
     socket.on('game:activity', (payload = {}) => act(socket, (room, pid) => engine.setActivity(room, pid, payload)));
 
     socket.on('disconnect', () => {
+        // Before the early return: someone closing the tab on the home screen
+        // never had a room, and still just went offline.
+        pushPresence();
         const room = getRoom(socket.data.roomCode);
         const playerId = socket.data.playerId;
         if (!room || !playerId) return;
@@ -348,6 +410,7 @@ function joinRoom(socket, room, { name, playerId }, cb) {
         state: engine.publicState(room),
     });
     broadcast(room);
+    pushPresence();
 }
 
 // An open server is fine on a laptop and never fine on the internet, and a

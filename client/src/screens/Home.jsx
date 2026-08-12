@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { BuildTag } from '@/components/ui/build-tag';
+import { PresencePill } from '@/components/ui/presence';
 import { loadIdentity } from '@/lib/socket';
 import { initials } from '@/lib/color';
 
@@ -26,9 +27,7 @@ export function Home() {
                         <span className="text-4xl font-medium tracking-tight">nopoly</span>
                         <span className="label">beta</span>
                     </div>
-                    <span className={`label ${connected ? 'text-[#3ddc97]' : 'text-[#ff5c7c]'}`}>
-                        {connected ? 'online' : 'offline'}
-                    </span>
+                    <PresencePill />
                 </header>
 
                 <div className="flex flex-col gap-3">

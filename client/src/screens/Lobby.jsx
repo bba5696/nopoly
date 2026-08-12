@@ -4,6 +4,7 @@ import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Percent, Sc
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
+import { PresencePill } from '@/components/ui/presence';
 import { alpha, initials } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { playJoin, playPlayerJoined } from '@/lib/sound';
@@ -211,6 +212,7 @@ export function Lobby() {
 
     const [tab, setTab] = useState('rules');
     const settings = state.settings;
+    const away = state.players.filter((p) => !p.connected).length;
     // Surfaced on the tab itself, so an experimental rule someone turned on
     // isn't hidden behind a tab nobody opens.
     const activeBeta = BETA_RULES.filter((r) => settings[r.key]).length;
@@ -275,7 +277,10 @@ export function Lobby() {
                 className="panel flex max-h-full w-full max-w-[980px] flex-col overflow-hidden"
             >
                 <header className="panel-divider flex shrink-0 flex-wrap items-center justify-between gap-3 px-7 py-5">
-                    <span className="text-2xl font-medium tracking-tight">nopoly</span>
+                    <div className="flex items-center gap-3.5">
+                        <span className="text-2xl font-medium tracking-tight">nopoly</span>
+                        <PresencePill />
+                    </div>
                     <div className="flex items-center gap-3">
                         <span className="mono rounded-lg border border-dashed border-white/15 px-4 py-2 text-lg tracking-[0.28em]">
                             {state.roomCode}
@@ -295,8 +300,12 @@ export function Lobby() {
                         here — the parent scrolls — so letting it shrink below
                         its content spills the roster over the settings. */}
                     <div className="scroll-thin flex shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-                        <span className="label shrink-0">
+                        <span className="label flex shrink-0 items-center gap-2">
                             Players ({state.players.length}/{settings.maxPlayers})
+                            {/* Someone whose tab dropped still holds their seat
+                                for a moment, and a host counting heads before
+                                pressing Start should see that. */}
+                            {away > 0 && <span className="text-[#ff5c7c]">{away} away</span>}
                         </span>
                         {roster.map((group) => (
                             <div key={group.key} className="flex shrink-0 flex-col gap-2">
