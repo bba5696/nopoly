@@ -84,6 +84,94 @@ function buzz(pattern) {
     }
 }
 
+/* ------------------------------------------------------------ the bell */
+
+/*
+ * Everything above is a bare sine with a short decay, which is all a
+ * notification needs and is also why it can only ever beep: a sine has no
+ * harmonics, so there is nothing in it to sound like an instrument.
+ *
+ * Completing a set deserves better than a beep, so it gets three things a
+ * notification doesn't: overtones, a long tail, and a room to ring out in.
+ */
+
+/** A struck-bell spectrum — octave, twelfth and double octave over the root. */
+let bellWave = null;
+function bell(c) {
+    if (!bellWave) {
+        const real = new Float32Array([0, 1, 0.44, 0.2, 0.11, 0.05, 0.03, 0.015]);
+        bellWave = c.createPeriodicWave(real, new Float32Array(real.length));
+    }
+    return bellWave;
+}
+
+/**
+ * A hall to ring out in. Reverb is most of what "angelic" means — the same
+ * notes dry sound like a doorbell, and the tail is what turns a sequence of
+ * notes into one sustained thing rather than four separate events.
+ *
+ * The impulse is generated rather than downloaded: noise decaying over three
+ * seconds, which is a plain but perfectly convincing hall.
+ */
+let hall = null;
+function reverb(c) {
+    if (hall) return hall;
+    const seconds = 3;
+    const len = Math.floor(c.sampleRate * seconds);
+    const buf = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+        const data = buf.getChannelData(ch);
+        for (let i = 0; i < len; i++) {
+            // Squared decay, and a short silent head so the dry note lands first.
+            const t = i / len;
+            data[i] = (Math.random() * 2 - 1) * (1 - t) ** 2.6 * (i < 480 ? i / 480 : 1);
+        }
+    }
+    const node = c.createConvolver();
+    node.buffer = buf;
+    const wet = c.createGain();
+    wet.gain.value = 0.9;
+    node.connect(wet).connect(c.destination);
+    hall = node;
+    return hall;
+}
+
+/**
+ * One rung of the bell. Two oscillators a few cents apart, because a single
+ * one is static and the beating between two is what reads as a voice rather
+ * than a tone generator.
+ */
+function chime(at, freq, duration, peak, detune = 7) {
+    const c = audio();
+    if (!c) return;
+    const send = reverb(c);
+    for (const cents of [-detune, detune]) {
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.setPeriodicWave(bell(c));
+        osc.frequency.value = freq;
+        osc.detune.value = cents;
+        // Swelled rather than struck: a 60ms attack is the difference between
+        // a chime and a click, and it's what lets the notes bleed together.
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(peak / 2, at + 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+        osc.connect(gain);
+        gain.connect(c.destination);
+        gain.connect(send);
+        osc.start(at);
+        osc.stop(at + duration + 0.05);
+    }
+}
+
+function playChimes(notes) {
+    if (muted) return;
+    const c = audio();
+    if (!c) return;
+    const t0 = c.currentTime + 0.02;
+    for (const [offset, freq, duration, peak] of notes) chime(t0 + offset, freq, duration, peak);
+}
+
 /**
  * Filtered white noise — the basis of anything that isn't a musical note.
  * `sweep` walks the bandpass from one frequency to another, which is what turns
@@ -292,11 +380,16 @@ export function playEndTurn() {
  * game is still moving, because waiting for your turn used to be silent.
  */
 export function playRoll(distant = false) {
-    const k = distant ? 0.42 : 1;
+    // Noise needs roughly twice the gain of a tone to land as equally loud: a
+    // bandpass throws away everything outside its band, so the number here
+    // isn't comparable to the peaks the sine-based sounds use. Widening the Q
+    // does as much work as the gain does — it lets more of the burst through
+    // and gives the clacks some body instead of a thin tick.
+    const k = distant ? 0.62 : 1;
     playNoise([
-        [0, 0.34, { from: 320, to: 1500, peak: 0.075 * k, q: 0.9 }],
-        [0.19, 0.05, { from: 2600, to: 1200, peak: 0.09 * k, q: 1.6 }],
-        [0.27, 0.05, { from: 2200, to: 900, peak: 0.075 * k, q: 1.6 }],
+        [0, 0.34, { from: 320, to: 1500, peak: 0.13 * k, q: 0.8 }],
+        [0.19, 0.05, { from: 2600, to: 1200, peak: 0.17 * k, q: 1.3 }],
+        [0.27, 0.05, { from: 2200, to: 900, peak: 0.15 * k, q: 1.3 }],
     ]);
     if (!distant) buzz(35);
 }
@@ -319,28 +412,44 @@ export function playRivalBuy() {
  * the whole table, not just the person it happened to.
  */
 export function playSet() {
-    play([
-        [0, 523.25, 0.14, 0.12],
-        [0.09, 659.25, 0.14, 0.12],
-        [0.18, 783.99, 0.14, 0.12],
-        [0.27, 1046.5, 0.42, 0.13],
+    // The notes overlap rather than follow each other: by the time the top one
+    // lands the first three are still ringing, so it arrives as a chord that
+    // was built rather than four notes in a row. C major, up two octaves.
+    playChimes([
+        [0, 261.63, 2.8, 0.085],
+        [0.11, 392.0, 2.6, 0.075],
+        [0.22, 523.25, 2.6, 0.08],
+        [0.33, 659.25, 2.4, 0.075],
+        [0.44, 783.99, 2.4, 0.07],
+        // Two octaves above the root, quiet and late — the shine on top.
+        [0.62, 1046.5, 2.2, 0.05],
+        [0.62, 1567.98, 1.8, 0.022],
     ]);
-    buzz([50, 40, 50, 40, 90]);
+    buzz([40, 60, 40, 60, 110]);
 }
 
 export function playRivalSet() {
-    play([
-        [0, 622.25, 0.14, 0.075],
-        [0.1, 466.16, 0.16, 0.075],
-        [0.21, 311.13, 0.44, 0.08],
+    // Same instrument, so it reads as the same event happening to someone
+    // else; a minor triad falling instead of a major one rising, and no shine
+    // on top. Quieter too — it's news, not an announcement.
+    playChimes([
+        [0, 440.0, 2.6, 0.055],
+        [0.13, 349.23, 2.6, 0.05],
+        [0.26, 261.63, 2.8, 0.055],
+        // A low root underneath, which is what makes it land as a weight.
+        [0.4, 130.81, 3.0, 0.045],
     ]);
 }
 
-/** Someone went to jail: a flat, unmusical clack. */
+/**
+ * Someone went to jail: a flat, unmusical clack and the thud after it. The
+ * narrow bands this started with made it nearly inaudible — a door closing is
+ * broadband, and squeezing it through a high-Q filter left a tick.
+ */
 export function playJail() {
     playNoise([
-        [0, 0.07, { from: 1800, to: 700, peak: 0.075, q: 2.2 }],
-        [0.09, 0.16, { from: 500, to: 180, peak: 0.06, q: 1.4 }],
+        [0, 0.08, { from: 1900, to: 700, peak: 0.2, q: 1.3 }],
+        [0.09, 0.2, { from: 520, to: 170, peak: 0.17, q: 0.9 }],
     ]);
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, Pencil } from 'lucide-react';
+import { Eye, Pencil, Volume2 } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -107,6 +107,15 @@ export function Home() {
                     <p className="text-[13px] leading-relaxed text-muted-foreground">
                         Rooms are private — share the 5-character code with your friends. No player cap, no paywalls.
                     </p>
+                    {/* A plain anchor, not a route: the bench is its own page
+                        outside the app, so it must reload rather than be
+                        handled in front of the router that doesn't exist. */}
+                    <a
+                        href="/sounds.html"
+                        className="flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                        <Volume2 className="size-3.5" /> Hear the sounds
+                    </a>
                     <BuildTag />
                 </div>
             </motion.div>

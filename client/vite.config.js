@@ -37,4 +37,15 @@ export default defineConfig({
       "@": path.resolve(dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      // The sound bench ships too. Vite builds index.html and nothing else
+      // unless told, and without this the page 404s in production — which is
+      // no use to anyone who wasn't running the dev server.
+      input: {
+        main: path.resolve(dirname, 'index.html'),
+        sounds: path.resolve(dirname, 'sounds.html'),
+      },
+    },
+  },
 })

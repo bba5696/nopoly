@@ -5,10 +5,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>nopoly · sounds</title>
         <!--
-            A bench for the audio, dev-only: Vite builds index.html and nothing
-            else, so this never reaches production. It imports the real module
-            rather than a copy, so what you hear here is exactly what the game
-            plays, and editing sound.js hot-reloads this page.
+            A bench for the audio. It imports the real module rather than a
+            copy, so what you hear here is exactly what the game plays and
+            editing sound.js reloads this page. Listed as a build input in
+            vite.config.js, or it would only exist on a dev server.
         -->
         <style>
             :root {
@@ -70,6 +70,7 @@
                 color: var(--dim); font-size: 13px; line-height: 1.6;
             }
             code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--fg); }
+            .warn { color: #ffd08a; font-size: 13px; margin: 0 0 8px; }
         </style>
     </head>
     <body>
@@ -79,14 +80,17 @@
                 <span class="tag">sound bench</span>
             </header>
             <p class="lede">
-                Every sound the game makes, straight from <code>src/lib/sound.js</code>. Press one, tell me what to
-                change. Edits to that file reload this page on their own.
+                Every sound the game makes, and when you'd hear it. Press one to play it. Nothing here affects a
+                game in progress — it's just the sounds.
             </p>
 
             <div class="bar">
                 <button class="primary" id="all">Play them all in order</button>
-                <button id="unmute">Unmute</button>
+                <button id="unmute" hidden>Unmute</button>
             </div>
+            <p class="warn" id="warn" hidden>
+                Sounds are muted — that's your game setting, so this page won't touch it without asking.
+            </p>
 
             <h2>Yours — fired by your own action</h2>
             <div class="grid" id="own"></div>
@@ -101,14 +105,18 @@
             <div class="grid" id="music"></div>
 
             <div class="note">
-                Useful things to tell me: too loud, too quiet, too long, too cheerful, too harsh, hard to tell apart
-                from another one, or annoying the tenth time. The pad takes about four seconds to swell — give it
-                twenty or so before judging it, and a couple of minutes to hear whether it loops audibly.
+                The pad takes a few seconds to swell, so give it twenty or so before deciding — it's meant to sit
+                under everything rather than be listened to. In the game it's off until you turn it on, with the
+                music button next to the speaker.
             </div>
+            <p style="margin-top: 20px">
+                <a href="/" style="color: var(--accent)">&larr; back to nopoly</a>
+            </p>
         </div>
 
         <script type="module">
             import {
+                isMuted,
                 setMuted,
                 unlock,
                 playTurn,
@@ -128,8 +136,17 @@
                 stopMusic,
             } from '/src/lib/sound.js';
 
-            // The bench is useless muted, and the setting is shared with the game.
-            setMuted(false);
+            // The mute setting is shared with the game, so this page must not
+            // quietly flip it — someone opening the bench out of curiosity
+            // shouldn't find their next game noisy. It asks instead.
+            const warn = document.getElementById('warn');
+            const unmuteBtn = document.getElementById('unmute');
+            function refreshMute() {
+                const off = isMuted();
+                warn.hidden = !off;
+                unmuteBtn.hidden = !off;
+            }
+            refreshMute();
 
             const GROUPS = {
                 own: [
@@ -205,9 +222,10 @@
                     }
                 }
             };
-            document.getElementById('unmute').onclick = () => {
+            unmuteBtn.onclick = () => {
                 setMuted(false);
                 unlock();
+                refreshMute();
             };
         </script>
     </body>
