@@ -31,8 +31,8 @@ export function VoteKickPicker({ open, onClose }) {
         <Modal open={open} onClose={onClose} subtitle="Vote to remove" title="Kick a player" width={420}>
             <div className="flex flex-col gap-4 p-5">
                 <p className="text-[13px] leading-snug text-muted-foreground">
-                    Everyone still in the game votes. It needs a majority, and mid-game it's the same as resigning —
-                    their property goes back to the bank and they can't rejoin.
+                    Everyone else still in the game has to agree, up to four votes. Mid-game it's the same as
+                    resigning — their property goes back to the bank and they can't rejoin.
                 </p>
                 <div className="flex flex-col gap-2">
                     {others.length === 0 && (

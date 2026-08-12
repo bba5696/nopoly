@@ -74,6 +74,12 @@ const VOTE_MS = 45_000;
 const VOTE_COOLDOWN_MS = 3 * 60_000;
 /** Below this a vote is just one player removing another, so it's refused. */
 const MIN_VOTERS = 3;
+/**
+ * Ceiling on how many yes votes a kick can ever need. Without it a big table
+ * makes kicking impossible, since one person who isn't looking at their phone
+ * would veto every vote.
+ */
+const VOTE_CAP = 4;
 
 /* ------------------------------------------------------------------ rooms */
 
@@ -1368,8 +1374,18 @@ function voters(room, targetId) {
     return activePlayers(room).filter((p) => p.id !== targetId);
 }
 
-/** Strict majority of the people who could vote, so a tie fails. */
-const votesNeeded = (room, targetId) => Math.floor(voters(room, targetId).length / 2) + 1;
+/**
+ * How many yes votes a kick takes: everyone else still in the game, up to four.
+ * So 3 players need 2, 4 need 3, 5 need 4, and any bigger table stays at 4.
+ *
+ * Unanimity rather than a majority, because removing someone from a game with
+ * friends should take the whole table agreeing rather than half of it. The
+ * floor of 2 is what stops one player ever removing another on their own — if
+ * bankruptcies leave only one eligible voter, the bar becomes unreachable and
+ * the vote fails immediately rather than handing them the power.
+ */
+const votesNeeded = (room, targetId) => clampVotes(voters(room, targetId).length);
+const clampVotes = (eligible) => Math.max(2, Math.min(eligible, VOTE_CAP));
 
 function startVoteKick(room, byId, targetId) {
     if (room.phase === 'ended') return { error: 'Game is over' };
@@ -1381,8 +1397,6 @@ function startVoteKick(room, byId, targetId) {
     if (by.bankrupt) return { error: 'You are out of the game' };
     if (target.bankrupt) return { error: `${target.name} is already out` };
 
-    // Two people can't gang up on a third in a game that small — from three
-    // players up, a majority means more than one person actually agreed.
     if (voters(room, targetId).length + 1 < MIN_VOTERS) {
         return { error: `Needs at least ${MIN_VOTERS} players in the game` };
     }
@@ -1400,8 +1414,6 @@ function startVoteKick(room, byId, targetId) {
         endsAt: Date.now() + VOTE_MS,
     };
     log(room, `${by.name} started a vote to kick ${target.name}`);
-    // At three players the caller alone is already a majority of the two
-    // eligible voters, so this can resolve immediately.
     return resolveVoteIfDecided(room) || {};
 }
 
@@ -1425,9 +1437,9 @@ function resolveVoteIfDecided(room) {
     const vote = room.vote;
     if (!vote) return null;
     // Recounted every time: someone may have gone bankrupt mid-vote, which
-    // changes what a majority is.
+    // changes how many people are left to agree.
     const eligible = voters(room, vote.targetId).length;
-    const needed = Math.floor(eligible / 2) + 1;
+    const needed = clampVotes(eligible);
     vote.needed = needed;
 
     if (vote.yes.length >= needed) return finishVote(room, true);
