@@ -242,8 +242,15 @@ everything; Vercel only forwards.
 your own hostname if it isn't `nopoly.duckdns.org`:
 
 ```json
-{ "rewrites": [{ "source": "/:path*", "destination": "https://YOUR_HOST/:path*" }] }
+{ "rewrites": [{ "source": "/:path(.*)", "destination": "https://YOUR_HOST/:path" }] }
 ```
+
+`/:path(.*)` and not the more obvious `/:path*`. The starred form does not match
+an empty path or one ending in a slash, which is a quiet way to lose exactly two
+routes: `/`, so the site never loads at all, and `/socket.io/`, so it loads and
+then can't reach the game. Everything in between — `/version`, `/assets/…`,
+`/auth/required` — proxies fine either way, which is what makes it look like it
+works.
 
 Then import the repo at [vercel.com/new](https://vercel.com/new). `vercel.json`
 already sets the framework to none and the output directory to `public/`, which

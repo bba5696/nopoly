@@ -4,7 +4,7 @@
   "buildCommand": null,
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/:path*", "destination": "https://nopoly.duckdns.org/:path*" }
+    { "source": "/:path(.*)", "destination": "https://nopoly.duckdns.org/:path" }
   ],
   "headers": [
     {
