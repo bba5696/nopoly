@@ -83,3 +83,8 @@ one is filtered.
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | How it's built and why |
 | [`deploy/README.md`](deploy/README.md) | Standing it up on a free Oracle Cloud VM |
+| [`client/legal.html`](client/legal.html) | Terms and privacy, served at `/legal.html` |
+
+If you deploy your own copy, `client/legal.html` names a contact address and
+points at Australian law — change both, or drop the page. It also states what is
+stored and for how long, so it needs editing whenever that changes.

@@ -151,6 +151,20 @@ of them stop working the moment the password changes. The server refuses to
 start in production without a password rather than logging a warning nobody
 reads.
 
+## The legal page is a claim about the code
+
+`client/legal.html` states exactly what is stored, where, and for how long — the
+five `localStorage` keys by name, the six-hour snapshot, the ten-minute
+rate-limit window. That specificity is the point: a policy vague enough to never
+be wrong is also vague enough to be useless.
+
+The cost is that it is the one document that can be made *false* by a code
+change. Adding a storage key, logging a new field, or changing a retention
+window makes it inaccurate until it is edited too. It is a plain page outside the
+React app for the same reason `sounds.html` is, plus one of its own: it has to be
+readable **before** the password gate, since terms you can only reach by first
+agreeing to them are not terms.
+
 ## Testing
 
 `server/test/` holds 22 suites, run with `npm test` from `server/`. They are
@@ -172,3 +186,6 @@ way to a particular tile is a coin flip dressed up as a test.
   Upgrade button, mid-word tile names, an overflowing board centre, a clipped
   tax label — were invisible to unit tests and obvious on screen.
 - **Prefer a snapshot to a scripted game when staging a scenario.**
+- **If you change what is stored or logged, update `client/legal.html`.** It
+  names the storage keys and retention windows explicitly, so it goes stale
+  silently.

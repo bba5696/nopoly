@@ -39,12 +39,14 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      // The sound bench ships too. Vite builds index.html and nothing else
-      // unless told, and without this the page 404s in production — which is
-      // no use to anyone who wasn't running the dev server.
+      // The sound bench and the legal page ship too. Vite builds index.html
+      // and nothing else unless told, and without this they 404 in production
+      // — which is no use to anyone who wasn't running the dev server, and in
+      // legal.html's case means the terms the site links to don't exist.
       input: {
         main: path.resolve(dirname, 'index.html'),
         sounds: path.resolve(dirname, 'sounds.html'),
+        legal: path.resolve(dirname, 'legal.html'),
       },
     },
   },

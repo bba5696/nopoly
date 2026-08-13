@@ -70,8 +70,19 @@ export function Gate({ onUnlocked }) {
                 </Button>
 
                 {/* Readable without logging in, which is the point: checking a
-                    friend's phone shouldn't need the password first. */}
-                <BuildTag className="text-center" />
+                    friend's phone shouldn't need the password first. The same
+                    reasoning puts the terms link here — terms you can only
+                    reach after agreeing to them aren't terms. A plain anchor,
+                    since legal.html is its own page outside the app. */}
+                <div className="flex flex-col items-center gap-2">
+                    <a
+                        href="/legal.html"
+                        className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                        Terms &amp; privacy
+                    </a>
+                    <BuildTag className="text-center" />
+                </div>
             </motion.form>
         </div>
     );

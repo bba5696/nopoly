@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="robots" content="noindex" />
+        <title>nopoly · terms & privacy</title>
+        <!--
+            Terms and privacy, as a standalone page rather than a route.
+
+            Deliberately outside the React app, for the same reason sounds.html
+            is: it needs no game state, and — more importantly — it has to be
+            readable *before* the password gate. Terms you can only read after
+            agreeing to them aren't terms. Listed as a build input in
+            vite.config.js, or it only exists on a dev server.
+
+            Everything factual here is checked against the code. If you change
+            what is stored, what is logged, or how long a snapshot lives, this
+            page is wrong until you change it too.
+        -->
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #0b0b12;
+                --panel: #14141d;
+                --line: rgba(255, 255, 255, 0.08);
+                --fg: #e9e7f2;
+                --dim: #9aa0b5;
+                --accent: #7c5cff;
+            }
+            * { box-sizing: border-box; }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                background: var(--bg);
+                color: var(--fg);
+                font: 15px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
+                padding: 32px 20px 96px;
+            }
+            .wrap { max-width: 760px; margin: 0 auto; }
+            a { color: var(--accent); }
+            header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+            h1 { font-size: 30px; font-weight: 500; margin: 0; letter-spacing: -0.02em; }
+            .tag {
+                font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em;
+                color: var(--dim);
+            }
+            .updated { color: var(--dim); font-size: 13px; margin: 0 0 28px; }
+
+            h2 {
+                font-size: 20px; font-weight: 500; margin: 44px 0 4px;
+                letter-spacing: -0.01em; scroll-margin-top: 20px;
+            }
+            h2 + .sub { color: var(--dim); font-size: 13px; margin: 0 0 18px; }
+            h3 { font-size: 15px; font-weight: 600; margin: 26px 0 6px; }
+            p { margin: 0 0 12px; }
+            ul { margin: 0 0 12px; padding-left: 20px; }
+            li { margin-bottom: 6px; }
+            strong { font-weight: 600; }
+
+            /* The plain-English box up top. Most people read this and nothing
+               else, so it has to be true on its own rather than a teaser. */
+            .summary {
+                background: var(--panel); border: 1px solid var(--line);
+                border-radius: 14px; padding: 20px 22px; margin-bottom: 8px;
+            }
+            .summary h2 { margin-top: 0; font-size: 17px; }
+            .summary ul { margin-bottom: 0; }
+
+            .toc {
+                display: flex; flex-wrap: wrap; gap: 8px 18px;
+                border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+                padding: 14px 0; margin: 28px 0 0; font-size: 13px;
+            }
+            .toc a { color: var(--dim); text-decoration: none; }
+            .toc a:hover { color: var(--fg); }
+
+            table {
+                width: 100%; border-collapse: collapse; margin: 4px 0 16px;
+                font-size: 14px; display: block; overflow-x: auto;
+            }
+            th, td {
+                text-align: left; padding: 9px 12px 9px 0;
+                border-bottom: 1px solid var(--line); vertical-align: top;
+            }
+            th { color: var(--dim); font-weight: 500; font-size: 12px;
+                 text-transform: uppercase; letter-spacing: 0.08em; }
+            td code {
+                font: 12.5px/1.4 ui-monospace, "JetBrains Mono", Menlo, monospace;
+                color: var(--fg); background: rgba(255, 255, 255, 0.05);
+                padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+            }
+
+            .note {
+                border-left: 2px solid var(--accent); padding: 2px 0 2px 14px;
+                margin: 16px 0; color: var(--dim); font-size: 14px;
+            }
+            .note strong { color: var(--fg); }
+
+            footer {
+                margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
+                color: var(--dim); font-size: 13px;
+            }
+            .back { display: inline-block; margin-bottom: 24px; font-size: 13px; text-decoration: none; }
+            .back:hover { text-decoration: underline; }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <a class="back" href="/">← back to the game</a>
+
+            <header>
+                <h1>nopoly</h1>
+                <span class="tag">terms &amp; privacy</span>
+            </header>
+            <p class="updated">Last updated 14 August 2026</p>
+
+            <div class="summary">
+                <h2>The short version</h2>
+                <ul>
+                    <li>nopoly is a free hobby project. It is not a company, and there is no money involved anywhere in it.</li>
+                    <li><strong>There are no accounts.</strong> No email, no password of your own, no sign-up. You type a nickname and play.</li>
+                    <li><strong>There is no database and no tracking.</strong> No analytics, no advertising, no third-party scripts. The page loads nothing from anyone else's server.</li>
+                    <li>Games live in the server's memory and are wiped when it restarts. Chat is not archived.</li>
+                    <li>Don't type anything into chat you wouldn't want the other people in the room to read.</li>
+                    <li>It may break, go down, or disappear entirely without notice. Please don't rely on it for anything.</li>
+                </ul>
+            </div>
+
+            <nav class="toc">
+                <a href="#terms">Terms of Use</a>
+                <a href="#eligibility">Who can play</a>
+                <a href="#conduct">Acceptable use</a>
+                <a href="#availability">Availability</a>
+                <a href="#ip">Intellectual property</a>
+                <a href="#liability">Liability</a>
+                <a href="#privacy">Privacy Policy</a>
+                <a href="#collected">What is collected</a>
+                <a href="#browser">Stored in your browser</a>
+                <a href="#retention">How long it is kept</a>
+                <a href="#rights">Your rights</a>
+                <a href="#contact">Contact</a>
+            </nav>
+
+            <!-- ============================================ terms -->
+
+            <h2 id="terms">Terms of Use</h2>
+            <p class="sub">By loading or playing nopoly, you agree to what follows. If you don't, please close the tab — that's the whole enforcement mechanism.</p>
+
+            <p>
+                nopoly ("the game", "the site") is a free, non-commercial multiplayer board game
+                made and run by one person as a personal project. These terms are between you and
+                that person, referred to below as "we" or "us". Nothing here is sold, and no payment
+                is accepted for anything.
+            </p>
+
+            <h3 id="eligibility">Who can play</h3>
+            <p>
+                You must be <strong>at least 13 years old</strong> to use nopoly. If you are under 18,
+                you should have a parent or guardian's permission. We don't verify anyone's age —
+                this is a rule, not a gate — but if we become aware that someone under 13 is using
+                the game, we will remove them and delete anything of theirs still held.
+            </p>
+
+            <h3 id="conduct">Acceptable use</h3>
+            <p>The game has a chat box and lets you choose your own display name. Please don't use either to:</p>
+            <ul>
+                <li>harass, threaten, bully or abuse anyone;</li>
+                <li>post hateful content targeting people for who they are;</li>
+                <li>post sexual content involving minors, or anything otherwise illegal;</li>
+                <li>impersonate someone else in a way meant to deceive;</li>
+                <li>share other people's personal information;</li>
+                <li>spam, flood, or deliberately disrupt other people's games; or</li>
+                <li>attack, overload, or attempt to break into the server.</li>
+            </ul>
+            <p>
+                <strong>There is no moderation team.</strong> nopoly is run by one person who is not
+                watching your game. The tools that exist are the ones in the game itself: rooms are
+                private and joined with a 5-character code you have to be given, and players can
+                vote-kick someone. Beyond that, we may remove content, end a game, or block access
+                at our discretion and without notice — but we are under no obligation to monitor
+                anything, and we don't.
+            </p>
+            <p>
+                You are responsible for what you type. Anything you send in chat is visible to
+                everyone else in that room, including spectators.
+            </p>
+
+            <h3 id="availability">Availability, and the lack of it</h3>
+            <p>
+                nopoly runs on a single free-tier virtual machine. It is provided <strong>as is</strong>,
+                with no promise that it works, stays up, or keeps your game. Specifically, and by design:
+            </p>
+            <ul>
+                <li>Games are held in the server's memory. A restart, a crash, or a deploy ends them, apart from a short-lived snapshot described under <a href="#retention">retention</a>.</li>
+                <li>The game may be changed, broken, or shut down permanently at any time, without notice or announcement.</li>
+                <li>There is no support, no service level, and no backup you can ask to be restored from.</li>
+            </ul>
+            <p>It is a game between friends. Please treat it as one.</p>
+
+            <h3 id="ip">Intellectual property</h3>
+            <p>
+                The nopoly source code, board layouts, artwork and sounds are original work and
+                remain the property of their author. The source is published on GitHub for people to
+                read; publishing it is not a grant of any licence to reuse it, and no open-source
+                licence applies unless a <code>LICENSE</code> file in that repository says otherwise.
+            </p>
+            <div class="note">
+                <strong>Not affiliated with Hasbro.</strong> nopoly is not associated with,
+                endorsed by, sponsored by or derived from <em>Monopoly</em> or any Hasbro product.
+                It is an original game inspired by the public-domain trading-and-property genre and
+                by <a href="https://richup.io" rel="noopener noreferrer">richup.io</a>. Board layouts,
+                tile names, card text, rules and artwork here are our own. Any trademarks mentioned
+                belong to their respective owners.
+            </div>
+            <p>
+                Chat messages and display names you type remain yours. By sending them you give us
+                permission to show them to the other people in your room and to hold them in memory
+                for as long as the game runs — which is all the game does with them.
+            </p>
+
+            <h3 id="liability">Disclaimers and liability</h3>
+            <p>
+                To the maximum extent permitted by law, nopoly is provided without warranties of any
+                kind, express or implied, and we are not liable for any loss or damage arising from
+                your use of it — including lost games, lost time, or anything another player says to
+                you.
+            </p>
+            <div class="note">
+                <strong>Your rights under Australian Consumer Law are not excluded.</strong>
+                Nothing in these terms excludes, restricts or modifies any guarantee, right or
+                remedy you have under the <em>Competition and Consumer Act 2010</em> (Cth) or any
+                other law that cannot lawfully be excluded. Where a liability cannot be excluded but
+                can be limited, our liability is limited — at our option — to supplying the service
+                again, or to the cost of having it supplied again. Since nopoly is supplied free of
+                charge, that cost is nil.
+            </div>
+
+            <h3>Changes to these terms</h3>
+            <p>
+                These terms may be updated. The date at the top of this page changes when they are,
+                and the current version is always the one here. Continuing to play after a change
+                means you accept it. There is no mailing list to notify you, because we don't have
+                your email.
+            </p>
+
+            <h3>Governing law</h3>
+            <p>
+                These terms are governed by the laws of <strong>Australia</strong>, and you and we
+                submit to the non-exclusive jurisdiction of its courts. If you are playing from
+                somewhere else, you are responsible for whether doing so is lawful where you are.
+            </p>
+
+            <!-- ============================================ privacy -->
+
+            <h2 id="privacy">Privacy Policy</h2>
+            <p class="sub">What nopoly collects, which is very little, and what happens to it.</p>
+
+            <p>
+                The honest summary: nopoly was built for a private group of friends, so it never
+                needed to know who anybody is. There are no accounts, no email addresses, no
+                profiles, and no database. Nothing is sold, shared, or used for advertising, because
+                there is no advertising.
+            </p>
+            <p>
+                <strong>The game loads nothing from third-party servers.</strong> Fonts are bundled
+                into the app, country flags are stored locally in the repository, and there are no
+                analytics scripts, tag managers, embedded widgets, or social buttons. When you open
+                nopoly, your browser talks to the nopoly server and to nothing else.
+            </p>
+
+            <h3 id="collected">What the server receives</h3>
+            <table>
+                <thead>
+                    <tr><th>What</th><th>Why</th><th>Where it lives</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Display name, initials and colour</td>
+                        <td>So the table knows who is who. Whatever you type — a real name is neither asked for nor needed.</td>
+                        <td>Server memory, for the life of the game</td>
+                    </tr>
+                    <tr>
+                        <td>Chat messages and game actions</td>
+                        <td>To play the game and show the room's history feed</td>
+                        <td>Server memory, for the life of the game</td>
+                    </tr>
+                    <tr>
+                        <td>A random browser ID <code>nopoly.client</code></td>
+                        <td>Only to tell two tabs of one person apart when counting who's online. Not a login and not tied to any identity.</td>
+                        <td>Your browser, plus server memory while connected</td>
+                    </tr>
+                    <tr>
+                        <td>Your IP address</td>
+                        <td>Unavoidable — every web request carries one. Used only to rate-limit password guesses, and only on deployments that set a password.</td>
+                        <td>Server memory, and the web server's access log</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>
+                That is the complete list. There is no tracking of what you click, how long you stay,
+                where you came from, or what device you use. No profile of you is built, and nothing
+                is linked across sessions beyond the random browser ID above.
+            </p>
+
+            <h3 id="browser">Stored in your browser</h3>
+            <p>
+                nopoly sets <strong>no cookies</strong>. It uses your browser's local storage for
+                five values, all of which are strictly necessary for the game to work, and none of
+                which are ever sent anywhere except to the nopoly server:
+            </p>
+            <table>
+                <thead>
+                    <tr><th>Key</th><th>What it holds</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>nopoly.token</code></td><td>Your access token, if the site has a password set</td></tr>
+                    <tr><td><code>nopoly.identity</code></td><td>Your nickname, initials, colour and current room, so a refresh puts you back in your seat</td></tr>
+                    <tr><td><code>nopoly.client</code></td><td>The random browser ID described above</td></tr>
+                    <tr><td><code>nopoly:muted</code></td><td>Whether you muted the sound</td></tr>
+                    <tr><td><code>nopoly:music</code></td><td>Whether you turned the music on</td></tr>
+                </tbody>
+            </table>
+            <p>
+                Because none of these are used for tracking or advertising, there is no consent
+                banner — there is nothing to consent to. You can clear all of them at any time
+                through your browser's site-data settings, which resets you to a first-time visitor.
+            </p>
+
+            <h3 id="retention">How long anything is kept</h3>
+            <ul>
+                <li><strong>Live games</strong> — held in the server's memory only. When the game ends or the server restarts, they are gone.</li>
+                <li><strong>The crash snapshot</strong> — every 15 seconds, and on shutdown, active games are written to a file on the server so a restart doesn't end everyone's evening. It contains player names, chat and board state. It is deleted the moment it is restored, and ignored and discarded if it is more than <strong>6 hours</strong> old.</li>
+                <li><strong>Failed password attempts</strong> — an IP address is held in memory for up to <strong>10 minutes</strong> after a wrong password, purely to apply the cooldown, then dropped.</li>
+                <li><strong>Web server access logs</strong> — standard request logs, kept short-term for security and debugging, then rotated away.</li>
+            </ul>
+            <p>Nothing is archived. There is no long-term store, so there is nothing to accumulate.</p>
+
+            <h3>Who it is shared with</h3>
+            <p>
+                Nobody. Your data is not sold, rented, traded or given to advertisers, analytics
+                providers or anyone else. The only parties involved in running the game are the
+                hosting provider whose machine it runs on, and, for people reaching the site through
+                its alternate address, a content delivery network that forwards the traffic. Neither
+                is given anything beyond what is technically required to deliver the page.
+            </p>
+            <p>
+                We would disclose information only if legally required to — and given the above, there
+                would be almost nothing to disclose.
+            </p>
+
+            <h3 id="rights">Your rights</h3>
+            <p>
+                Most privacy rights — access, correction, deletion — you can exercise yourself,
+                instantly, without asking:
+            </p>
+            <ul>
+                <li><strong>See what's held about you:</strong> your nickname and colour, which are shown on screen, and the browser values listed above.</li>
+                <li><strong>Correct it:</strong> change your nickname in the game.</li>
+                <li><strong>Delete it:</strong> leave the room and clear the site's data in your browser. Server-side, your data disappears when the game ends.</li>
+            </ul>
+            <p>
+                If you want a specific game's snapshot deleted sooner, or you have a question or
+                complaint about privacy, <a href="#contact">get in touch</a> and we'll deal with it —
+                realistically, by deleting the snapshot file, which takes about ten seconds.
+            </p>
+            <div class="note">
+                As a non-commercial project run by an individual, nopoly falls under the small
+                business exemption in the <em>Privacy Act 1988</em> (Cth) and is not strictly bound
+                by the Australian Privacy Principles. We follow them anyway, since collecting almost
+                nothing makes that easy. If you are in the EU or UK, the same applies to the GDPR:
+                our lawful basis for the little we process is legitimate interest in running the game
+                and keeping it secure, and you can exercise your rights through the contact below.
+            </div>
+
+            <h3>Children</h3>
+            <p>
+                nopoly is not directed at children under 13 and we do not knowingly collect anything
+                from them. Since we collect no identifying information from anyone, there is very
+                little that could be collected — but if you believe a child under 13 has used the
+                game and something of theirs is held, contact us and it will be removed.
+            </p>
+
+            <h3>Security</h3>
+            <p>
+                Traffic is encrypted with HTTPS. Where a password is set, it is never stored in your
+                browser — only a token derived from it — and all tokens stop working the moment the
+                password changes. That said, no system is perfectly secure, and this one is a hobby
+                project on a free server. Please don't put anything sensitive into it.
+            </p>
+
+            <h3>Changes to this policy</h3>
+            <p>
+                If what nopoly collects ever changes, this page changes with it and the date at the
+                top is updated.
+            </p>
+
+            <!-- ============================================ contact -->
+
+            <h2 id="contact">Contact</h2>
+            <p>
+                For anything about these terms, your privacy, a complaint, or a request to remove
+                something:
+            </p>
+            <p><strong><a href="mailto:nopoly.game@gmail.com">nopoly.game@gmail.com</a></strong></p>
+            <p>
+                One person reads this, so please be patient. If you are in Australia and are not
+                satisfied with how a privacy complaint was handled, you can raise it with the
+                Office of the Australian Information Commissioner at
+                <a href="https://www.oaic.gov.au" rel="noopener noreferrer">oaic.gov.au</a>.
+            </p>
+
+            <footer>
+                nopoly · a hobby project · <a href="/">back to the game</a>
+            </footer>
+        </div>
+    </body>
+</html>
