@@ -12,6 +12,12 @@ import { TileIcon } from './TileIcon';
 const VACANT_PILL = 'rgba(255,255,255,0.11)';
 const VACANT_SURFACE = 'rgba(255,255,255,0.055)';
 
+// The tax chip. Tinted rather than filled: it sits in the same place as a
+// property's price and should read as the same kind of fact, just one that
+// costs you — a solid red chip there looks like an owner's colour.
+const TAX_PILL = 'rgba(255,92,124,0.14)';
+const TAX_TEXT = '#ff9db2';
+
 // Silhouettes rather than plain blocks — at this size a square reads as a pip,
 // and four pips in a row look like a counter rather than a developed street.
 // The dark stroke is what keeps them legible: the pill behind them is the
@@ -56,14 +62,18 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
     const jail = tile.id === jailIndex(boardSize);
     const start = tile.id === 0;
     const group = tile.groupId ? groups?.[tile.groupId] : null;
-    const accent = group?.color || (tile.type === 'airport' ? '#9aa0b5' : tile.type === 'utility' ? '#7dd3fc' : '#5a5a70');
+    const isTax = tile.type === 'tax';
+    const accent =
+        group?.color ||
+        (tile.type === 'airport' ? '#9aa0b5' : tile.type === 'utility' ? '#7dd3fc' : isTax ? TAX_TEXT : '#5a5a70');
     const flag = flagFor(tile);
     const iconKind = iconKindFor(tile);
     const trend = trendOf(tile);
 
     const tone = corner ? 'corner' : owner ? 'owned' : tile.price > 0 ? 'vacant' : 'special';
-    // Cards, taxes and corners have no price and never get an owner, so they
-    // skip the banner entirely and lead with their emblem.
+    // Cards and corners have no price and never get an owner, so they skip the
+    // chip entirely and carry their icon in the body. Tax has no price either
+    // but does cost you something, so it keeps the chip — see below.
     const plain = corner || tile.price === 0;
 
     return (
@@ -95,7 +105,7 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
             }}
             emblem={
                 // plain slots carry their icon in the body instead
-                !plain && (
+                (!plain || isTax) && (
                     <SlotEmblem side={side} ring={owner ? alpha(owner.color, 0.95) : alpha(accent, 0.6)}>
                         {flag ? (
                             <img src={flag} alt="" className="size-full object-cover" draggable={false} />
@@ -128,6 +138,29 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                     <span className="text-[1.35em] font-bold tracking-[0.06em] text-[#a3e635]">START</span>
                     <ChevronsRight className="size-[1.5em] text-[#a3e635]" strokeWidth={3} />
                 </SlotBody>
+            ) : isTax ? (
+                // Tax is the odd one out: no price and no owner, like a card
+                // slot, but it is the one square besides a property that takes
+                // money off you. So it is built like a property rather than
+                // like a card — rate in the chip a price would be in, emblem on
+                // the inner edge, name in between.
+                //
+                // It used to be a card slot with the rate as loose text under
+                // the name, at 0.95em. That is sized off the *slot*, while the
+                // name is sized to fit the slot, so the rate came out larger
+                // than the name of the tile it belonged to and read as the
+                // headline. Moving it into the chip makes it the same size and
+                // in the same place as every other number on the board.
+                <>
+                    <SlotPrice style={{ backgroundColor: TAX_PILL, color: TAX_TEXT }}>
+                        {taxLabel(tile)}
+                    </SlotPrice>
+                    <SlotBody className={side === 'bottom' ? 'pt-[0.9em]' : 'pb-[0.9em]'}>
+                        <SlotName className="text-muted-foreground" style={{ fontSize: nameSize }}>
+                            {tile.name}
+                        </SlotName>
+                    </SlotBody>
+                </>
             ) : plain ? (
                 <SlotBody className="gap-[0.35em]">
                     {/* the name follows the board edge, but the icon stays upright */}
@@ -139,11 +172,6 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                     <SlotName className="font-medium text-muted-foreground" style={{ fontSize: nameSize }}>
                         {tile.name}
                     </SlotName>
-                    {/* Tax tiles have no price to show, which used to leave the
-                        rate invisible until you landed on it. */}
-                    {tile.type === 'tax' && (
-                        <span className="mono text-[0.95em] leading-none text-[#ff9db2]">{taxLabel(tile)}</span>
-                    )}
                 </SlotBody>
             ) : (
                 <>
