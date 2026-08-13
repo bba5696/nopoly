@@ -83,6 +83,37 @@ export function clearRoom() {
     saveIdentity({ roomCode: null });
 }
 
+/**
+ * A stable id for this browser, minted on first load rather than on first join.
+ *
+ * The head count identifies people by this, and it used to be the player id —
+ * which does not exist until you have joined a room. So every socket opened
+ * from the home screen fell back to being counted as its own person, and
+ * refreshing the page announced a new one each time. On a WebSocket that hid
+ * itself, since the old socket closes the instant the tab reloads and the count
+ * was corrected before anyone saw it. Behind a proxy that only carries polling,
+ * the abort doesn't reach the server and the dead socket lingers for a ping
+ * timeout, so the refreshes visibly stack up before settling.
+ *
+ * Not a credential and never trusted as one: the token is the gate, and the
+ * server uses this only to tell two tabs of one person apart.
+ */
+const CLIENT_KEY = 'nopoly.client';
+
+export function clientId() {
+    try {
+        const found = localStorage.getItem(CLIENT_KEY);
+        if (found) return found;
+        const made = crypto.randomUUID();
+        localStorage.setItem(CLIENT_KEY, made);
+        return made;
+    } catch {
+        // Private mode with storage blocked. Falls back to per-socket counting,
+        // which is what the whole app did before this existed.
+        return null;
+    }
+}
+
 /* ------------------------------------------------------------------ socket */
 
 // Connect only once there's a token to present, otherwise the first attempt is
@@ -91,7 +122,9 @@ export function clearRoom() {
 // relative base, but socket.io-client would try to parse it as a URL.
 // `pid` is not a credential — the token is the gate. It only lets the server
 // tell two tabs of the same person apart when counting who's online, before a
-// join has given this socket a player id of its own.
+// join has given this socket a player id of its own. It is the browser's own
+// id rather than the player id: the server maps it onto a seat once there is
+// one, and until then it is the only thing that says two tabs are one person.
 //
 // `transports` is deliberately left at its default of ['polling', 'websocket'].
 // Socket.IO opens on HTTP long-polling and upgrades to a WebSocket only if the
@@ -101,5 +134,5 @@ export function clearRoom() {
 // like a tidy-up and would leave that route dead.
 export const socket = io(SERVER_URL || undefined, {
     autoConnect: false,
-    auth: { token: loadToken(), pid: loadIdentity().playerId || null },
+    auth: { token: loadToken(), pid: clientId() },
 });
