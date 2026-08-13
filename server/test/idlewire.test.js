@@ -19,6 +19,16 @@ const latest = new Map();
 const track = (s) => (s.on('state', (st) => latest.set(s, st)), s);
 const seen = (s) => latest.get(s) || null;
 
+/** Poll until `pred` holds, or give up. Returns whether it ever did. */
+async function until(pred, ms) {
+    const stop = Date.now() + ms;
+    while (Date.now() < stop) {
+        if (pred()) return true;
+        await sleep(150);
+    }
+    return false;
+}
+
 (async () => {
     const [a, b] = (await Promise.all([connect(), connect()])).map(track);
     const made = await new Promise((r) => a.emit('room:create', { name: 'Ada' }, r));
@@ -44,10 +54,15 @@ const seen = (s) => latest.get(s) || null;
     ok('and nothing was played', seen(a).stats.turnCount === startedTurn);
 
     // Now stop, and let it run out.
-    await sleep(4200);
+    //
+    // Waited for rather than timed at one window: a double earns another roll,
+    // so endTurn re-arms the clock instead of advancing and the away player is
+    // handed a fresh window before the turn actually moves on. The dice are the
+    // server's, so this can't be pinned the way idle.test.js pins them — but it
+    // always arrives, since three doubles is jail and jail ends the turn.
+    const played = await until(() => seen(a).stats.turnCount > startedTurn, 20_000);
     const after = seen(a);
-    ok('the turn played itself', after.stats.turnCount > startedTurn,
-        `${startedTurn} -> ${after.stats.turnCount}`);
+    ok('the turn played itself', played, `${startedTurn} -> ${after.stats.turnCount}`);
     ok('and moved on', after.idle?.playerId !== first, JSON.stringify(after.idle));
     ok('the table was told', after.log.some((l) => /was away/.test(l.text)));
     ok('nobody was removed for it', after.players.length === 2 && after.players.every((p) => !p.bankrupt));

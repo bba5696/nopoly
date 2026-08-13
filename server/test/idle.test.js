@@ -91,9 +91,15 @@ function withRoll([d1, d2], fn) {
     const up = upNow(r);
     const cash = up.cash;
     r.settings.auction = false;
-    // Park them one step from a property so the roll has to land on one.
-    e.expireIdle(r);
-    ok('nothing was bought on their behalf', up.cash <= cash, `${cash} -> ${up.cash}`);
+    // Pinned onto a property. The comment here promised a staged landing that
+    // nothing staged, so this rolled at random and asserted only that the cash
+    // hadn't gone *up* — which says nothing about buying, and failed outright
+    // whenever the dice found a card that pays out.
+    withRoll([1, 2], () => e.expireIdle(r));
+    const landed = r.tiles[up.position];
+    ok('it landed on something buyable', landed.type === 'property', `${landed.name} is ${landed.type}`);
+    ok('nothing was bought on their behalf', up.properties.length === 0 && landed.ownerId === null);
+    ok('and the cash is untouched', up.cash === cash, `${cash} -> ${up.cash}`);
     ok('no purchase is left pending', r.pendingAction === null, JSON.stringify(r.pendingAction));
     ok('and no card is left on screen', r.pendingCard === null);
 }
