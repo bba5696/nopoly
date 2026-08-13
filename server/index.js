@@ -17,7 +17,13 @@ const app = express();
 // Every host worth deploying to sits behind a reverse proxy, and without this
 // `req.ip` is the proxy's address for everyone — which would let one bad guess
 // streak lock the whole friend group out of the login rate limiter.
-app.set('trust proxy', 1);
+//
+// How many hops to trust. One is Nginx on the VM. Put a CDN in front of that —
+// the Vercel rewrite in vercel.json is the reason this is settable — and it
+// becomes two. Only the login limiter reads `req.ip`, so getting it wrong
+// costs accuracy there and nothing else: too low and everyone arriving through
+// the CDN shares one bucket, too high and the header can be spoofed.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
 
 const PRODUCTION = process.env.NODE_ENV === 'production';
 

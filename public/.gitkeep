@@ -1,0 +1,9 @@
+Deliberately empty.
+
+Vercel checks its static output directory before it applies a rewrite, so
+whatever sits here is served instead of being forwarded to the VM. Pointing
+`outputDirectory` at the repo root would publish the server source — this repo
+is private, and that would have quietly made half of it public.
+
+An empty directory means every path misses the filesystem and falls through to
+the rewrite in vercel.json, which is the whole intent. Do not put files here.

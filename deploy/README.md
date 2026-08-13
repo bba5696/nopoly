@@ -224,6 +224,54 @@ Games live in the memory of one process. A second instance behind a load
 balancer would put players into two different worlds that never see each other.
 One VM, one process.
 
+This is also why the game **cannot be hosted on Vercel**, or on anything else
+serverless. Vercel's own WebSocket documentation is explicit that new
+connections are not guaranteed to reach the same function instance and that
+rooms and presence must live in an external store rather than in memory — which
+is `rooms`, the three `setTimeout` clocks, and `persist.js`. Hosting it there
+means adding Redis and reworking `index.js`, not changing a setting.
+
+## A second hostname, via Vercel (optional)
+
+What Vercel *can* do is stand in front of the VM. Useful when the DuckDNS name
+is filtered somewhere you want to play — a school or office network — since the
+game then answers on a `vercel.app` address as well. Oracle still runs
+everything; Vercel only forwards.
+
+`vercel.json` at the repo root holds the rewrite. Point its `destination` at
+your own hostname if it isn't `nopoly.duckdns.org`:
+
+```json
+{ "rewrites": [{ "source": "/:path*", "destination": "https://YOUR_HOST/:path*" }] }
+```
+
+Then import the repo at [vercel.com/new](https://vercel.com/new). `vercel.json`
+already sets the framework to none and the output directory to `public/`, which
+is deliberately empty — Vercel serves its static output *before* it applies a
+rewrite, so pointing that at the repo root would publish `server/` to the
+internet instead of forwarding it. Leave `public/` empty.
+
+Two things make this work, and both are easy to undo by accident:
+
+- **Socket.IO must keep its default transports.** It opens on HTTP long-polling
+  and upgrades to a WebSocket only where one is available. Vercel rewrites do
+  not carry a WebSocket upgrade to an external origin, so the connection stays
+  on polling and the game plays normally. Pinning `transports: ['websocket']` in
+  `client/src/lib/socket.js` would kill this route while leaving Oracle fine —
+  the comment there says so.
+- **`TRUST_PROXY_HOPS`.** Direct traffic passes through one proxy (Nginx);
+  traffic through Vercel passes through two. Only the login rate limiter reads
+  `req.ip`. Left at the default of 1, everyone arriving via Vercel shares one
+  bucket, so eight bad password attempts between them triggers the cooldown for
+  all of them. Set it to `2` in `/etc/nopoly.env` if most people come in that
+  way — at the cost of the header being spoofable on the direct route.
+
+Long-polling holds a request open for around 25 seconds while it waits for
+something to happen. Vercel does not document a timeout for proxied external
+requests, so if connections drop in a quiet lobby, that is the first suspect —
+and the fallback is Cloudflare in front of the VM instead, which proxies
+WebSockets properly but needs a domain you own.
+
 ## Troubleshooting
 
 | Symptom | Cause |

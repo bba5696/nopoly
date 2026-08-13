@@ -45,3 +45,8 @@ open, which is convenient locally and refused outright in production.
 
 See [`deploy/README.md`](deploy/README.md). One VM runs everything — Node serves
 both the API and the built client, with Nginx terminating TLS in front.
+
+The game cannot run on serverless hosting: state is in one process's memory, so
+there is nowhere for a second instance to look. `vercel.json` is a reverse proxy
+only, giving the same VM a second hostname for networks where the first one is
+filtered.

@@ -92,6 +92,13 @@ export function clearRoom() {
 // `pid` is not a credential — the token is the gate. It only lets the server
 // tell two tabs of the same person apart when counting who's online, before a
 // join has given this socket a player id of its own.
+//
+// `transports` is deliberately left at its default of ['polling', 'websocket'].
+// Socket.IO opens on HTTP long-polling and upgrades to a WebSocket only if the
+// upgrade succeeds, so the same build works whether it reaches the server
+// directly or through a CDN that won't carry an upgrade — which is exactly what
+// the Vercel rewrite in vercel.json is. Pinning this to ['websocket'] looks
+// like a tidy-up and would leave that route dead.
 export const socket = io(SERVER_URL || undefined, {
     autoConnect: false,
     auth: { token: loadToken(), pid: loadIdentity().playerId || null },

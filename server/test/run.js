@@ -27,7 +27,7 @@ const ENGINE = [
 ];
 const WIRE = [
     'wire', 'votewire', 'leavewire', 'abandonwire',
-    'spectatewire', 'idlewire', 'rentwire', 'presence',
+    'spectatewire', 'idlewire', 'rentwire', 'presence', 'polling',
 ];
 const SOLO = ['redeploy'];
 /** ESM, so it can import the client's copy of the rent maths directly. */
