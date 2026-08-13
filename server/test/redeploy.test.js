@@ -93,6 +93,12 @@ const quiet = (s) => new Promise((res) => { let last = null; const on = (st) => 
     await sleep(300);
     ok('boot reported a resume', /State: resumed 1 room/.test(server.log()), server.log().slice(-300));
 
+    // Read now, not at the end: the snapshot must not be replayable, but the
+    // 15s autosave legitimately writes a fresh one while the game carries on.
+    // Asserting on the file after another dozen round trips was a race with it,
+    // and one this suite lost as soon as the machine was busy.
+    const consumedOnBoot = !fs.existsSync(path.join(STATE, 'rooms.json'));
+
     // Rejoin exactly the way the browser does after a reload: same stored id.
     const a2 = await connect();
     const rejoined = await new Promise((r) => a2.emit('room:join', { roomCode: code, name: 'Ada', playerId: adaId }, r));
@@ -123,8 +129,7 @@ const quiet = (s) => new Promise((res) => { let last = null; const on = (st) => 
     st = await quiet(a2);
     ok('and shows as connected', st.players.find((p) => p.id === bj.playerId).connected === true);
 
-    // The snapshot must not be replayable — it was consumed on boot.
-    ok('the snapshot was consumed', !fs.existsSync(path.join(STATE, 'rooms.json')));
+    ok('the snapshot was consumed on boot', consumedOnBoot);
 
     /* ----------------------------------------------------------- /version */
     const v = await (await fetch(`${URL}/version`)).json();
