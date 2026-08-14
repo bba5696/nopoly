@@ -27,6 +27,13 @@ Environment=PORT=3000
 Restart=always
 RestartSec=3
 
+# Every browser holds a socket, and each socket is a file descriptor. systemd's
+# default of 1024 is a ceiling of roughly 900 players once the listener, the
+# snapshot and the journal have taken theirs — and hitting it does not fail
+# politely, it surfaces as EMFILE and refused connections while the server looks
+# healthy. Raising it costs nothing; the real limit stays memory.
+LimitNOFILE=65535
+
 # Creates and owns /var/lib/nopoly, and passes it as $STATE_DIRECTORY. This is
 # the only path the service can write to under ProtectSystem=strict below, and
 # it is where running games are snapshotted so a redeploy doesn't end them.

@@ -56,12 +56,14 @@ cd client && npm install && npm run dev     # :5173
 ```
 
 Set `NOPOLY_PASSWORD` to require a password; leave it unset and the server runs
-open, which is convenient locally and refused outright in production.
+open, which is convenient locally. In production an open server has to be asked
+for explicitly with `NOPOLY_OPEN=1`, so an unset password fails loudly instead
+of quietly publishing the site.
 
 ## Tests
 
 ```bash
-cd server && npm test        # 22 suites
+cd server && npm test        # 23 suites
 npm test idle                # only suites matching "idle"
 ```
 

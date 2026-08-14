@@ -11,7 +11,8 @@
 //           test is the only way to cover the parts that live in index.js
 //           (the timers, the grace period, the presence count, act()'s guards)
 //   solo    a suite that drives server processes itself; redeploy boots one,
-//           SIGTERMs it the way systemd does and boots another
+//           SIGTERMs it the way systemd does and boots another, and limits
+//           boots servers with the room caps turned down far enough to hit
 //
 // Two of the wire suites would otherwise sit and wait out a real timer, so the
 // shared server is started with both windows shortened. That's the only reason
@@ -29,7 +30,7 @@ const WIRE = [
     'wire', 'votewire', 'leavewire', 'abandonwire',
     'spectatewire', 'idlewire', 'rentwire', 'presence', 'polling',
 ];
-const SOLO = ['redeploy'];
+const SOLO = ['redeploy', 'limits'];
 /** ESM, so it can import the client's copy of the rent maths directly. */
 const ESM = ['lopsided.mjs'];
 

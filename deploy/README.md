@@ -133,6 +133,37 @@ sudo chmod 600 /etc/nopoly.env
 The server **refuses to start** in production without this, rather than quietly
 running open to the internet.
 
+### Running without a password
+
+To let anyone with the link play, say so explicitly — an unset `NOPOLY_PASSWORD`
+on its own is still treated as a mistake, because that is what it usually is:
+
+```bash
+sudo tee /etc/nopoly.env > /dev/null <<'EOF'
+NOPOLY_OPEN=1
+EOF
+sudo systemctl restart nopoly
+journalctl -u nopoly -n 5 | grep Access:    # "OPEN by NOPOLY_OPEN"
+```
+
+Before doing this, understand what the password was also doing. It stood in
+front of `room:create`, which is the only call an anonymous visitor can make
+that costs the server memory. Two limits replace it, both tunable and both set
+well above normal use:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `NOPOLY_MAX_ROOMS` | `150` | Hard ceiling on live rooms. Past it, creation is refused with "the server is full". This is what makes running out of memory structurally impossible. |
+| `NOPOLY_ROOMS_PER_IP` | `10` | Rooms one address may create per 10 minutes, so one script can't fill every slot. |
+
+Rooms empty for 30 minutes are swept regardless. If a real game is ever turned
+away, these are too low — raise them rather than removing them.
+
+Note also that there is **no moderation**: names and chat are whatever people
+type, rooms are reachable only with their 5-character code, and vote-kick is the
+only in-game control. `client/legal.html` says as much, and names a contact
+address — change it to one you read before opening the site up.
+
 ## Start it
 
 ```bash
@@ -193,7 +224,10 @@ seconds, so a `kill -9` or a power cut costs at most a few moves. It's deleted
 once resumed, and ignored if older than six hours.
 
 **If you installed the unit before this existed, reinstall it** — without
-`StateDirectory=` the save silently fails and restarts still end every game:
+`StateDirectory=` the save silently fails and restarts still end every game.
+The same copy also picks up `LimitNOFILE=65535`; systemd's default of 1024 file
+descriptors caps you at roughly 900 simultaneous players, and hitting it looks
+like refused connections on a server that otherwise reports healthy:
 
 ```bash
 sudo cp ~/nopoly/deploy/nopoly.service /etc/systemd/system/nopoly.service

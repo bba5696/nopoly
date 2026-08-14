@@ -151,6 +151,34 @@ of them stop working the moment the password changes. The server refuses to
 start in production without a password rather than logging a warning nobody
 reads.
 
+## The password was also the rate limiter
+
+`NOPOLY_PASSWORD` gates the site, but for a long time it was doing a second job
+nothing named: standing in front of `room:create`, the one call an unknown
+caller can make that costs this process memory. Empty rooms are swept after
+thirty minutes, which bounds growth over an evening but not over a minute — a
+loop can allocate boards far faster than the sweep reclaims them, and there is
+one gigabyte and no second instance.
+
+So opening the game up meant replacing that job rather than simply removing it.
+Two limits, because they fail differently:
+
+- **A global cap on `rooms.size`.** The one that actually protects the box:
+  whatever gets past a per-IP limit — a proxy, many machines — still cannot
+  exhaust memory. It bounds the autosave too, since `JSON.stringify` runs over
+  every live room.
+- **A per-IP creation limit,** same shape as the login limiter in `auth.js`.
+  The cap alone would let one script fill every slot and lock the friend group
+  out; this is what keeps the cap's slots available to actual people.
+
+Both are far above anything a friend group produces, and both are env-tunable.
+If a real game is ever refused, they are too low and are meant to be raised.
+
+Running without a password is now allowed but must be **stated**, via
+`NOPOLY_OPEN=1`. The boot guard used to refuse outright; deleting it would have
+meant a typo in `/etc/nopoly.env` silently publishing the site. Opening on
+purpose and opening by accident must not look the same to the server.
+
 ## The legal page is a claim about the code
 
 `client/legal.html` states exactly what is stored, where, and for how long — the
@@ -167,14 +195,15 @@ agreeing to them are not terms.
 
 ## Testing
 
-`server/test/` holds 22 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 23 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 
 `test/run.js` handles what each kind needs — engine suites run bare, the socket
 suites share one server it boots on `:3001` with the idle and away windows
-shortened, and `redeploy` runs last because it spawns and `SIGTERM`s servers of
-its own. `test/fixture.js` writes staged rooms as a snapshot the server restores
+shortened, and `redeploy` and `limits` run last because they spawn servers of
+their own: one to `SIGTERM` the way systemd does, one booted with the room caps
+turned low enough to actually reach. `test/fixture.js` writes staged rooms as a snapshot the server restores
 at boot, which is how a deterministic mid-game position is set up; rolling your
 way to a particular tile is a coin flip dressed up as a test.
 

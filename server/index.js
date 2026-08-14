@@ -60,6 +60,67 @@ const idleTimers = new Map();
 const DISCONNECT_GRACE_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
 
+/* --------------------------------------------------- limits on making rooms */
+
+// Creating a room is the one thing an unknown caller can do that costs the
+// server memory, and until the password gate became optional the password was
+// the only thing in front of it. Rooms are swept when they have been empty for
+// half an hour, which bounds growth over a long period but not over a short
+// one: a loop calling room:create can allocate boards far faster than the sweep
+// reclaims them, and this process has a gigabyte and no second instance to fall
+// back on.
+//
+// Two limits rather than one, because they fail differently. The global cap is
+// the one that actually protects the box — whatever gets past the per-IP limit,
+// through a proxy or a botnet, still cannot exhaust memory. The per-IP limit is
+// what keeps one script from filling those slots and locking everyone else out,
+// which the cap alone would happily allow.
+//
+// Both are deliberately far above anything a friend group produces. If a real
+// game is ever refused, these are too low and are meant to be raised.
+const MAX_ROOMS = Number(process.env.NOPOLY_MAX_ROOMS) || 150;
+const ROOMS_PER_IP = Number(process.env.NOPOLY_ROOMS_PER_IP) || 10;
+const ROOM_WINDOW_MS = 10 * 60 * 1000;
+
+/** ip -> { count, until } — same shape as the login limiter in auth.js. */
+const roomsMade = new Map();
+
+// Socket.IO does not go through Express, so `app.set('trust proxy')` does not
+// reach it and the handshake address is the proxy's for everyone. Count in from
+// the right of X-Forwarded-For by the same hop count Express is configured
+// with: the rightmost entries are added by proxies we control, and anything
+// further left was supplied by the client and cannot be trusted.
+const TRUST_HOPS = Number(process.env.TRUST_PROXY_HOPS) || 1;
+
+function socketIp(socket) {
+    const forwarded = socket.handshake?.headers?.['x-forwarded-for'];
+    if (forwarded) {
+        const chain = String(forwarded).split(',').map((s) => s.trim()).filter(Boolean);
+        const picked = chain[chain.length - TRUST_HOPS];
+        if (picked) return picked;
+    }
+    return socket.handshake?.address || 'unknown';
+}
+
+function tooManyRooms(ip) {
+    const rec = roomsMade.get(ip);
+    if (!rec) return false;
+    if (Date.now() > rec.until) {
+        roomsMade.delete(ip);
+        return false;
+    }
+    return rec.count >= ROOMS_PER_IP;
+}
+
+function noteRoom(ip) {
+    const rec = roomsMade.get(ip);
+    if (!rec || Date.now() > rec.until) {
+        roomsMade.set(ip, { count: 1, until: Date.now() + ROOM_WINDOW_MS });
+        return;
+    }
+    rec.count += 1;
+}
+
 app.get('/health', (req, res) => {
     res.json({ ok: true, rooms: rooms.size, ...presence() });
 });
@@ -345,6 +406,12 @@ function sweepEmptyRooms() {
             rooms.delete(code);
         }
     }
+    // Expired rate-limit records, for the same reason the rooms above go: this
+    // map is keyed by IP and nothing else ever removes a lapsed entry, so on an
+    // open server it would grow with every visitor and never shrink.
+    for (const [ip, rec] of roomsMade) {
+        if (now > rec.until) roomsMade.delete(ip);
+    }
     pushPresence();
 }
 setInterval(sweepEmptyRooms, 60_000).unref();
@@ -353,12 +420,27 @@ io.on('connection', (socket) => {
     pushPresence();
 
     socket.on('room:create', ({ name, playerId, initials, color } = {}, cb) => {
+        if (rooms.size >= MAX_ROOMS) {
+            return cb?.({ error: 'The server is full right now — try again in a few minutes' });
+        }
+        const ip = socketIp(socket);
+        if (tooManyRooms(ip)) {
+            return cb?.({ error: "That's a lot of rooms in a short time — give it a few minutes" });
+        }
+
         let code = engine.makeRoomCode();
         while (rooms.has(code)) code = engine.makeRoomCode();
         const room = engine.createRoom(code);
-        rooms.set(code, room);
+        // Registered only once it has someone in it, so a refused join cannot
+        // strand an empty room holding a code and a slot against the cap.
+        // Defensive rather than a fix: none of addPlayer's guards can fire on a
+        // room made a line ago — nobody is banned, the phase is waiting, it is
+        // not full, and a blank name defaults instead of failing. It is the
+        // ordering that stays correct if one of those ever grows a case.
         const result = engine.addPlayer(room, { name, playerId, initials, color });
         if (result.error) return cb?.({ error: result.error });
+        rooms.set(code, room);
+        noteRoom(ip);
         seat(socket, room, result, cb);
     });
 
@@ -554,10 +636,18 @@ function seat(socket, room, result, cb) {
     pushPresence();
 }
 
-// An open server is fine on a laptop and never fine on the internet, and a
-// warning in a log nobody reads is how it ships open. Refuse instead.
-if (PRODUCTION && !auth.enabled()) {
+// Running without a password is a choice, so it has to be made explicitly.
+//
+// This used to refuse outright, on the grounds that an open server is never
+// what you want in production. Deliberately opening the game up makes that too
+// strong — but only just, and dropping the check entirely would mean a typo in
+// /etc/nopoly.env, or an EnvironmentFile that failed to load, silently
+// publishing the site to everyone. Opening on purpose and opening by accident
+// must not look the same to the server, so the intent gets its own variable.
+const OPEN = process.env.NOPOLY_OPEN === '1';
+if (PRODUCTION && !auth.enabled() && !OPEN) {
     console.error('Refusing to start: NOPOLY_PASSWORD is not set, which would leave the game open to anyone.');
+    console.error('If that is deliberate, set NOPOLY_OPEN=1 to confirm it.');
     process.exit(1);
 }
 
@@ -602,7 +692,10 @@ function restoreRooms() {
 // nothing running, so an idle server doesn't touch the disk at all.
 const AUTOSAVE_MS = 15_000;
 setInterval(() => {
-    if (rooms.size) persist.save(rooms);
+    // Async: this runs while people are mid-turn, and a blocking write stalls
+    // every table in the process for as long as the disk takes. The shutdown
+    // save below stays synchronous, where blocking is the entire point.
+    if (rooms.size) persist.saveAsync(rooms);
 }, AUTOSAVE_MS).unref();
 
 const PORT = process.env.PORT || 3000;
@@ -613,6 +706,8 @@ server.listen(PORT, () => {
     console.log(restored ? `State: resumed ${restored} room(s)` : 'State: no rooms to resume');
     if (auth.enabled()) {
         console.log('Access: password required');
+    } else if (OPEN) {
+        console.log(`Access: OPEN by NOPOLY_OPEN — anyone with the URL can play (max ${MAX_ROOMS} rooms)`);
     } else {
         console.warn('Access: OPEN — set NOPOLY_PASSWORD to require a password');
     }
