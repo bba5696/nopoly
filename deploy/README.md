@@ -156,8 +156,25 @@ well above normal use:
 | `NOPOLY_MAX_ROOMS` | `150` | Hard ceiling on live rooms. Past it, creation is refused with "the server is full". This is what makes running out of memory structurally impossible. |
 | `NOPOLY_ROOMS_PER_IP` | `10` | Rooms one address may create per 10 minutes, so one script can't fill every slot. |
 
-Rooms empty for 30 minutes are swept regardless. If a real game is ever turned
-away, these are too low — raise them rather than removing them.
+If a real game is ever turned away, these are too low — raise them rather than
+removing them.
+
+Rooms also end on their own, which is what keeps the ceiling from being reached
+by accumulation rather than by abuse. Three windows, all tunable, none of which
+normally needs touching:
+
+| Variable | Default | Closes a room when |
+|---|---|---|
+| `NOPOLY_EMPTY_ROOM_MS` | 30 min | nobody's socket has been attached for that long |
+| `NOPOLY_ENDED_ROOM_MS` | 30 min | the game has finished and nothing has been asked of it since |
+| `NOPOLY_STALE_ROOM_MS` | 3 hours | sockets are still attached but no request has arrived — a tab left open on a phone in a pocket |
+| `NOPOLY_SWEEP_MS` | 60 s | how often the check runs |
+
+`NOPOLY_STALE_ROOM_MS` is the one that matters in practice: a forgotten open
+tab never disconnects, so without it a room can outlive everyone's interest
+indefinitely.
+Anyone still connected when a room closes is told and returned to the home
+screen.
 
 Note also that there is **no moderation**: names and chat are whatever people
 type, rooms are reachable only with their 5-character code, and vote-kick is the

@@ -193,17 +193,50 @@ React app for the same reason `sounds.html` is, plus one of its own: it has to b
 readable **before** the password gate, since terms you can only reach by first
 agreeing to them are not terms.
 
+## Nothing ever says a game is over
+
+Rooms live in a `Map`, and no player action removes one. Leaving is "gone for
+now", because a refresh is indistinguishable from quitting; winning leaves the
+end screen up; closing the tab tells the server a socket dropped, not that the
+table is finished. So the only thing standing between the Map and the life of
+the process is a sweep, and it has to recognise three different shapes of
+"nobody is using this":
+
+- **empty** — no player's socket is attached for thirty minutes. Timed rather
+  than immediate, because the disconnect grace period and the abandonment
+  countdown both depend on a seat outliving its socket.
+- **finished** — someone won and nothing has been asked of the room for thirty
+  minutes. Measured from the last request rather than from the win, so reading
+  the stats or starting a rematch keeps it.
+- **stale** — sockets are attached and none of them belongs to a person any
+  more. A tab left open on a phone in a pocket never disconnects, so the first
+  two rules never see it; worse, the turn clock keeps playing turns for a table
+  nobody is sitting at, which makes the room look busy while being completely
+  abandoned. Three hours without a single request closes it.
+
+Staleness is measured from the last thing a **client asked for** — `act()` is
+the one place that records it, and nothing the server does on its own timers
+counts. Anything else and the turn clock would keep an abandoned room alive by
+talking to itself.
+
+Closing a room is more than deleting the key. Its three timers hold the object
+being freed, its players' grace timers hold it for another forty-five seconds,
+and — uniquely for the stale case — there are live sockets sitting in a room
+that no longer exists. All of that is unwound together, and the clients are
+told, because a board that silently stops answering reads as a broken server.
+
 ## Testing
 
-`server/test/` holds 23 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 24 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 
 `test/run.js` handles what each kind needs — engine suites run bare, the socket
 suites share one server it boots on `:3001` with the idle and away windows
-shortened, and `redeploy` and `limits` run last because they spawn servers of
+shortened, and `redeploy`, `limits` and `cleanup` run last because they spawn servers of
 their own: one to `SIGTERM` the way systemd does, one booted with the room caps
-turned low enough to actually reach. `test/fixture.js` writes staged rooms as a snapshot the server restores
+turned low enough to actually reach, one with room lifetimes measured in
+milliseconds. `test/fixture.js` writes staged rooms as a snapshot the server restores
 at boot, which is how a deterministic mid-game position is set up; rolling your
 way to a particular tile is a coin flip dressed up as a test.
 

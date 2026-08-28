@@ -329,7 +329,7 @@
 
             <h3 id="retention">How long anything is kept</h3>
             <ul>
-                <li><strong>Live games</strong> — held in the server's memory only. When the game ends or the server restarts, they are gone.</li>
+                <li><strong>Live games</strong> — held in the server's memory only, and never written to a database. A restart ends them. So does the server's own cleanup, which discards a room <strong>30 minutes</strong> after the last player disconnects, <strong>30 minutes</strong> after the game finishes, or after <strong>3 hours</strong> in which nobody in it has done anything — whichever comes first. Everything in that room, chat included, goes with it.</li>
                 <li><strong>The crash snapshot</strong> — every 15 seconds, and on shutdown, active games are written to a file on the server so a restart doesn't end everyone's evening. It contains player names, chat and board state. It is deleted the moment it is restored, and ignored and discarded if it is more than <strong>6 hours</strong> old.</li>
                 <li><strong>Failed password attempts</strong> — an IP address is held in memory for up to <strong>10 minutes</strong> after a wrong password, purely to apply the cooldown, then dropped.</li>
                 <li><strong>Web server access logs</strong> — standard request logs, kept short-term for security and debugging, then rotated away.</li>

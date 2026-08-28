@@ -115,6 +115,13 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
     return {
         roomCode: code,
         hostId: null,
+        // Both read by the sweep in index.js, and both here rather than sprung
+        // into existence there, so a snapshot round-trips the same shape it
+        // was saved in. `lastActionAt` is the last request from a client;
+        // `emptySince` is when the last socket dropped, or null while anyone
+        // is attached.
+        lastActionAt: Date.now(),
+        emptySince: null,
         players: [],
         // Watching, not playing: people who arrived after the game started, and
         // people who are out of it but still want to see how it ends.

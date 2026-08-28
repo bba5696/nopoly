@@ -94,12 +94,24 @@ export function GameProvider({ children }) {
             setState(next);
         };
         const onError = (text) => flash(text);
+        // The server reclaimed the room out from under us — finished, empty,
+        // or untouched for hours. Nothing to reconnect to, so clear the stored
+        // code as well: keeping it would have every reconnect ask for a room
+        // that no longer exists.
+        const onClosed = (text) => {
+            clearRoom();
+            setRoomCode(null);
+            setSpectating(false);
+            setState(null);
+            flash(text || 'That room was closed.');
+        };
 
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
         socket.on('state', onState);
         socket.on('presence', onPresence);
         socket.on('error:game', onError);
+        socket.on('room:closed', onClosed);
         document.addEventListener('visibilitychange', reportVisibility);
         if (socket.connected) onConnect();
 
@@ -110,6 +122,7 @@ export function GameProvider({ children }) {
             socket.off('state', onState);
             socket.off('presence', onPresence);
             socket.off('error:game', onError);
+            socket.off('room:closed', onClosed);
         };
     }, [applyJoin, flash]);
 

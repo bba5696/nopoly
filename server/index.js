@@ -58,7 +58,36 @@ const voteTimers = new Map();
 const idleTimers = new Map();
 
 const DISCONNECT_GRACE_MS = 45_000;
-const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
+
+/* ------------------------------------------------------- when a room is over */
+
+// Nothing ever tells the server a game is finished with. People close the tab,
+// or they don't; either way the room stays in the Map, and in a process with no
+// database and no second instance the Map is the whole world.
+//
+// Three ways a room ends, because "nobody is using this" has three shapes and
+// only one of them is being unplugged:
+//
+//   empty     nobody's socket is attached. The obvious one.
+//   finished  someone won, and the end screen is being left open.
+//   stale     sockets are attached and none of them belongs to a person any
+//             more — a tab left open on a phone in a pocket. This is the one
+//             the old sweep could not see, and the one that lasts forever: the
+//             turn clock keeps playing turns for a table nobody is sitting at,
+//             so the room stays busy while being entirely abandoned.
+//
+// Staleness is measured from the last thing a *client asked for*, never from
+// anything the server did on its own, or the turn clock would keep the room
+// alive by talking to itself.
+const EMPTY_ROOM_MS = Number(process.env.NOPOLY_EMPTY_ROOM_MS) || 30 * 60 * 1000;
+const ENDED_ROOM_MS = Number(process.env.NOPOLY_ENDED_ROOM_MS) || 30 * 60 * 1000;
+const STALE_ROOM_MS = Number(process.env.NOPOLY_STALE_ROOM_MS) || 3 * 60 * 60 * 1000;
+const SWEEP_MS = Number(process.env.NOPOLY_SWEEP_MS) || 60_000;
+
+/** A room did something because someone asked it to. */
+function touch(room) {
+    if (room) room.lastActionAt = Date.now();
+}
 
 /* --------------------------------------------------- limits on making rooms */
 
@@ -377,6 +406,11 @@ function act(socket, fn, { watchers = false } = {}) {
     }
     const result = fn(room, socket.data.playerId) || {};
     if (result.error) socket.emit('error:game', result.error);
+    // Even a refused action is a person doing something, so it counts against
+    // staleness. What must never count is anything the server starts by itself
+    // — the turn clock playing an empty turn would otherwise keep an abandoned
+    // room alive for as long as the tab stays open, which is forever.
+    touch(room);
     // Doing anything at all is the clearest sign of life there is, so it counts
     // the same as moving the mouse.
     engine.noteActive(room, socket.data.playerId);
@@ -387,24 +421,71 @@ function act(socket, fn, { watchers = false } = {}) {
     return result;
 }
 
-function sweepEmptyRooms() {
+/**
+ * Take a room out of the world: its timers, its sockets, its entry in the Map.
+ * Deleting from `rooms` alone would leave three timers holding the object it
+ * was supposed to free, and a handful of clients rendering a board the server
+ * has forgotten.
+ */
+function closeRoom(code, room, notice) {
+    clearTimeout(auctionTimers.get(code));
+    auctionTimers.delete(code);
+    clearTimeout(voteTimers.get(code));
+    voteTimers.delete(code);
+    clearTimeout(idleTimers.get(code));
+    idleTimers.delete(code);
+    // A grace timer outlives its room otherwise. The closure captures `room`,
+    // so the thing being freed stays reachable — and reachable through a timer
+    // that will then act on a room nobody can reach any more.
+    for (const p of room.players) {
+        clearTimeout(graceTimers.get(p.id));
+        graceTimers.delete(p.id);
+    }
+
+    // Told, not left to find out. A stale room is closed with people still
+    // connected to it by definition, and a board that quietly stops answering
+    // is indistinguishable from a broken server.
+    io.to(code).emit('room:closed', notice);
+    for (const s of io.sockets.sockets.values()) {
+        if (s.data.roomCode !== code) continue;
+        s.leave(code);
+        s.data.roomCode = null;
+        s.data.spectating = false;
+    }
+
+    rooms.delete(code);
+    return true;
+}
+
+/** Which ending applies, if any. Order matters only in what it reports. */
+function expiredReason(room, now) {
+    if (room.emptySince && now - room.emptySince > EMPTY_ROOM_MS) {
+        return 'Everyone had left, so that room was closed.';
+    }
+    // Measured from the last request, not from the win: the stats screen is
+    // worth reading, and a rematch is a request like any other.
+    const quietFor = now - (room.lastActionAt || now);
+    if (room.phase === 'ended' && quietFor > ENDED_ROOM_MS) {
+        return 'That game had finished, so the room was closed.';
+    }
+    if (quietFor > STALE_ROOM_MS) {
+        return 'That room sat untouched for hours, so it was closed.';
+    }
+    return null;
+}
+
+function sweepRooms() {
     const now = Date.now();
+    let closed = 0;
     for (const [code, room] of rooms) {
+        // Disconnected is not gone — the grace period and the abandonment
+        // countdown both depend on a seat outliving its socket — so emptiness
+        // is timed rather than acted on the moment the last socket drops.
         const anyoneConnected = room.players.some((p) => p.connected);
-        if (anyoneConnected) {
-            room.emptySince = null;
-            continue;
-        }
-        if (!room.emptySince) room.emptySince = now;
-        else if (now - room.emptySince > EMPTY_ROOM_TTL_MS) {
-            clearTimeout(auctionTimers.get(code));
-            auctionTimers.delete(code);
-            clearTimeout(voteTimers.get(code));
-            voteTimers.delete(code);
-            clearTimeout(idleTimers.get(code));
-            idleTimers.delete(code);
-            rooms.delete(code);
-        }
+        room.emptySince = anyoneConnected ? null : room.emptySince || now;
+
+        const notice = expiredReason(room, now);
+        if (notice && closeRoom(code, room, notice)) closed++;
     }
     // Expired rate-limit records, for the same reason the rooms above go: this
     // map is keyed by IP and nothing else ever removes a lapsed entry, so on an
@@ -412,9 +493,10 @@ function sweepEmptyRooms() {
     for (const [ip, rec] of roomsMade) {
         if (now > rec.until) roomsMade.delete(ip);
     }
-    pushPresence();
+    if (closed) pushPresence();
+    return closed;
 }
-setInterval(sweepEmptyRooms, 60_000).unref();
+setInterval(sweepRooms, SWEEP_MS).unref();
 
 io.on('connection', (socket) => {
     pushPresence();
@@ -471,6 +553,7 @@ io.on('connection', (socket) => {
         socket.data.roomCode = room.roomCode;
         socket.data.spectating = true;
         socket.join(room.roomCode);
+        touch(room);
         cb?.({
             roomCode: room.roomCode,
             playerId: spectator.id,
@@ -619,6 +702,7 @@ function seat(socket, room, result, cb) {
     socket.data.roomCode = room.roomCode;
     socket.data.spectating = false;
     socket.join(room.roomCode);
+    touch(room);
     clearTimeout(graceTimers.get(result.player.id));
     graceTimers.delete(result.player.id);
 
