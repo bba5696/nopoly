@@ -173,6 +173,20 @@ normally needs touching:
 `NOPOLY_STALE_ROOM_MS` is the one that matters in practice: a forgotten open
 tab never disconnects, so without it a room can outlive everyone's interest
 indefinitely.
+
+The turn clock has its own pair, for the same reason at a smaller scale — an
+hour-long game where people have started drifting off should not spend a minute
+on each of them:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `NOPOLY_IDLE_MS` | 60 s | how long a turn may sit untouched by someone who is still connected |
+| `NOPOLY_AWAY_MS` | 5 s | the same, for a player whose socket has gone |
+| `NOPOLY_AWAY_GRACE_MS` | 50 s | how long after a disconnect the short clock stays out of the way, so a refresh mid-turn costs nothing |
+
+Keep `NOPOLY_AWAY_GRACE_MS` above the 45-second disconnect grace in
+`server/index.js`, or a refreshing player can have their turn played for them
+while the server is still holding their seat.
 Anyone still connected when a room closes is told and returned to the home
 screen.
 

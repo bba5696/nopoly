@@ -1,11 +1,12 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Trophy } from 'lucide-react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Check, Copy, Download, Share2, Trophy } from 'lucide-react';
+import { Area, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { money, shortMoney } from '@/lib/board-layout';
 import { alpha, tag } from '@/lib/color';
+import { cardFromState, shareCardBlob, shareFileName } from '@/lib/share-card';
 
 function duration(stats) {
     if (!stats.startedAt) return '—';
@@ -21,25 +22,139 @@ function topEntry(map) {
     return entries.sort((a, b) => b[1] - a[1])[0];
 }
 
+/**
+ * Everyone's standing at the turn under the cursor, richest first — the point
+ * of hovering a line this crowded is to find out who was ahead, which reading
+ * eight overlapping strokes will not tell you.
+ *
+ * Names stay in plain ink with a colour chip beside them rather than being
+ * written in their own colour: half the palette is unreadable as small text on
+ * this background, and the chip already says who it is.
+ */
 function ChartTooltip({ active, payload, label }) {
     if (!active || !payload?.length) return null;
+    const rows = payload.slice().sort((a, b) => b.value - a.value);
     return (
-        <div className="panel flex flex-col gap-1 px-3 py-2 text-[12px]">
+        <div className="panel flex min-w-[180px] flex-col gap-1.5 px-3 py-2.5 text-[12px]">
             <span className="label">turn {label}</span>
-            {payload
-                .slice()
-                .sort((a, b) => b.value - a.value)
-                .map((p) => (
-                    <span key={p.dataKey} className="mono" style={{ color: p.color }}>
-                        {p.dataKey} · {money(p.value)}
-                    </span>
-                ))}
+            {rows.map((p, i) => (
+                <span key={p.dataKey} className="flex items-center gap-2">
+                    <span className="mono w-3 text-[10px] text-muted-foreground">{i + 1}</span>
+                    <span className="size-2 rounded-full" style={{ background: p.color }} />
+                    <span className="flex-1 truncate">{p.dataKey}</span>
+                    <span className="mono text-muted-foreground">{money(p.value)}</span>
+                </span>
+            ))}
+        </div>
+    );
+}
+
+/**
+ * Save the chart as a picture, or hand it straight to whatever the device
+ * shares with.
+ *
+ * Three buttons rather than one because no single route works everywhere:
+ * phones have a share sheet and no filesystem worth speaking of, desktop
+ * browsers have a clipboard that pastes into Discord, and a download is the one
+ * that always works. Whichever is missing is simply not offered.
+ */
+function ShareCard({ state, flash }) {
+    const [done, setDone] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    const build = useCallback(async () => {
+        const card = cardFromState(state);
+        const blob = await shareCardBlob(card);
+        if (!blob) throw new Error('The picture came out empty');
+        return { card, blob };
+    }, [state]);
+
+    const run = useCallback(
+        async (what, fn) => {
+            if (busy) return;
+            setBusy(true);
+            try {
+                await fn(await build());
+                setDone(what);
+                setTimeout(() => setDone(null), 2200);
+            } catch (err) {
+                // A cancelled share sheet throws the same as a failure, and
+                // telling someone their own cancel went wrong is worse noise
+                // than saying nothing.
+                if (err?.name !== 'AbortError') flash(`Could not ${what === 'saved' ? 'save' : 'copy'} the image`);
+            } finally {
+                setBusy(false);
+            }
+        },
+        [build, busy, flash],
+    );
+
+    const canCopy = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write;
+    const canShare = !!navigator.canShare?.({ files: [new File([], 'x.png', { type: 'image/png' })] });
+
+    return (
+        <div className="flex items-center gap-1.5">
+            {done && (
+                <span className="mono flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Check className="size-3" /> {done}
+                </span>
+            )}
+            {canShare && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                        run('shared', ({ card, blob }) =>
+                            navigator.share({
+                                files: [new File([blob], shareFileName(card), { type: 'image/png' })],
+                                title: 'Nopoly',
+                            }),
+                        )
+                    }
+                >
+                    <Share2 /> Share
+                </Button>
+            )}
+            {canCopy && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                        run('copied', ({ blob }) =>
+                            navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]),
+                        )
+                    }
+                >
+                    <Copy /> Copy
+                </Button>
+            )}
+            <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                    run('saved', ({ card, blob }) => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = shareFileName(card);
+                        a.click();
+                        // Revoked a beat later: Safari has not finished with the
+                        // URL when click() returns, and loses the file.
+                        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+                    })
+                }
+            >
+                <Download /> Save image
+            </Button>
         </div>
     );
 }
 
 export function GameOver() {
-    const { state, isHost, send, leaveRoom } = useGame();
+    const { state, isHost, send, leaveRoom, flash } = useGame();
     const winner = state.players.find((p) => p.id === state.winnerId);
     // A team wins as a team — both names on the trophy, not just whoever the
     // server happened to list first.
@@ -62,6 +177,13 @@ export function GameOver() {
             return row;
         });
     }, [state.stats.netWorth, state.players]);
+
+    const winnerIds = new Set(winners.map((w) => w.id));
+    // Recharts paints in the order the series are declared, so the order is the
+    // z-order — losers first, the winner last and on top.
+    const drawOrder = state.players
+        .slice()
+        .sort((a, b) => Number(winnerIds.has(a.id)) - Number(winnerIds.has(b.id)));
 
     const mostVisited = topEntry(state.stats.visits);
     const mostJail = topEntry(state.stats.jailVisits);
@@ -144,15 +266,36 @@ export function GameOver() {
 
                 <div className="flex flex-col gap-5">
                     <section className="panel flex flex-col gap-4 p-6">
-                        <span className="text-xl">Net worth over time</span>
-                        <div className="h-[260px] w-full">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xl">Net worth over time</span>
+                            <ShareCard state={state} flash={flash} />
+                        </div>
+                        <div className="h-[280px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={chart} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                                <ComposedChart data={chart} margin={{ top: 8, right: 14, bottom: 0, left: 0 }}>
+                                    <defs>
+                                        {state.players.map((p) => (
+                                            <linearGradient key={p.id} id={`nw-${p.id}`} x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor={p.color} stopOpacity={0.34} />
+                                                <stop offset="100%" stopColor={p.color} stopOpacity={0} />
+                                            </linearGradient>
+                                        ))}
+                                        {/* The winner's line is lit rather than just thicker, so the
+                                            eye lands on it first in a chart with eight strokes in it. */}
+                                        <filter id="nw-glow" x="-50%" y="-50%" width="200%" height="200%">
+                                            <feGaussianBlur stdDeviation="3.5" result="blur" />
+                                            <feMerge>
+                                                <feMergeNode in="blur" />
+                                                <feMergeNode in="SourceGraphic" />
+                                            </feMerge>
+                                        </filter>
+                                    </defs>
                                     <CartesianGrid stroke="rgba(255,255,255,.06)" vertical={false} />
                                     <XAxis
                                         dataKey="turn"
                                         tick={{ fill: '#8b88a0', fontSize: 11 }}
                                         tickLine={false}
+                                        minTickGap={24}
                                         axisLine={{ stroke: 'rgba(255,255,255,.1)' }}
                                     />
                                     <YAxis
@@ -162,26 +305,49 @@ export function GameOver() {
                                         width={54}
                                         tickFormatter={shortMoney}
                                     />
-                                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,.15)' }} />
-                                    {state.players.map((p) => (
-                                        <Line
-                                            key={p.id}
-                                            type="monotone"
-                                            dataKey={p.name}
-                                            stroke={p.color}
-                                            strokeWidth={2}
-                                            dot={false}
-                                            isAnimationActive={false}
-                                        />
-                                    ))}
-                                </LineChart>
+                                    <Tooltip
+                                        content={<ChartTooltip />}
+                                        cursor={{ stroke: 'rgba(255,255,255,.22)', strokeDasharray: '3 3' }}
+                                    />
+                                    {/* Losers first: whoever won should be drawn over the top of the
+                                        lines that crossed theirs, not under them. */}
+                                    {drawOrder.map((p) => {
+                                        const won = winnerIds.has(p.id);
+                                        return (
+                                            <Area
+                                                key={p.id}
+                                                type="monotone"
+                                                dataKey={p.name}
+                                                stroke={p.color}
+                                                strokeWidth={won ? 3 : 1.9}
+                                                strokeOpacity={won ? 1 : 0.85}
+                                                // Only the winner gets a filled area. Eight of them
+                                                // over each other is a smear, not a graph.
+                                                fill={won ? `url(#nw-${p.id})` : 'transparent'}
+                                                style={won ? { filter: 'url(#nw-glow)' } : undefined}
+                                                dot={false}
+                                                activeDot={{ r: 4, strokeWidth: 2, stroke: '#0b0a12' }}
+                                                isAnimationActive={false}
+                                            />
+                                        );
+                                    })}
+                                </ComposedChart>
                             </ResponsiveContainer>
                         </div>
+                        {/* The legend doubles as the scoreboard: eight lines are only
+                            identifiable if the colours are named, and the names may as
+                            well carry what they ended on. */}
                         <div className="flex flex-wrap justify-center gap-x-5 gap-y-2">
-                            {state.players.map((p) => (
+                            {standings.map((p) => (
                                 <span key={p.id} className="flex items-center gap-2 text-[14px]">
-                                    <span className="size-2.5 rounded-full" style={{ background: p.color }} />
-                                    {p.name}
+                                    <span
+                                        className="size-2.5 rounded-full"
+                                        style={{ background: p.color, opacity: p.bankrupt ? 0.45 : 1 }}
+                                    />
+                                    <span className={p.bankrupt ? 'text-muted-foreground' : undefined}>{p.name}</span>
+                                    <span className="mono text-[11px] text-muted-foreground">
+                                        {p.bankrupt ? 'bankrupt' : money(p.netWorth)}
+                                    </span>
                                 </span>
                             ))}
                         </div>

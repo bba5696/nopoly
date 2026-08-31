@@ -153,6 +153,51 @@ function withRoll([d1, d2], fn) {
     ok('and it is not still on the last player', r.idle.playerId !== first || upNow(r).id === first);
 }
 
+/* ------------------------------------------------- the clock for the absent */
+{
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const up = upNow(r);
+    e.markDisconnected(r, up.id);
+    // Gone since before their turn came round, which is the case this is for:
+    // people drifting off near the end of a long game.
+    up.disconnectedAt = Date.now() - 120_000;
+    e.refreshIdle(r, up.id);
+    ok('an absent player gets seconds, not a minute',
+        Math.round((r.idle.endsAt - Date.now()) / 1000) === 5, String(r.idle.endsAt - Date.now()));
+
+    up.disconnectedAt = Date.now();
+    e.refreshIdle(r, up.id);
+    ok('but not while a refresh could still bring them back',
+        r.idle.endsAt - Date.now() > 45_000, String(r.idle.endsAt - Date.now()));
+
+    up.connected = true;
+    e.refreshIdle(r, up.id);
+    ok('and coming back restores the full window',
+        Math.round((r.idle.endsAt - Date.now()) / 1000) === 60, String(r.idle.endsAt - Date.now()));
+}
+{
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const up = upNow(r);
+    const other = r.players.find((x) => x.id !== up.id);
+    r.idle.endsAt = Date.now() + 1000;
+    e.markDisconnected(r, other.id);
+    e.refreshIdle(r, other.id);
+    ok('someone else dropping does not touch the clock',
+        r.idle.playerId === up.id && r.idle.endsAt - Date.now() <= 1000, JSON.stringify(r.idle));
+}
+{
+    const { r } = mk(['Ada', 'Bo'], { timer: false });
+    r.settings.auction = false;
+    const up = upNow(r);
+    e.markDisconnected(r, up.id);
+    up.disconnectedAt = Date.now() - 120_000;
+    e.refreshIdle(r, up.id);
+    ok('a table with the timer off still does not wait on a closed tab',
+        !!r.idle && r.idle.playerId === up.id, JSON.stringify(r.idle));
+    withRoll([1, 4], () => e.expireIdle(r));
+    ok('their turn gets played', upNow(r).id !== up.id, upNow(r).name);
+}
+
 /* ------------------------------------------------------------ broadcast */
 {
     const { r } = mk(['Ada', 'Bo', 'Cy']);

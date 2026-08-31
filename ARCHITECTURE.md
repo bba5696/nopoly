@@ -67,6 +67,16 @@ because a minute per step means three minutes to pass one empty turn. It always
 takes the passive option, so it can never spend your money. A debt is the
 exception: only the player can choose what to sell, so the turn stays theirs.
 
+**Nobody waits a minute on a closed tab.** A player whose socket has gone gets
+seconds instead — nothing is going to move a mouse that isn't there, and near
+the end of a long game most of the remaining turns belong to people who have
+drifted off. That shorter clock is floored at the disconnect grace period, so
+someone who dropped *during their own turn* still has their full window to
+refresh back in; it only bites once they have been gone longer than a refresh
+takes. It runs even at a table that switched the turn timer off, because that
+setting is a rule about how long a person may take, not a reason for the game to
+stop dead for someone who has left.
+
 ## Building is turn-gated; selling is not
 
 A deliberate asymmetry. Rent lands on you during *other people's* turns, so you
@@ -178,6 +188,23 @@ Running without a password is now allowed but must be **stated**, via
 `NOPOLY_OPEN=1`. The boot guard used to refuse outright; deleting it would have
 meant a typo in `/etc/nopoly.env` silently publishing the site. Opening on
 purpose and opening by accident must not look the same to the server.
+
+## The souvenir is drawn, not uploaded
+
+The end screen's net-worth chart can be saved as a picture. A room is gone the
+moment the server reclaims it, and there is no database and no object store, so
+there was never a URL that could still resolve tomorrow — a "share link" would
+have meant inventing storage for the one feature that wants it least.
+
+So `client/src/lib/share-card.js` composes the card on a canvas from state the
+client already has, and hands the player a PNG. Nothing is uploaded, nothing
+outlives the room, and the feature works the same on a server with the disk
+turned off. Copy, the share sheet and a download are all offered because no one
+of them exists everywhere; whichever the browser lacks is not shown.
+
+It draws the card rather than screenshotting the page. The on-screen chart is an
+SVG full of CSS variables and web fonts, and every DOM-to-image route for that is
+a dependency plus a list of things that quietly come out blank.
 
 ## The legal page is a claim about the code
 

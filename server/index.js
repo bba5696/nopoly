@@ -57,6 +57,9 @@ const voteTimers = new Map();
 /** roomCode -> timeout handle for the turn clock. */
 const idleTimers = new Map();
 
+// Held longer than this by NOPOLY_AWAY_GRACE_MS in the engine, so that the
+// shortened turn clock for an absent player can never come due while this grace
+// still says a refresh costs nothing.
 const DISCONNECT_GRACE_MS = 45_000;
 
 /* ------------------------------------------------------- when a room is over */
@@ -679,7 +682,12 @@ io.on('connection', (socket) => {
         }
 
         engine.markDisconnected(room, playerId);
+        // If they were the one on the clock, it just got shorter — a tab that
+        // has closed is never going to take its full minute. `refreshIdle`
+        // keeps its own hands off anyone else's turn.
+        engine.refreshIdle(room, playerId);
         broadcast(room);
+        scheduleIdle(room);
 
         clearTimeout(graceTimers.get(playerId));
         graceTimers.set(
@@ -705,6 +713,9 @@ function seat(socket, room, result, cb) {
     touch(room);
     clearTimeout(graceTimers.get(result.player.id));
     graceTimers.delete(result.player.id);
+    // Back mid-turn: give them the full window again rather than the seconds
+    // left of the one they were being played out on.
+    engine.refreshIdle(room, result.player.id);
 
     // `state.board` carries the board meta on every broadcast — the host can
     // swap boards in the lobby, so it can't be a one-shot handshake value.
@@ -715,8 +726,9 @@ function seat(socket, room, result, cb) {
     });
     broadcast(room);
     // Reconnecting can have just called off a countdown, so its timer has to go
-    // with it.
+    // with it — and the turn clock they were being played out on.
     scheduleVote(room);
+    scheduleIdle(room);
     pushPresence();
 }
 
@@ -746,6 +758,11 @@ function restoreRooms() {
         for (const p of room.players) {
             p.connected = false;
             p.activity = null;
+            // The restart is when they went away, as far as anything measuring
+            // absence is concerned. Stamped rather than inherited so the away
+            // clock gives them its grace to reconnect instead of counting from
+            // a disconnect that happened before the process died.
+            p.disconnectedAt = Date.now();
         }
         // Watchers are tracked by live socket and nothing else, so a snapshot's
         // list is stale on arrival. They reconnect and re-announce themselves.

@@ -68,6 +68,26 @@ const DEFAULT_SETTINGS = {
 // Overridable only so a test doesn't have to sit here for a minute per turn.
 const IDLE_MS = Number(process.env.NOPOLY_IDLE_MS) || 60_000;
 
+/**
+ * The same clock for someone who isn't there. Nobody is going to move the mouse
+ * from a closed tab, so the whole reason the window above is generous — that a
+ * person might be reading, or counting — doesn't apply. A minute per absent
+ * player is how an hour-long game turns into ten minutes of watching nothing
+ * happen once people start drifting off at the end.
+ */
+const AWAY_MS = Number(process.env.NOPOLY_AWAY_MS) || 5_000;
+
+/**
+ * Except right after they drop, where a refresh looks exactly like leaving. So
+ * the shortened clock never comes due sooner than this, counted from the moment
+ * the socket died: gone for two seconds is someone reloading, gone for two
+ * minutes is someone gone.
+ *
+ * Keep it longer than DISCONNECT_GRACE_MS in index.js — that grace is the
+ * promise that a refresh mid-turn costs you nothing, and this would break it.
+ */
+const AWAY_GRACE_MS = Number(process.env.NOPOLY_AWAY_GRACE_MS) || 50_000;
+
 /** Bounds every settings value is clamped to before it's stored. */
 const SETTING_LIMITS = {
     startingCash: { min: 500, max: 10000 },
@@ -1187,11 +1207,44 @@ function advanceTurn(room) {
  */
 function armIdle(room) {
     const player = room.players[room.turnIndex];
-    if (!room.settings.turnTimer || room.phase === 'waiting' || room.phase === 'ended' || !player) {
+    if (room.phase === 'waiting' || room.phase === 'ended' || !player) {
         room.idle = null;
         return;
     }
-    room.idle = { playerId: player.id, endsAt: Date.now() + IDLE_MS };
+    // The turn timer is a rule about how long a *person* may take, so a table
+    // that switched it off still gets an absent player's turn played for them.
+    // That isn't the rule being enforced — it's the game not stopping dead for
+    // someone who has closed the tab.
+    if (player.connected && !room.settings.turnTimer) {
+        room.idle = null;
+        return;
+    }
+    // Nobody left to unblock. Playing turns into an empty room is the server
+    // talking to itself: it changes nothing anyone can see, and it makes an
+    // abandoned table look busy to everything that watches for one.
+    if (!room.players.some((p) => p.connected)) {
+        room.idle = null;
+        return;
+    }
+    // The grace floor wins outright rather than being capped at IDLE_MS. It is
+    // the promise that a refresh mid-turn costs nothing, and a table running a
+    // deliberately short turn clock is not a reason to break it.
+    const away = Math.max(Date.now() + AWAY_MS, (player.disconnectedAt || 0) + AWAY_GRACE_MS);
+    room.idle = { playerId: player.id, endsAt: player.connected ? Date.now() + IDLE_MS : away };
+}
+
+/**
+ * Their connection changed, so the clock they're on has to change with it —
+ * dropping mid-turn shortens it, coming back gives the full window again.
+ * Guarded on being the current player: re-arming for anyone else would hand
+ * whoever is actually up a fresh minute every time someone's wifi blinked.
+ */
+function refreshIdle(room, playerId) {
+    // The second case is the room coming back to life: a turn in progress with
+    // no clock on it is what an absent player's turn looks like while there was
+    // nobody there to wait for them. Whoever just arrived is that somebody.
+    if (!isCurrent(room, playerId) && room.idle) return;
+    armIdle(room);
 }
 
 /** A sign of life from the player whose turn it is. */
@@ -2076,6 +2129,7 @@ module.exports = {
     payBank,
     transfer,
     armIdle,
+    refreshIdle,
     noteActive,
     expireIdle,
     spectateReason,
