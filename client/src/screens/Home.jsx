@@ -131,7 +131,21 @@ export function Home() {
                         </a>
                         . You must be 13 or older. Chat is visible to everyone in your room.
                     </p>
-                    <BuildTag />
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {/* New tab, deliberately: the socket is already open by
+                            the time anyone reads this, and navigating away to
+                            look at a profile would drop it. */}
+                        <a
+                            href="https://github.com/bba5696"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mono text-[11px] text-muted-foreground/70 transition-colors hover:text-foreground"
+                        >
+                            made by @bba5696
+                        </a>
+                        <span className="text-[11px] text-muted-foreground/40">·</span>
+                        <BuildTag />
+                    </div>
                 </div>
             </motion.div>
             {/* Offered rather than assumed: watching a game you meant to play
