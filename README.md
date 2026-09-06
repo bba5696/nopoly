@@ -14,9 +14,9 @@ original.
 - **Two boards**, swappable in the lobby, and adding another is adding one file
 - **The full game** — buy, rent, colour sets, houses and hotels, jail, cards,
   auctions, trades, bankruptcy
-- **Teams (beta)** — 2v2, sharing property and monopolies but keeping separate
-  balances, with interleaved turns and a prompt to bail out a teammate who can't
-  cover a debt
+- **Teams (beta)** — any number of sides of any size, sharing property and
+  monopolies but keeping separate balances, with interleaved turns and a prompt
+  to bail out a teammate who can't cover a debt
 - **Reconnect into your seat** after a refresh or a dropped connection, with a
   grace period before the table skips you
 - **Spectating** — watch a game in progress, or a game you're out of

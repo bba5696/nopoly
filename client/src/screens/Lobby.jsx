@@ -115,7 +115,7 @@ const RULES = [
         key: 'teams',
         icon: UsersRound,
         label: 'Teams',
-        hint: 'Pairs share properties, monopolies and a colour, but keep separate balances. Rent goes to whoever holds the deed, and a teammate can bail you out of a debt you can’t cover',
+        hint: 'Teammates share properties, monopolies and a colour, but keep separate balances. Sides can be any size and don’t have to match. Rent goes to whoever holds the deed, and a teammate can bail you out of a debt you can’t cover',
         beta: true,
     },
     {
@@ -142,31 +142,27 @@ const BETA_RULES = RULES.filter((r) => r.beta);
  * already carrying an avatar, a name and two badges — and the letter is what
  * the team is called everywhere else in the game.
  */
-function TeamPicker({ player, teamIds, teamColors, full, disabled, onPick }) {
+function TeamPicker({ player, teamIds, teamColors, disabled, onPick }) {
     return (
-        <span className="flex shrink-0 gap-1">
+        <span className="flex shrink-0 flex-wrap justify-end gap-1">
             {teamIds.map((id) => {
                 const active = player.teamId === id;
-                // A full team is still selectable if you're already on it —
-                // that's the un-pick, and disabling it would trap you.
-                const blocked = !active && full[id];
                 return (
                     <button
                         key={id}
                         type="button"
-                        disabled={disabled || blocked}
-                        title={blocked ? `Team ${id} is full` : `Move ${player.name} to team ${id}`}
+                        disabled={disabled}
+                        title={`Move ${player.name} to team ${id}`}
                         onClick={() => onPick(active ? null : id)}
                         className={cn(
                             'mono size-7 rounded-md border text-[11px] transition-colors',
                             active ? 'text-black/85' : 'text-muted-foreground',
-                            !active && !blocked && !disabled && 'hover:border-white/30 hover:text-foreground',
-                            blocked && 'opacity-25',
+                            !active && !disabled && 'hover:border-white/30 hover:text-foreground',
                             disabled && 'cursor-default',
                         )}
                         style={{
-                            background: active ? teamColors[id][0] : 'transparent',
-                            borderColor: active ? teamColors[id][0] : 'rgba(255,255,255,.12)',
+                            background: active ? teamColors[id] : 'transparent',
+                            borderColor: active ? teamColors[id] : 'rgba(255,255,255,.12)',
                         }}
                     >
                         {id}
@@ -239,7 +235,6 @@ export function Lobby() {
 
     const teamIds = state.teamIds || [];
     const teamColors = state.teamColors || {};
-    const teamSize = state.teamSize || 2;
 
     // Grouped under team headers when teams are on, one flat group otherwise —
     // so the roster you set up here is laid out the way the rail will be.
@@ -256,19 +251,10 @@ export function Lobby() {
           ].filter((g) => g.players.length)
         : [{ key: 'all', teamId: null, players: state.players }];
 
-    const teamFull = Object.fromEntries(
-        teamIds.map((id) => [id, state.players.filter((p) => p.teamId === id).length >= teamSize]),
-    );
-
     // Why the button is dead, in the same words the server would use.
     const blockedReason = (() => {
         if (state.players.length < 2) return 'need at least 2 players';
         if (!settings.teams) return null;
-        const short = teamIds.find((id) => {
-            const n = state.players.filter((p) => p.teamId === id).length;
-            return n > 0 && n !== teamSize;
-        });
-        if (short) return `team ${short} needs exactly ${teamSize} players`;
         if (state.players.some((p) => !p.teamId)) return 'everyone needs a team';
         if (roster.length < 2) return 'need at least 2 teams';
         return null;
@@ -321,14 +307,16 @@ export function Lobby() {
                                     <span className="label flex items-center gap-2 pt-1">
                                         <span
                                             className="size-2 rounded-full"
-                                            style={{ background: teamColors[group.teamId][0] }}
+                                            style={{ background: teamColors[group.teamId] }}
                                         />
                                         Team {group.teamId}
-                                        {group.players.length !== teamSize && (
-                                            <span className="normal-case opacity-70">
-                                                needs {teamSize - group.players.length} more
-                                            </span>
-                                        )}
+                                        {/* Sides are allowed to be uneven, so this
+                                            is a count rather than a complaint —
+                                            it's only there so the host can see the
+                                            shape of the table before starting. */}
+                                        <span className="normal-case opacity-70">
+                                            {group.players.length === 1 ? 'on their own' : `${group.players.length} players`}
+                                        </span>
                                     </span>
                                 )}
                                 {group.players.map((p) => (
@@ -365,7 +353,6 @@ export function Lobby() {
                                                 player={p}
                                                 teamIds={teamIds}
                                                 teamColors={teamColors}
-                                                full={teamFull}
                                                 disabled={!isHost}
                                                 onPick={(teamId) => send('room:team', { playerId: p.id, teamId })}
                                             />

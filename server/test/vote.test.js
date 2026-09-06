@@ -6,11 +6,18 @@ let pass = 0;
 const fails = [];
 const ok = (l, c, x) => (c ? pass++ : fails.push(l + (x ? ` — ${x}` : '')));
 
-function mk(names, { start = true } = {}) {
+// A table where a vote is allowed to be called at all: an hour into the game,
+// with everyone recently stalled. Both are their own rules, tested on their own
+// below — every block that isn't about them wants them out of the way.
+function mk(names, { start = true, open = true } = {}) {
     const r = e.createRoom('VOTE');
     const p = {};
     for (const n of names) p[n] = e.addPlayer(r, { name: n }).player;
     if (start) e.startGame(r, p[names[0]].id);
+    if (start && open) {
+        r.stats.startedAt = Date.now() - 60 * 60_000;
+        for (const q of r.players) q.lastStallAt = Date.now();
+    }
     return { r, p };
 }
 
@@ -76,9 +83,92 @@ function mk(names, { start = true } = {}) {
     e.castVote(r, p.Cy.id, false);
     ok('one no ends it early', r.vote === null);
     ok('the target stays', !p.Bo.bankrupt);
-    ok('a cooldown is set', !!e.startVoteKick(r, p.Ada.id, p.Bo.id).error);
-    ok('the cooldown names a wait', /try again in/.test(e.startVoteKick(r, p.Ada.id, p.Bo.id).error || ''));
-    ok('someone else can still be voted on', !e.startVoteKick(r, p.Ada.id, p.Cy.id).error);
+    // Two separate cooldowns land here, so this one is read off a caller who
+    // hasn't just spent one: Ada's own is what the next block is about.
+    ok('a cooldown is set', !!e.startVoteKick(r, p.Di.id, p.Bo.id).error);
+    ok('the cooldown names a wait', /try again in/.test(e.startVoteKick(r, p.Di.id, p.Bo.id).error || ''));
+    ok('someone else can still be voted on', !e.startVoteKick(r, p.Di.id, p.Cy.id).error);
+}
+
+/* ------------------------------------------------- the cooldown on a caller */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di', 'Ev']);
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    e.castVote(r, p.Cy.id, false);
+    ok('the vote is over', r.vote === null && !p.Bo.bankrupt);
+    const again = e.startVoteKick(r, p.Ada.id, p.Cy.id).error || '';
+    ok('the caller cannot move straight on to the next name', !!again, again);
+    ok('and is told how long', /before starting another/.test(again), again);
+    ok('somebody else can call one', !e.startVoteKick(r, p.Di.id, p.Cy.id).error);
+
+    // Winning is not a way round it — three kicks back to back is the same
+    // harassment whether or not the table went along with them.
+    const { r: r2, p: p2 } = mk(['Ada', 'Bo', 'Cy', 'Di', 'Ev']);
+    e.startVoteKick(r2, p2.Ada.id, p2.Bo.id);
+    e.castVote(r2, p2.Cy.id, true);
+    e.castVote(r2, p2.Di.id, true);
+    e.castVote(r2, p2.Ev.id, true);
+    ok('the kick landed', p2.Bo.bankrupt);
+    ok('the winner waits too', !!e.startVoteKick(r2, p2.Ada.id, p2.Cy.id).error);
+}
+
+/* ------------------------------------------- only someone the clock played for */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di'], { open: false });
+    r.stats.startedAt = Date.now() - 60 * 60_000;
+    const why = e.startVoteKick(r, p.Ada.id, p.Bo.id).error || '';
+    ok('a player taking their turns cannot be voted on', !!why, why);
+    ok('and the refusal says so', /taking their turns/.test(why), why);
+
+    p.Bo.lastStallAt = Date.now();
+    ok('a stalled turn opens it', !e.startVoteKick(r, p.Ada.id, p.Bo.id).error);
+
+    // Long enough ago and it stops counting, or one blip at minute ten leaves
+    // you kickable for the rest of the game.
+    const { r: r2, p: p2 } = mk(['Ada', 'Bo', 'Cy', 'Di'], { open: false });
+    r2.stats.startedAt = Date.now() - 60 * 60_000;
+    p2.Bo.lastStallAt = Date.now() - 11 * 60_000;
+    ok('a stall from half an hour ago is not grounds', !!e.startVoteKick(r2, p2.Ada.id, p2.Bo.id).error);
+
+    // Someone who has gone is a countdown, which none of this applies to.
+    const { r: r3, p: p3 } = mk(['Ada', 'Bo', 'Cy', 'Di'], { open: false });
+    r3.stats.startedAt = Date.now() - 60 * 60_000;
+    p3.Bo.connected = false;
+    ok('a player who dropped out needs no stall', !e.startVoteKick(r3, p3.Ada.id, p3.Bo.id).error);
+    ok('and it is a countdown', r3.vote?.mode === 'abandon');
+}
+
+/* ------------------------------------------------------ the opening minutes */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di'], { open: false });
+    for (const q of r.players) q.lastStallAt = Date.now();
+    const why = e.startVoteKick(r, p.Ada.id, p.Bo.id).error || '';
+    ok('nobody can be kicked in the first minutes', !!why, why);
+    ok('and the refusal says when it opens', /kicking opens/.test(why), why);
+
+    // Two minutes, plus one per player — six for this table.
+    ok('the window is broadcast', e.publicState(r).voteOpensAt === r.stats.startedAt + 6 * 60_000);
+    r.stats.startedAt = Date.now() - 6 * 60_000;
+    ok('past it, the vote runs', !e.startVoteKick(r, p.Ada.id, p.Bo.id).error);
+
+    // The lobby has no turns to be slow about, and a stranger in the room is
+    // the one thing a vote is for there.
+    const { r: r2, p: p2 } = mk(['Ada', 'Bo', 'Cy'], { start: false });
+    ok('the lobby is exempt', !e.startVoteKick(r2, p2.Ada.id, p2.Bo.id).error);
+    ok('with no window to wait for', e.publicState(r2).voteOpensAt === null);
+}
+
+/* ------------------------------------------------------- the log names names */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    p.Bo.stalls = 3;
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    const started = r.log.at(-1).text;
+    ok('the caller is named', /Ada started a vote to kick Bo/.test(started), started);
+    ok('with the grounds', /played 3 of their turns/.test(started), started);
+    e.castVote(r, p.Cy.id, false);
+    const done = r.log.at(-1).text;
+    ok('the voters are named', /yes: Ada/.test(done) && /no: Cy/.test(done), done);
 }
 
 /* ----------------------------------------------------------- the clock */
@@ -151,6 +241,8 @@ function mk(names, { start = true } = {}) {
     e.resetForRematch(r);
     ok('no vote carries over', r.vote === null);
     ok('cooldowns are cleared', Object.keys(r.voteCooldown).length === 0);
+    ok('and so are the callers\' own', Object.keys(r.callerCooldown).length === 0);
+    ok('last game\'s stalls are not grounds in this one', r.players.every((q) => !q.lastStallAt));
     ok('the ban does carry over', !!e.addPlayer(r, { name: 'Bo', playerId: p.Bo.id }).error);
 }
 

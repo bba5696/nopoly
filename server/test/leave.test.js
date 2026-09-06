@@ -60,11 +60,18 @@ const mk = (names, settings = {}) => {
     ok('Bo has a team', !!boTeam);
     e.removePlayer(r, p.Bo.id);
     ok('the team slot is freed', r.players.filter((q) => q.teamId === boTeam).length === 1);
-    ok('a short team blocks the start', !!e.startGame(r, p.Ada.id).error);
-    // Someone new can take the empty slot.
+    // Someone new arrives on no side at all, which does block the start.
     const zed = e.addPlayer(r, { name: 'Zed' }).player;
+    ok('an unassigned newcomer blocks the start', !!e.startGame(r, p.Ada.id).error);
     e.setTeam(r, p.Ada.id, zed.id, boTeam);
     ok('the replacement fits', !e.startGame(r, p.Ada.id).error, JSON.stringify(e.startGame(r, p.Ada.id)));
+
+    // Left short, the room is a perfectly playable one against two — sides no
+    // longer have to match, so nobody has to sit out waiting for a fourth.
+    const { r: r2, p: p2 } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    e.updateSettings(r2, p2.Ada.id, { teams: true });
+    e.removePlayer(r2, p2.Bo.id);
+    ok('the short side still starts', !e.startGame(r2, p2.Ada.id).error);
 }
 
 /* ------------------------------------------ mid-game: the seat is kept */

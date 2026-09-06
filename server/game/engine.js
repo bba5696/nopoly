@@ -13,19 +13,29 @@ const PLAYER_COLORS = [
 ];
 
 /**
- * Team ids, and the pair of shades each one wears. Teammates share a hue so the
- * board reads as "theirs" at a glance, and differ in lightness so two tokens on
- * the same tile are still two tokens — a single flat colour would make the
- * board honest about the team and useless about the player.
+ * Team ids, and the hue each one wears. Teammates share a hue so the board reads
+ * as "theirs" at a glance, and differ in lightness so two tokens on the same
+ * tile are still two tokens — a single flat colour would make the board honest
+ * about the team and useless about the player.
+ *
+ * Eight hues, because that is about as many as stay apart from each other on a
+ * dark board. The shades within one are worked out from the hue when the sides
+ * are dealt, so a team holds as many people as it likes: what caps a game is
+ * the room's own player limit, not the number of colours written down here.
  */
-const TEAM_IDS = ['A', 'B', 'C', 'D'];
+const TEAM_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const TEAM_COLORS = {
-    A: ['#7c5cff', '#b9a8ff'],
-    B: ['#ff5c7c', '#ffa8b9'],
-    C: ['#3ddc97', '#9df0ca'],
-    D: ['#ffb648', '#ffd9a3'],
+    A: '#7c5cff',
+    B: '#ff5c7c',
+    C: '#3ddc97',
+    D: '#ffb648',
+    E: '#4cc9f0',
+    F: '#f072d0',
+    G: '#a3e635',
+    H: '#ff8a5c',
 };
-const TEAM_SIZE = 2;
+/** What an auto-deal aims for, while the table is small enough to have the choice. */
+const TEAM_PAIR = 2;
 /** Charged on a transfer made outside your own turn. */
 const OFF_TURN_FEE = 0.1;
 
@@ -120,6 +130,33 @@ const VOTE_CAP = 4;
  * of minutes, and none of them should cost you the game.
  */
 const ABANDON_MS = 5 * 60_000;
+/**
+ * How long after a vote finishes before the person who called it may call
+ * another. Per-caller, where VOTE_COOLDOWN_MS is per-target: one protects the
+ * victim, and it turns out the thing that actually needed limiting was the
+ * caller, who could work down the table one name at a time all game.
+ */
+const CALLER_COOLDOWN_MS = 5 * 60_000;
+/**
+ * How long a game runs before anyone can be voted out at all: a couple of
+ * minutes, plus one per player at the table.
+ *
+ * Scaled by the table because it's really a number of turns — you can't know
+ * someone is stalling until you've watched them take a few, and eight people
+ * take four times as long to come round as two. Every vote called inside this
+ * window was someone reacting to a bad roll.
+ */
+// Overridable only so a wire test doesn't have to play six minutes of a game
+// before it can call the vote it is there to test.
+const VOTE_OPEN_MS = Number(process.env.NOPOLY_VOTE_OPEN_MS ?? 2 * 60_000);
+const VOTE_OPEN_PER_PLAYER_MS = Number(process.env.NOPOLY_VOTE_OPEN_PER_PLAYER_MS ?? 60_000);
+/**
+ * How long a stalled turn keeps someone eligible to be voted on. Without the
+ * expiry, one blip at minute ten leaves you kickable for the rest of the game,
+ * which is the whole loophole back: wait for the leader to stall once, then
+ * call the vote an hour later when it suits you.
+ */
+const STALL_WINDOW_MS = 10 * 60_000;
 
 /* ------------------------------------------------------------------ rooms */
 
@@ -173,6 +210,7 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         paySeq: 0,
         banned: [],           // player ids a vote removed; they can't come back
         voteCooldown: {},     // targetId -> when they may be voted on again
+        callerCooldown: {},   // callerId -> when they may start another vote
         vacationPot: 0,       // taxes and fines waiting on Vacation
         settings: { ...DEFAULT_SETTINGS },
         stats: {
@@ -239,15 +277,24 @@ function sameSide(room, a, b) {
     return !!ta && ta === teamOf(room, b);
 }
 
-/** The other member of a player's team, if they have one and it's still alive. */
-function teammate(room, player) {
-    if (!player?.teamId || !room.settings.teams) return null;
-    return room.players.find((p) => p.id !== player.id && p.teamId === player.teamId) || null;
+/** Everyone else on a player's side — any number of them, since a team is not a pair. */
+function teammates(room, player) {
+    if (!player?.teamId || !room.settings.teams) return [];
+    return room.players.filter((p) => p.id !== player.id && p.teamId === player.teamId);
 }
 
+/** The first of them, for the places that only need to know whether there is one. */
+const teammate = (room, player) => teammates(room, player)[0] || null;
+
+/**
+ * Who gets asked to cover a debt. With more than one teammate it has to be
+ * somebody, and the one holding the most is both the likeliest to manage it and
+ * the least hurt by trying.
+ */
 function livingTeammate(room, player) {
-    const mate = teammate(room, player);
-    return mate && !mate.bankrupt ? mate : null;
+    return teammates(room, player)
+        .filter((p) => !p.bankrupt)
+        .sort((a, b) => b.cash - a.cash)[0] || null;
 }
 
 /** Every side with at least one player still in the game. */
@@ -265,7 +312,7 @@ function teamSummary(room) {
         if (!p.teamId) continue;
         const team = (out[p.teamId] ||= {
             id: p.teamId,
-            color: TEAM_COLORS[p.teamId][0],
+            color: TEAM_COLORS[p.teamId],
             playerIds: [],
             cash: 0,
             netWorth: 0,
@@ -351,6 +398,16 @@ function publicState(room) {
         auction: room.auction,
         vote: room.vote,
         voteMs: VOTE_MS,
+        // When kicking becomes possible, and how long a stalled turn keeps
+        // someone eligible. Sent rather than duplicated in the client, so the
+        // rule the picker greys people out by is the rule the server enforces.
+        voteOpensAt: voteOpensAt(room),
+        stallWindowMs: STALL_WINDOW_MS,
+        // Both cooldowns, so the picker can say why a name is greyed out
+        // instead of letting someone find out by pressing it. Not secret —
+        // every one of them was put there by a vote the whole table watched.
+        voteCooldown: room.voteCooldown,
+        callerCooldown: room.callerCooldown || {},
         idle: room.idle,
         idleMs: IDLE_MS,
         lastPayment: room.lastPayment,
@@ -367,7 +424,7 @@ function publicState(room) {
         // The palette to choose from, so the picker and the validation that
         // guards it can't drift apart.
         playerColors: PLAYER_COLORS,
-        teamSize: TEAM_SIZE,
+        teamPair: TEAM_PAIR,
         offTurnFee: OFF_TURN_FEE,
         settings: room.settings,
         // Board meta rides along with the state rather than being handed out
@@ -446,6 +503,11 @@ function addPlayer(room, { name, playerId, initials, color }) {
         // their turn until they've sold enough to clear it.
         debt: null,
         activity: null,
+        // Times the turn clock has had to step in for them, and when it last
+        // did. The only grounds for a vote-kick mid-game, so this is evidence
+        // rather than a statistic.
+        stalls: 0,
+        lastStallAt: null,
     };
     room.players.push(player);
     // A watcher taking a seat when the lobby reopens after a rematch.
@@ -631,8 +693,8 @@ function teamsReady(room) {
         if (!p.teamId) return { error: `${p.name} is not on a team` };
         counts[p.teamId] = (counts[p.teamId] || 0) + 1;
     }
-    const short = Object.entries(counts).find(([, n]) => n !== TEAM_SIZE);
-    if (short) return { error: `Team ${short[0]} needs exactly ${TEAM_SIZE} players` };
+    // Sides no longer have to match. Three against two is a game people
+    // deliberately set up, and refusing it only ever sent the odd player home.
     if (Object.keys(counts).length < 2) return { error: 'Need at least 2 teams' };
     return {};
 }
@@ -713,8 +775,9 @@ function recolourPlayers(room) {
 }
 
 /**
- * Teammates wear the same hue in two shades, so `player.color` stays the single
- * source of truth for every existing token, tile marker and rail row.
+ * Teammates wear the same hue in as many shades as there are of them, so
+ * `player.color` stays the single source of truth for every existing token,
+ * tile marker and rail row — and a side of five is still five tokens.
  */
 function recolourTeams(room) {
     if (!room.settings.teams) {
@@ -723,11 +786,19 @@ function recolourTeams(room) {
         recolourPlayers(room);
         return;
     }
-    const slots = {};
+    const byTeam = new Map();
     for (const p of room.players) {
         if (!p.teamId) continue;
-        const slot = (slots[p.teamId] = (slots[p.teamId] ?? -1) + 1);
-        p.color = TEAM_COLORS[p.teamId][Math.min(slot, TEAM_COLORS[p.teamId].length - 1)];
+        if (!byTeam.has(p.teamId)) byTeam.set(p.teamId, []);
+        byTeam.get(p.teamId).push(p);
+    }
+    for (const [id, members] of byTeam) {
+        const base = TEAM_COLORS[id] || TEAM_COLORS.A;
+        const { h, s, l } = hexToHsl(base);
+        const levels = shadeLevels(l, members.length);
+        members.forEach((p, i) => {
+            p.color = members.length === 1 ? base : hslToHex(h, s, levels[i]);
+        });
     }
 }
 
@@ -739,18 +810,25 @@ function setTeam(room, hostId, playerId, teamId) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
     if (teamId !== null && !TEAM_IDS.includes(teamId)) return { error: 'Unknown team' };
-    if (teamId && room.players.filter((p) => p.teamId === teamId && p.id !== playerId).length >= TEAM_SIZE) {
-        return { error: `Team ${teamId} is full` };
-    }
+    // No cap on a side. Whoever is setting the table can see it, and a rule
+    // that stops five friends playing two against three was never protecting
+    // them from anything.
     player.teamId = teamId;
     recolourTeams(room);
     return {};
 }
 
 /** Fill the teams top to bottom in seating order — the host can then swap. */
+/**
+ * Deal everyone into pairs, which is what most tables mean by teams — and into
+ * bigger sides only once there are more players than the hues can pair off, so
+ * a full room lands on a sensible split instead of an unassigned tail. It is a
+ * starting point in the lobby, not a rule: the host moves people afterwards.
+ */
 function autoAssignTeams(room) {
+    const per = Math.max(TEAM_PAIR, Math.ceil(room.players.length / TEAM_IDS.length));
     room.players.forEach((p, i) => {
-        p.teamId = room.settings.teams ? TEAM_IDS[Math.floor(i / TEAM_SIZE)] || null : null;
+        p.teamId = room.settings.teams ? TEAM_IDS[Math.floor(i / per)] || null : null;
     });
     recolourTeams(room);
 }
@@ -861,10 +939,13 @@ function charge(room, player, creditor, amount, reason) {
         goBankrupt(room, player);
         return;
     }
-    if (liquidValue(room, player) + liquidValue(room, mate) < owed) {
-        log(room, `${player.name} and ${mate.name} together can't cover $${owed}`);
-        goBankrupt(room, player);
-        goBankrupt(room, mate);
+    // The whole side is counted, not just the one who will be asked: with three
+    // or four of them the money that saves the debtor may be sitting with
+    // somebody else, and a side only goes down when none of it is enough.
+    const side = [player, ...teammates(room, player).filter((q) => !q.bankrupt)];
+    if (side.reduce((sum, q) => sum + liquidValue(room, q), 0) < owed) {
+        log(room, `Team ${player.teamId} together can't cover $${owed}`);
+        for (const q of side) goBankrupt(room, q);
         return;
     }
     player.debt.bailout = 'offered';
@@ -1268,7 +1349,18 @@ function expireIdle(room) {
     if (!idle) return { error: 'No turn clock running' };
     const player = findPlayer(room, idle.playerId);
     room.idle = null;
-    if (!player || !isCurrent(room, player.id) || player.debt) {
+    if (!player || !isCurrent(room, player.id)) {
+        armIdle(room);
+        return {};
+    }
+
+    // Counted before the debt check, not after. A turn nobody else can play is
+    // the longest anyone waits, and it's the one case where the clock runs out
+    // over and over with nothing to show for it — so if the record of who is
+    // holding the game up skipped it, it would miss the worst offender.
+    player.stalls = (player.stalls || 0) + 1;
+    player.lastStallAt = Date.now();
+    if (player.debt) {
         armIdle(room);
         return {};
     }
@@ -1773,6 +1865,23 @@ function voters(room, targetId) {
 const votesNeeded = (room, targetId) => clampVotes(voters(room, targetId).length);
 const clampVotes = (eligible) => Math.max(2, Math.min(eligible, VOTE_CAP));
 
+/**
+ * When this game becomes old enough for anyone to be voted out. Null in the
+ * lobby, where there are no turns to have taken too long over and a seat is
+ * all anyone stands to lose.
+ */
+function voteOpensAt(room) {
+    if (room.phase === 'waiting' || !room.stats.startedAt) return null;
+    return room.stats.startedAt + VOTE_OPEN_MS + VOTE_OPEN_PER_PLAYER_MS * room.players.length;
+}
+
+/**
+ * Whether the turn clock has recently had to play for them — the one thing a
+ * vote can be called about. Everything else the table dislikes about a player
+ * is a conversation to have with them, not a button.
+ */
+const isStalling = (player) => !!player.lastStallAt && Date.now() - player.lastStallAt < STALL_WINDOW_MS;
+
 function startVoteKick(room, byId, targetId) {
     if (room.phase === 'ended') return { error: 'Game is over' };
     if (room.vote) return { error: 'A vote is already running' };
@@ -1796,9 +1905,29 @@ function startVoteKick(room, byId, targetId) {
     if (!abandoned && voters(room, targetId).length + 1 < MIN_VOTERS) {
         return { error: `Needs at least ${MIN_VOTERS} players in the game` };
     }
+    // Both of the next two are about a ballot on someone who is sitting right
+    // there. Neither applies to the countdown: that one is the room's only way
+    // of shedding somebody who has gone for good, and making it wait ten
+    // minutes into a game — or wait for a stall from a player who isn't there
+    // to have one — would leave a table stuck with an empty seat.
+    if (!abandoned) {
+        const opens = voteOpensAt(room);
+        if (opens && Date.now() < opens) {
+            return { error: `Too early — kicking opens ${Math.ceil((opens - Date.now()) / 60_000)} min into the game` };
+        }
+        // The lobby is exempt: nobody has had a turn to be slow about, and an
+        // unwanted stranger in the room is the one thing a vote is for there.
+        if (room.phase !== 'waiting' && !isStalling(target)) {
+            return { error: `${target.name} is taking their turns — you can only vote out someone the clock has had to play for` };
+        }
+    }
     const until = room.voteCooldown?.[targetId] || 0;
     if (until > Date.now()) {
         return { error: `${target.name} was just voted on — try again in ${Math.ceil((until - Date.now()) / 1000)}s` };
+    }
+    const mine = room.callerCooldown?.[byId] || 0;
+    if (mine > Date.now()) {
+        return { error: `You called the last vote — wait ${Math.ceil((mine - Date.now()) / 60_000)} min before starting another` };
     }
 
     room.vote = {
@@ -1817,7 +1946,7 @@ function startVoteKick(room, byId, targetId) {
         room,
         abandoned
             ? `${by.name} started a countdown on ${target.name}, who has dropped out`
-            : `${by.name} started a vote to kick ${target.name}`,
+            : `${by.name} started a vote to kick ${target.name} — the clock has played ${target.stalls} of their turns`,
     );
     return resolveVoteIfDecided(room) || {};
 }
@@ -1902,14 +2031,36 @@ function expireVote(room) {
     return finishVote(room, vote.yes.length >= vote.needed);
 }
 
+/** Names for a list of ids, for a log line that has to name people. */
+const nameList = (room, ids) =>
+    ids
+        .map((id) => findPlayer(room, id)?.name)
+        .filter(Boolean)
+        .join(', ');
+
 function finishVote(room, passed) {
     const vote = room.vote;
     if (!vote) return { error: 'No vote running' };
     room.vote = null;
+    // Whoever called it waits, win or lose. Losing shouldn't be the only thing
+    // that costs you — a vote that passes is still one the table just spent
+    // five minutes on, and three of them back to back is the same harassment
+    // as three that fail.
+    room.callerCooldown = room.callerCooldown || {};
+    room.callerCooldown[vote.byId] = Date.now() + CALLER_COOLDOWN_MS;
     const target = findPlayer(room, vote.targetId);
     if (!target) return {};
 
     const abandoned = vote.mode === 'abandon';
+    // Who voted which way, on the record. A kick among friends is a social act,
+    // and the strongest thing keeping it honest is that everyone can see who
+    // did it — the tally on its own let four people do this anonymously.
+    const tally = [
+        vote.yes.length ? `yes: ${nameList(room, vote.yes)}` : null,
+        vote.no.length ? `no: ${nameList(room, vote.no)}` : null,
+    ]
+        .filter(Boolean)
+        .join(' · ');
 
     if (!passed) {
         room.voteCooldown[vote.targetId] = Date.now() + VOTE_COOLDOWN_MS;
@@ -1917,7 +2068,7 @@ function finishVote(room, passed) {
             room,
             abandoned
                 ? `${target.name} came back in time`
-                : `The vote to kick ${target.name} failed (${vote.yes.length}/${vote.needed})`,
+                : `The vote to kick ${target.name} failed (${vote.yes.length}/${vote.needed}) — ${tally}`,
         );
         return {};
     }
@@ -1929,7 +2080,7 @@ function finishVote(room, passed) {
         room,
         abandoned
             ? `${target.name} never came back and is out`
-            : `${target.name} was voted out (${vote.yes.length}/${vote.needed})`,
+            : `${target.name} was voted out (${vote.yes.length}/${vote.needed}) — ${tally}`,
     );
 
     if (room.phase === 'waiting') {
@@ -2080,6 +2231,7 @@ function resetForRematch(room) {
     // Cooldowns are per-game grudges; the ban list is not — someone voted out
     // stays out of this room rather than reappearing for the next round.
     room.voteCooldown = {};
+    room.callerCooldown = {};
     room.vacationPot = 0;
     room.log = [];
     room.stats = {
@@ -2098,6 +2250,9 @@ function resetForRematch(room) {
             jailCards: 0,
             bankrupt: false,
             debt: null,
+            // Last game's slowness isn't grounds for a vote in this one.
+            stalls: 0,
+            lastStallAt: null,
         }));
     if (room.players.length && !room.players.some((p) => p.id === room.hostId)) {
         room.hostId = room.players[0].id;
@@ -2111,7 +2266,7 @@ module.exports = {
     PLAYER_COLORS,
     TEAM_IDS,
     TEAM_COLORS,
-    TEAM_SIZE,
+    TEAM_PAIR,
     JAIL_FINE,
     BID_STEPS,
     DEFAULT_SETTINGS,
@@ -2138,6 +2293,7 @@ module.exports = {
     isSpectator,
     sameSide,
     teammate,
+    teammates,
     startAuction,
     placeBid,
     resolveAuction,

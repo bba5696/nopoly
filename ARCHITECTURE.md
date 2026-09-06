@@ -55,6 +55,19 @@ Sets, airport and utility tallies, win conditions, auction guards and trade
 restrictions all route through that one function. Adding teams did not fork the
 engine.
 
+Because it is a predicate and not a shape, nothing in it cares how many people
+are on a side. Sides can be any size and don't have to match — two against
+three is a game people deliberately set up, and the old "exactly two" rule only
+ever sent the odd player home. What used to cap a team game at eight was the
+four pairs of shades written down for the four teams; the shades are now worked
+out from a team's hue when the sides are dealt, so the limit is the room's own
+player limit. The one rule left is that at least two sides have to have somebody
+on them, because one side is not a game.
+
+A debt is judged against the whole side, too: everyone still playing on it is
+counted before anyone goes bankrupt, since with four teammates the money that
+saves the debtor may be sitting with the one nobody asked.
+
 ## The turn clock measures inactivity, not elapsed time
 
 A flat sixty seconds from the start of a turn would cut off someone reading a
@@ -76,6 +89,42 @@ refresh back in; it only bites once they have been gone longer than a refresh
 takes. It runs even at a table that switched the turn timer off, because that
 setting is a rule about how long a person may take, not a reason for the game to
 stop dead for someone who has left.
+
+## A kick has to be about the clock
+
+Vote-kick was being used for the thing it looks like it's for and isn't: getting
+rid of whoever is winning. Four rules now stand between wanting that and doing
+it, and all four live in `startVoteKick`.
+
+**You can only vote out someone the turn clock has had to play for.** Every
+expiry stamps `stalls` and `lastStallAt` on the player, and a ballot is refused
+against anyone without a recent one. Being ahead isn't grounds; being slow is
+the only thing that is. The stamp expires after ten minutes, or one blip at
+minute ten would leave you kickable for the rest of the game — which is the
+whole loophole back in, just with a wait attached.
+
+**Nothing can be called in the opening minutes** — two, plus one per player at
+the table. It's really a count of turns: you can't know someone is stalling
+until you've watched them take a few, and eight people take four times as long
+to come round as two. Every vote called inside that window was somebody
+reacting to a bad roll.
+
+**The caller waits five minutes afterwards, win or lose.** The old cooldown
+protected the target only, which left one person free to work down the table a
+name at a time; and a vote that passes is still five minutes of everyone's game,
+so winning isn't a way round it either.
+
+**Everything is on the record.** The log names who called the vote, how many
+turns the clock had played for the target, and who voted which way. Among
+friends that's the part that actually works — four people could do this
+anonymously before, and the tally on its own made it deniable.
+
+None of it applies to a player who has dropped out. That path isn't a ballot at
+all but a countdown they can end by coming back, it's the room's only way of
+shedding an empty seat, and someone who isn't there can't be waited on or
+stalled at. The lobby is exempt from the stall rule for the same reason in
+reverse: nobody has had a turn to be slow about, and a stranger in the room is
+the one thing a vote is genuinely for there.
 
 ## Building is turn-gated; selling is not
 

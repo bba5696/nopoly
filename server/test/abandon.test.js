@@ -11,6 +11,13 @@ function mk(names, { start = true } = {}) {
     const p = {};
     for (const n of names) p[n] = e.addPlayer(r, { name: n }).player;
     if (start) e.startGame(r, p[names[0]].id);
+    // Old enough for a vote, with everyone recently played for by the clock.
+    // Both are rules of their own, covered in vote.test.js; here they'd only
+    // stand between these tests and the thing they're actually about.
+    if (start) {
+        r.stats.startedAt = Date.now() - 60 * 60_000;
+        for (const q of r.players) q.lastStallAt = Date.now();
+    }
     return { r, p };
 }
 

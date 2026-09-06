@@ -183,6 +183,8 @@ on each of them:
 | `NOPOLY_IDLE_MS` | 60 s | how long a turn may sit untouched by someone who is still connected |
 | `NOPOLY_AWAY_MS` | 5 s | the same, for a player whose socket has gone |
 | `NOPOLY_AWAY_GRACE_MS` | 50 s | how long after a disconnect the short clock stays out of the way, so a refresh mid-turn costs nothing |
+| `NOPOLY_VOTE_OPEN_MS` | 2 min | how long into a game before anyone can be voted out at all |
+| `NOPOLY_VOTE_OPEN_PER_PLAYER_MS` | 1 min | added to that for each player at the table — a bigger table takes longer to come round |
 
 Keep `NOPOLY_AWAY_GRACE_MS` above the 45-second disconnect grace in
 `server/index.js`, or a refreshing player can have their turn played for them

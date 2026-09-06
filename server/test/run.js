@@ -42,6 +42,11 @@ const SERVER_ENV = {
     NODE_ENV: 'development',
     NOPOLY_AWAY_MS: '3000',
     NOPOLY_IDLE_MS: '3000',
+    // No opening grace on a game that only lives for a few seconds. The stall
+    // rule is left alone — with the clock at three seconds a wire test can
+    // simply wait for one, which is a truer test than switching it off.
+    NOPOLY_VOTE_OPEN_MS: '0',
+    NOPOLY_VOTE_OPEN_PER_PLAYER_MS: '0',
     // Never the developer's real snapshot, and never the repo's .state — a test
     // run must not be able to resume, or corrupt, a game someone is playing.
     NOPOLY_STATE: path.join(__dirname, 'state-wire'),

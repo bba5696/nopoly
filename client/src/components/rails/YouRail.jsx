@@ -94,13 +94,20 @@ export function YouRail({ onOpenTile }) {
     if (!me) return null;
 
     const owned = me.properties.map((id) => state.tiles[id]).sort((a, b) => a.id - b.id);
-    const mate = state.settings.teams && me.teamId
-        ? state.players.find((p) => p.id !== me.id && p.teamId === me.teamId)
-        : null;
+    // A side can be any size, so this is a list — with a pair it renders
+    // exactly as it always did, and with four it just carries on down.
+    const mates = state.settings.teams && me.teamId
+        ? state.players.filter((p) => p.id !== me.id && p.teamId === me.teamId)
+        : [];
     // Their deeds, which you can develop but not sell — worth listing, because
     // otherwise the only way to reach them is tapping a tile on the board, and
     // on a phone those are 30px wide.
-    const mateOwned = mate ? mate.properties.map((id) => state.tiles[id]).sort((a, b) => a.id - b.id) : [];
+    const mateOwned = mates
+        .map((mate) => ({
+            mate,
+            tiles: mate.properties.map((id) => state.tiles[id]).sort((a, b) => a.id - b.id),
+        }))
+        .filter((m) => m.tiles.length > 0);
 
     const balance = me.cash - (me.debt?.amount ?? 0);
 
@@ -136,7 +143,9 @@ export function YouRail({ onOpenTile }) {
                         You owe {money(me.debt.amount)} — sell below to cover it
                     </span>
                 )}
-                {mate && !mate.bankrupt && <SendCash mate={mate} />}
+                {mates.filter((mate) => !mate.bankrupt).map((mate) => (
+                    <SendCash key={mate.id} mate={mate} />
+                ))}
             </section>
 
             <section className="panel flex min-h-0 flex-col">
@@ -150,7 +159,7 @@ export function YouRail({ onOpenTile }) {
                 <div
                     className={cn(
                         'scroll-thin flex flex-col gap-1.5 overflow-y-auto p-3',
-                        mate ? 'max-h-[208px]' : 'max-h-[300px]',
+                        mates.length ? 'max-h-[208px]' : 'max-h-[300px]',
                     )}
                 >
                     {owned.length === 0 && <p className="px-1 py-2 text-[13px] text-muted-foreground">Nothing owned yet.</p>}
@@ -160,19 +169,19 @@ export function YouRail({ onOpenTile }) {
                 </div>
             </section>
 
-            {mateOwned.length > 0 && (
-                <section className="panel flex min-h-0 flex-col">
+            {mateOwned.map(({ mate, tiles }) => (
+                <section key={mate.id} className="panel flex min-h-0 flex-col">
                     <header className="panel-divider flex items-center justify-between px-4 py-3">
-                        <span className="label">{mate.name}'s ({mateOwned.length})</span>
+                        <span className="label">{mate.name}'s ({tiles.length})</span>
                         <span className="label opacity-60">build only</span>
                     </header>
                     <div className="scroll-thin flex max-h-[148px] flex-col gap-1.5 overflow-y-auto p-3">
-                        {mateOwned.map((tile) => (
+                        {tiles.map((tile) => (
                             <PropertyRow key={tile.id} tile={tile} groups={board?.groups} onOpen={onOpenTile} />
                         ))}
                     </div>
                 </section>
-            )}
+            ))}
         </>
     );
 }

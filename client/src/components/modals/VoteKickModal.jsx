@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Gavel, WifiOff, X } from 'lucide-react';
+import { Check, Clock, Gavel, WifiOff, X } from 'lucide-react';
 
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
@@ -18,8 +18,40 @@ function useCountdown(endsAt) {
     return left;
 }
 
+/**
+ * The wall clock as something that changes, since every cooldown here is a
+ * deadline and a deadline read once at render is stale the moment it's drawn.
+ * Only runs while the picker is open — nothing else on screen needs the tick.
+ */
+function useNow(active) {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!active) return undefined;
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, [active]);
+    return now;
+}
+
 /** Bare seconds up to a minute, then m:ss — five minutes as "287s" reads as noise. */
 const clock = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+
+/** Whole minutes, rounded up — any wait at all reads as "1 min", never "0". */
+const mins = (ms) => Math.max(1, Math.ceil(ms / 60_000));
+
+/**
+ * Whether the turn clock has recently had to play for them, which mid-game is
+ * the only thing a vote can be called about. The same rule as the server's, off
+ * the same two numbers, so the picker can't offer a vote that would be refused.
+ */
+const stalling = (p, state, now) => !!p.lastStallAt && now - p.lastStallAt < (state.stallWindowMs || 0);
+
+/** Names for a list of player ids, for the places a vote has to name people. */
+const names = (ids, state) =>
+    ids
+        .map((id) => state.players.find((p) => p.id === id)?.name)
+        .filter(Boolean)
+        .join(', ');
 
 /**
  * Picker for starting a vote. Deliberately a separate modal rather than a
@@ -28,49 +60,87 @@ const clock = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60)
  */
 export function VoteKickPicker({ open, onClose }) {
     const { state, playerId, send } = useGame();
+    const now = useNow(open);
     const others = state.players.filter((p) => p.id !== playerId && !p.bankrupt);
+    // The server decides every one of these; the picker only mirrors them, so
+    // that a name you can't vote on says why rather than failing when pressed.
+    const opens = state.voteOpensAt || 0;
+    const tooEarly = opens > now;
+    const mine = state.callerCooldown?.[playerId] || 0;
+    const yours = mine > now ? mins(mine - now) : 0;
+    const inLobby = state.phase === 'waiting';
+
+    /** Why this player can't be voted on, or null if they can. */
+    const blocked = (p) => {
+        // Someone who has dropped out is never a ballot — it's a countdown,
+        // and none of the rules below apply to it.
+        if (!p.connected) return null;
+        if (yours) return `you called the last vote · ${yours} min`;
+        if (tooEarly) return `kicking opens in ${mins(opens - now)} min`;
+        const until = state.voteCooldown?.[p.id] || 0;
+        if (until > now) return `just voted on · ${mins(until - now)} min`;
+        if (inLobby) return null;
+        return stalling(p, state, now) ? null : 'taking their turns';
+    };
 
     return (
         <Modal open={open} onClose={onClose} subtitle="Vote to remove" title="Kick a player" width={420}>
             <div className="flex flex-col gap-4 p-5">
                 <p className="text-[13px] leading-snug text-muted-foreground">
-                    Everyone else still in the game has to agree, up to four votes. Mid-game it's the same as
-                    resigning — their property goes back to the bank and they can't rejoin. Someone who's already
-                    dropped out gets five minutes to reconnect instead of a vote.
+                    Only for someone the turn clock has had to play for — being ahead isn't grounds. Everyone else
+                    still in the game has to agree, up to four votes, and who voted goes in the log. Mid-game it's
+                    the same as resigning: their property goes back to the bank and they can't rejoin. Someone
+                    who's already dropped out gets five minutes to reconnect instead of a vote.
                 </p>
                 <div className="flex flex-col gap-2">
                     {others.length === 0 && (
                         <span className="py-2 text-[13px] text-muted-foreground">Nobody else to vote on.</span>
                     )}
-                    {others.map((p) => (
-                        <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                                send('vote:start', { targetId: p.id });
-                                onClose();
-                            }}
-                            className="flex items-center gap-3 rounded-xl border border-white/8 px-3 py-2.5 text-left transition-colors hover:border-white/25"
-                        >
-                            <span
-                                className="mono flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] text-white"
-                                style={{ background: p.color }}
+                    {others.map((p) => {
+                        const why = blocked(p);
+                        return (
+                            <button
+                                key={p.id}
+                                type="button"
+                                disabled={!!why}
+                                onClick={() => {
+                                    send('vote:start', { targetId: p.id });
+                                    onClose();
+                                }}
+                                className="flex items-center gap-3 rounded-xl border border-white/8 px-3 py-2.5 text-left transition-colors hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/8"
                             >
-                                {tag(p)}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-[15px]">{p.name}</span>
-                            {/* Which of the two this turns into, before you
-                                press it rather than after. */}
-                            {!p.connected && (
-                                <span className="label shrink-0 text-[#ff9db2]">away · 5 min</span>
-                            )}
-                            {p.connected ? (
-                                <Gavel className="size-4 shrink-0 text-muted-foreground" />
-                            ) : (
-                                <WifiOff className="size-4 shrink-0 text-[#ff9db2]" />
-                            )}
-                        </button>
-                    ))}
+                                <span
+                                    className="mono flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] text-white"
+                                    style={{ background: p.color }}
+                                >
+                                    {tag(p)}
+                                </span>
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                    <span className="truncate text-[15px]">{p.name}</span>
+                                    {/* The grounds, or what's standing in the
+                                        way of them. Either way it's the
+                                        sentence you'd otherwise have to guess
+                                        at from a button that does nothing. */}
+                                    <span className="label truncate text-muted-foreground">
+                                        {why ||
+                                            (p.connected
+                                                ? `clock played ${p.stalls} turn${p.stalls === 1 ? '' : 's'}`
+                                                : 'dropped out')}
+                                    </span>
+                                </span>
+                                {/* Which of the two this turns into, before you
+                                    press it rather than after. */}
+                                {!p.connected && <span className="label shrink-0 text-[#ff9db2]">away · 5 min</span>}
+                                {!p.connected ? (
+                                    <WifiOff className="size-4 shrink-0 text-[#ff9db2]" />
+                                ) : why ? (
+                                    <Clock className="size-4 shrink-0 text-muted-foreground" />
+                                ) : (
+                                    <Gavel className="size-4 shrink-0 text-muted-foreground" />
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
         </Modal>
@@ -110,11 +180,12 @@ function useVoteRole() {
  * to the header instead and the game carries on.
  */
 export function VoteKickModal() {
-    const { send } = useGame();
+    const { state, send } = useGame();
     const role = useVoteRole();
     const left = useCountdown(role?.vote.endsAt ?? 0);
     if (!role?.canVote) return null;
     const { vote, target } = role;
+    const caller = state.players.find((p) => p.id === vote.byId);
 
     return (
         <Modal open dismissable={false} subtitle="Vote to remove" title={`Kick ${target.name}?`} width={420}>
@@ -125,6 +196,36 @@ export function VoteKickModal() {
                         <span className="text-muted-foreground"> / {vote.needed} needed</span>
                     </span>
                     <span className="mono text-[13px] text-muted-foreground">{clock(left)}</span>
+                </div>
+
+                {/* Who is asking, and on what grounds. A vote that arrives
+                    anonymous is one you answer on the name of the target alone,
+                    which is exactly how a table talks itself into a pile-on. */}
+                <div className="flex flex-col gap-1.5 rounded-xl border border-white/8 px-3 py-2.5">
+                    <span className="text-[13px] leading-snug">
+                        <span className="text-muted-foreground">Called by </span>
+                        {caller?.name || 'someone'}
+                        <span className="text-muted-foreground">
+                            {' · the clock has played '}
+                            {target.stalls} of {target.name}'s turns
+                        </span>
+                    </span>
+                    {/* Live, not just in the log afterwards. Everyone can see
+                        the tally already; hiding the names behind it only made
+                        it deniable. */}
+                    {(vote.yes.length > 0 || vote.no.length > 0) && (
+                        <span className="label leading-snug">
+                            {vote.yes.length > 0 && (
+                                <span style={{ color: '#3ddc97' }}>kick: {names(vote.yes, state)}</span>
+                            )}
+                            {vote.yes.length > 0 && vote.no.length > 0 && (
+                                <span className="text-muted-foreground"> · </span>
+                            )}
+                            {vote.no.length > 0 && (
+                                <span className="text-muted-foreground">keep: {names(vote.no, state)}</span>
+                            )}
+                        </span>
+                    )}
                 </div>
 
                 <div className="flex gap-2">

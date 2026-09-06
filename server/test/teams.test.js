@@ -272,14 +272,34 @@ function firstGroup(r) {
 
 /* --------------------------------------------------------- start guards */
 {
+    // Two against one, which a table that sets it up that way means.
     const r = e.createRoom('ODD');
     const a = e.addPlayer(r, { name: 'Ada' }).player;
     e.addPlayer(r, { name: 'Bo' });
     e.addPlayer(r, { name: 'Cy' });
     e.updateSettings(r, a.id, { teams: true });
-    const res = e.startGame(r, a.id);
-    ok('a 3-player teams game refuses to start', !!res.error, JSON.stringify(res));
-    ok('the error names the short team', /needs exactly 2/.test(res.error || ''), res.error);
+    ok('an uneven split starts', !e.startGame(r, a.id).error, JSON.stringify(e.startGame(r, a.id)));
+
+    // Everyone on one side is not a game, whatever the sizes are allowed to be.
+    const r2 = e.createRoom('ONE');
+    const a2 = e.addPlayer(r2, { name: 'Ada' }).player;
+    const b2 = e.addPlayer(r2, { name: 'Bo' }).player;
+    e.updateSettings(r2, a2.id, { teams: true });
+    e.setTeam(r2, a2.id, b2.id, a2.teamId);
+    const res2 = e.startGame(r2, a2.id);
+    ok('one side is not a game', !!res2.error, JSON.stringify(res2));
+    ok('and it says so', /at least 2 teams/.test(res2.error || ''), res2.error);
+
+    // Five on a side: allowed, and still five tokens you can tell apart.
+    const r3 = e.createRoom('BIG');
+    const host = e.addPlayer(r3, { name: 'Ada' }).player;
+    const rest = ['Bo', 'Cy', 'Di', 'Ev', 'Fi'].map((n) => e.addPlayer(r3, { name: n }).player);
+    e.updateSettings(r3, host.id, { teams: true });
+    for (const q of rest) e.setTeam(r3, host.id, q.id, 'B');
+    e.setTeam(r3, host.id, host.id, 'A');
+    ok('five against one starts', !e.startGame(r3, host.id).error, JSON.stringify(e.startGame(r3, host.id)));
+    ok('and the five wear five shades of one hue',
+        new Set(rest.map((q) => q.color)).size === 5, rest.map((q) => q.color).join(' '));
 }
 
 console.log(`\n${pass} passed, ${fails.length} failed`);

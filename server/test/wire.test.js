@@ -70,13 +70,16 @@ async function main() {
     ok('teams summary is sent', !!st.teams && Object.keys(st.teams).length === 2, JSON.stringify(st.teams));
     ok('team colours are sent', !!st.teamColors?.A);
 
-    // Move Cy onto Ada's team — should be refused, it's already full.
+    // Move Cy onto Ada's team — a side of three, which teams allow now.
     const adaTeam = st.players.find((p) => p.id === a.id).teamId;
-    const before = errors.length;
+    const cyTeam = st.players.find((p) => p.id === cc.id).teamId;
     a.s.emit('room:team', { playerId: cc.id, teamId: adaTeam });
-    st = await quiet(a);
-    ok('cannot overfill a team', errors.length > before, JSON.stringify(errors));
-    ok('the refused move changed nothing', st.players.find((p) => p.id === cc.id).teamId !== adaTeam);
+    st = await until(a, (s) => s.players.find((p) => p.id === cc.id)?.teamId === adaTeam, 'cy moved');
+    ok('a side can take a third', st.teams[adaTeam].playerIds.length === 3, JSON.stringify(st.teams));
+
+    // Back where they were, so the start below is the even split it checks.
+    a.s.emit('room:team', { playerId: cc.id, teamId: cyTeam });
+    st = await until(a, (s) => s.players.find((p) => p.id === cc.id)?.teamId === cyTeam, 'cy back');
 
     // A non-host cannot pick teams.
     const before2 = errors.length;
