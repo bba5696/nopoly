@@ -118,9 +118,18 @@ saves. An unsettled debt comes off, because a bill you cannot pay is a real
 liability and leaving it out ranks somebody above a rival they cannot afford to
 stay in the game against.
 
-Buildings count at full cost here and at half in `liquidValue`, and that
-difference is the point: net worth measures what you have, liquid value
-measures what you could raise before the bill is due.
+Three numbers, not one, because they answer different questions and mixing them
+up is what made the rail confusing. `estate` is what a player holds. `total` is
+that less what they owe, and is the number worth ranking people by. `liquid` is
+neither: it is what selling would actually raise, with buildings coming back at
+half, and it is the figure the engine checks before anyone goes bankrupt.
+
+That is why a player can owe $500, show a net worth of $307, and pay the bill
+anyway — the debt has already been taken off the figure on the rail, and the
+buildings they sell to cover it were never counted at half there. The debt
+notice now says what a sale would raise and whether it is enough, rather than
+leaving the net figure to be read as an answer to a question it isn't
+answering.
 
 Landmarks are deliberately absent — nothing will buy one, so any figure put on
 one would be invented.

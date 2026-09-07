@@ -475,7 +475,14 @@ function worthOf(room, player) {
         jailCards: (player.jailCards || 0) * JAIL_FINE,
         debt: player.debt?.amount ?? 0,
     };
-    parts.total = parts.cash + parts.deeds + parts.buildings + parts.shares + parts.jailCards - parts.debt;
+    // Two totals, because they answer different questions. `estate` is what
+    // they hold; `total` is that less what they owe, which is the number worth
+    // ranking people by. And `liquid` is neither: it is what selling would
+    // actually raise before the bill is due — buildings come back at half, so
+    // it sits below the estate and is the figure that decides bankruptcy.
+    parts.estate = parts.cash + parts.deeds + parts.buildings + parts.shares + parts.jailCards;
+    parts.total = parts.estate - parts.debt;
+    parts.liquid = liquidValue(room, player);
     return parts;
 }
 

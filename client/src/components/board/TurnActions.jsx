@@ -106,6 +106,11 @@ export function DebtNotice({ compact = false }) {
     const debt = me?.debt || null;
     if (!debt) return null;
     const owedTo = debt.toId ? state.players.find((p) => p.id === debt.toId)?.name : null;
+    // Net worth already has the debt taken off it, so it is the wrong number to
+    // read here — what matters is what a sale would raise, which is what the
+    // engine checks before anyone goes bankrupt.
+    const liquid = me.worth?.liquid ?? 0;
+    const canCover = liquid >= debt.amount;
 
     return (
         <div
@@ -118,7 +123,9 @@ export function DebtNotice({ compact = false }) {
                 ${debt.amount} still owed{owedTo ? ` to ${owedTo}` : ''}
             </span>
             <span className={cn('leading-snug text-muted-foreground', compact ? 'text-[11.5px]' : 'text-[13px]')}>
-                Sell buildings or property from the You panel to cover it. Your turn is on hold until you do.
+                Selling everything you hold raises ${liquid}
+                {canCover ? ' — enough to cover it.' : ", which isn't enough."} Sell buildings or
+                property from the You panel. Your turn is on hold until you do.
             </span>
         </div>
     );

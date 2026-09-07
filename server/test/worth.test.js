@@ -120,6 +120,54 @@ function give(r, player, name) {
     );
 }
 
+/* ------------------------- the number that answers "can I pay this?" */
+{
+    // The case that reads as a contradiction on the rail: owing more than the
+    // net figure, and covering it anyway. Net worth has the debt already taken
+    // off; what pays the bill is the sell-back value, which is a different sum.
+    const { r, p } = mk();
+    for (const name of ['Rome', 'Milan', 'Venice']) give(r, p.Ada, name).houses = 3;
+    p.Ada.cash = 0;
+    e.payBank(r, p.Ada, 500, 'a very large bill');
+
+    const w = e.worthOf(r, p.Ada);
+    ok('the estate is what they hold', w.estate === w.cash + w.deeds + w.buildings + w.shares + w.jailCards, JSON.stringify(w));
+    ok('net worth is the estate less the debt', w.total === w.estate - 500, String(w.total));
+    ok('which can be less than the debt', w.total > 0 && w.debt === 500);
+    ok('sell-back value is lower than the estate', w.liquid < w.estate, `${w.liquid} vs ${w.estate}`);
+    ok('and it is what covers the bill', w.liquid >= 500, String(w.liquid));
+    ok('so they are still playing', !p.Ada.bankrupt && !!p.Ada.debt);
+
+    // Selling until it is covered clears the debt, which is what the notice
+    // promises when it says the money is there.
+    // Bounded, because a refusal here (the even-build rule, say) would
+    // otherwise spin forever rather than fail.
+    for (let n = 0; n < 40 && p.Ada.debt; n++) {
+        // Most-built first, or the even-build rule refuses the sale.
+        const id = p.Ada.properties
+            .filter((t) => r.tiles[t].houses > 0)
+            .sort((x, y) => r.tiles[y].houses - r.tiles[x].houses)[0];
+        if (id === undefined) {
+            // Buildings gone and still short: the deeds are the rest of it.
+            const deed = p.Ada.properties.find((t) => r.tiles[t].houses === 0);
+            if (deed === undefined || e.sellProperty(r, p.Ada.id, deed).error) break;
+            continue;
+        }
+        if (e.sellHouse(r, p.Ada.id, id).error) break;
+    }
+    ok('and selling the buildings settles it', !p.Ada.debt, JSON.stringify(p.Ada.debt));
+}
+
+/* ---------------------------------------- when it genuinely cannot be covered */
+{
+    const { r, p } = mk();
+    give(r, p.Ada, 'Rome').houses = 1;
+    p.Ada.cash = 0;
+    const before = e.worthOf(r, p.Ada).liquid;
+    e.payBank(r, p.Ada, before + 100, 'more than they have');
+    ok('short is short', p.Ada.bankrupt, `liquid was ${before}`);
+}
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const f of fails) console.log('  FAIL ' + f);
 process.exit(fails.length ? 1 : 0);

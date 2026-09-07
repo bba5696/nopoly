@@ -133,6 +133,10 @@ export function YouRail({ onOpenTile }) {
         ['jail cards', worth.jailCards],
         ['owed', worth.debt ? -worth.debt : 0],
     ].filter(([, value]) => !!value);
+    // What selling would actually raise. Below the estate, because buildings
+    // come back at half — and it is the number that decides whether a debt
+    // ends you, so it belongs next to one.
+    const canCover = (worth.liquid ?? 0) >= (me.debt?.amount ?? 0);
 
     return (
         <>
@@ -182,6 +186,13 @@ export function YouRail({ onOpenTile }) {
                             <span className="text-muted-foreground">net worth</span>
                             <span className="mono">{money(me.netWorth)}</span>
                         </span>
+                        {/* The one that answers "can I pay this?", which the
+                            net figure does not: it is what a sale raises, with
+                            buildings at half. */}
+                        <span className="flex items-baseline justify-between gap-3 text-[12px]">
+                            <span className="text-muted-foreground">sell-back value</span>
+                            <span className="mono text-muted-foreground">{money(worth.liquid ?? 0)}</span>
+                        </span>
                     </div>
                 )}
                 {me.jailCards > 0 && <span className="label">{me.jailCards} get-out-of-jail card(s)</span>}
@@ -189,7 +200,9 @@ export function YouRail({ onOpenTile }) {
                     belongs next to it rather than only out on the board. */}
                 {me.debt && (
                     <span className="mono rounded-lg border border-[#ff5c7c]/35 bg-[#ff5c7c]/10 px-3 py-2 text-[13px] text-[#ff9db2]">
-                        You owe {money(me.debt.amount)} — sell below to cover it
+                        You owe {money(me.debt.amount)} — selling everything raises{' '}
+                        {money(worth.liquid ?? 0)}
+                        {canCover ? ', which covers it' : ", which isn't enough"}
                     </span>
                 )}
                 {mates.filter((mate) => !mate.bankrupt).map((mate) => (
