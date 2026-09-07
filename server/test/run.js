@@ -25,7 +25,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ENGINE = [
-    'payment', 'idle', 'spectate', 'build', 'teams', 'vote', 'boards',
+    'payment', 'idle', 'spectate', 'build', 'teams', 'vote', 'boards', 'shares',
     'abandon', 'profile', 'leave', 'jail-persist', 'tax',
 ];
 const WIRE = [

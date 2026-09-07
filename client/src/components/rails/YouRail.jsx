@@ -7,6 +7,7 @@ import { money } from '@/lib/board-layout';
 import { alpha } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { currentRent, ownsFullGroup } from '@/lib/rent';
+import { FLAG_SRC } from '@/lib/emblems';
 
 function PropertyRow({ tile, groups, onOpen }) {
     const { state, me } = useGame();
@@ -90,7 +91,7 @@ function SendCash({ mate }) {
 }
 
 export function YouRail({ onOpenTile }) {
-    const { state, me, board } = useGame();
+    const { state, me, board, send } = useGame();
     if (!me) return null;
 
     const owned = me.properties.map((id) => state.tiles[id]).sort((a, b) => a.id - b.id);
@@ -110,6 +111,10 @@ export function YouRail({ onOpenTile }) {
         .filter((m) => m.tiles.length > 0);
 
     const balance = me.cash - (me.debt?.amount ?? 0);
+    // Shares you hold, and the size of one — the percentage is the server's
+    // number, not a constant repeated here.
+    const mine = (state.shares || []).filter((sh) => sh.holderId === me.id);
+    const cutLabel = `${Math.round((state.shareCut ?? 0.25) * 100)}%`;
 
     return (
         <>
@@ -147,6 +152,45 @@ export function YouRail({ onOpenTile }) {
                     <SendCash key={mate.id} mate={mate} />
                 ))}
             </section>
+
+            {/* Only on a board that has an exchange, and only once you hold
+                something — an empty panel explaining a mechanic you haven't met
+                is a panel in the way. */}
+            {!!mine.length && (
+                <section className="panel flex flex-col">
+                    <header className="panel-divider flex items-center justify-between px-4 py-3">
+                        <span className="label">My shares ({mine.length})</span>
+                        <span className="label opacity-60">tap to sell</span>
+                    </header>
+                    <div className="scroll-thin flex max-h-[148px] flex-col gap-1.5 overflow-y-auto p-3">
+                        {mine.map((sh) => {
+                            const group = board?.groups?.[sh.groupId];
+                            return (
+                                <button
+                                    key={sh.groupId}
+                                    type="button"
+                                    title={`Sell your share in ${group?.name} back for ${money(sh.paid)}`}
+                                    onClick={() => send('share:sell', { groupId: sh.groupId })}
+                                    className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors hover:brightness-125"
+                                    style={{
+                                        borderColor: alpha(group?.color || '#7dd3fc', 0.45),
+                                        background: alpha(group?.color || '#7dd3fc', 0.08),
+                                    }}
+                                >
+                                    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#12121a]">
+                                        {FLAG_SRC[sh.groupId] && (
+                                            <img src={FLAG_SRC[sh.groupId]} alt="" className="size-full object-cover" />
+                                        )}
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate text-[14px]">{group?.name || sh.groupId}</span>
+                                    <span className="mono shrink-0 text-[11px] text-[#3ddc97]">{cutLabel}</span>
+                                    <span className="mono shrink-0 text-[11px] text-muted-foreground">{money(sh.paid)}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
 
             <section className="panel flex min-h-0 flex-col">
                 <header className="panel-divider flex items-center justify-between px-4 py-3">

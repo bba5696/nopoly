@@ -36,6 +36,29 @@ const TEAM_COLORS = {
 };
 /** What an auto-deal aims for, while the table is small enough to have the choice. */
 const TEAM_PAIR = 2;
+
+/**
+ * Shares in a country — the exchange.
+ *
+ * A monopoly is the only thing on a normal board worth having, and at twelve
+ * players most of the table never gets one: the deeds run out first. A share
+ * is a stake in somebody else's country — a quarter of every rent its tiles
+ * collect, bought from the bank, with the deed left exactly where it is.
+ *
+ * The cut comes out of the rent rather than out of the bank, so the payer pays
+ * what they always paid and no new money enters a game that already inflates.
+ * Two to a country, so an owner can be taken to half their rent and no
+ * further, and never permanently: whoever holds the deeds can buy a share back
+ * at half again what was paid for it. That is the whole bargain — the
+ * shareholder cannot be robbed, only bought out at a profit, and the owner is
+ * never taxed forever, only expensively.
+ */
+const SHARE_CUT = 0.25;
+const SHARES_PER_GROUP = 2;
+/** A share's price, as a fraction of what the country's deeds cost together. */
+const SHARE_PRICE = 0.2;
+/** What the deeds' owner pays to take one back, as a multiple of what it cost. */
+const BUYBACK_MULT = 1.5;
 /** Charged on a transfer made outside your own turn. */
 const OFF_TURN_FEE = 0.1;
 
@@ -202,7 +225,8 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         // transient turn state
         doublesCount: 0,
         hasRolled: false,
-        pendingAction: null, // { type: 'buy', playerId, tileId }
+        pendingAction: null, // { type: 'buy' | 'exchange', playerId, tileId }
+        shares: [],          // [{ groupId, holderId, paid }]
         pendingCard: null,   // { deck, text, playerId }
         lastMove: null,      // { playerId, from, to, passedStart, seq }
         moveSeq: 0,
@@ -350,11 +374,34 @@ function ownsFullGroup(room, playerId, groupId) {
     return tiles.length > 0 && tiles.every((t) => sameSide(room, t.ownerId, playerId));
 }
 
+/** Every share out in a country. Guarded for rooms restored from older saves. */
+const sharesIn = (room, groupId) => (room.shares || []).filter((sh) => sh.groupId === groupId);
+/** Every share one player holds. */
+const sharesOf = (room, playerId) => (room.shares || []).filter((sh) => sh.holderId === playerId);
+
+/**
+ * What a share in a country costs: a fifth of what its deeds cost together,
+ * rounded to something a person can say out loud. Off the deeds' list prices
+ * rather than the market's, so the number on the exchange doesn't drift while
+ * you are reading it.
+ */
+function sharePrice(room, groupId) {
+    const total = groupTiles(room, groupId).reduce((sum, t) => sum + (t.price || 0), 0);
+    return Math.max(10, Math.round((total * SHARE_PRICE) / 10) * 10);
+}
+
+/** What every country's share costs, for the exchange screen. */
+function sharePrices(room) {
+    const out = {};
+    for (const groupId of Object.keys(groupsOf(room))) out[groupId] = sharePrice(room, groupId);
+    return out;
+}
+
 function netWorth(room, player) {
     const estate = player.properties.reduce((sum, id) => {
         const tile = room.tiles[id];
         return sum + market.priceOf(room, tile) + tile.houses * (tile.houseCost || 0);
-    }, player.cash);
+    }, player.cash + shareValue(room, player));
     // An unsettled debt is a real liability — leaving it out would rank someone
     // above a rival they can't actually afford to stay in the game against.
     return estate - (player.debt?.amount ?? 0);
@@ -406,6 +453,15 @@ function publicState(room) {
         doublesCount: room.doublesCount,
         pendingAction: room.pendingAction,
         pendingCard: room.pendingCard,
+        // The exchange, in two pieces: who holds what, and what a share costs.
+        // The price is derived from the board and never moves, but working it
+        // out twice — once here and once in the client — is how the two come
+        // to disagree.
+        shares: room.shares || [],
+        sharePrices: sharePrices(room),
+        shareCut: SHARE_CUT,
+        sharesPerGroup: SHARES_PER_GROUP,
+        buybackMult: BUYBACK_MULT,
         lastMove: room.lastMove,
         auction: room.auction,
         vote: room.vote,
@@ -935,7 +991,16 @@ function liquidValue(room, player) {
     return player.properties.reduce((sum, id) => {
         const tile = room.tiles[id];
         return sum + market.priceOf(room, tile) + tile.houses * Math.floor((tile.houseCost || 0) / 2);
-    }, player.cash);
+    }, player.cash + shareValue(room, player));
+}
+
+/**
+ * What a player's shares are worth. The bank buys them back at what they cost,
+ * so this is money they can actually reach — which is why it counts in the
+ * test for whether a debt can be covered, not just in the ranking.
+ */
+function shareValue(room, player) {
+    return sharesOf(room, player.id).reduce((sum, sh) => sum + sh.paid, 0);
 }
 
 /**
@@ -1071,6 +1136,10 @@ function goBankrupt(room, player) {
         tile.houses = 0;
         tile.ownerId = null;
     }
+    // Shares go back to the bank with everything else, and are on sale again
+    // the next time somebody lands on an exchange.
+    const held = sharesOf(room, player.id).length;
+    if (held) room.shares = room.shares.filter((sh) => sh.holderId !== player.id);
     log(room, `${player.name} went bankrupt — ${estate.length} properties returned to the bank`);
     dropTradesFor(room, player.id);
     // Nothing left to decide about someone already out — and a countdown left
@@ -1215,6 +1284,13 @@ function resolveLanding(room, player, dice) {
         payBank(room, player, taxFor(room, player, tile), tile.name);
         return;
     }
+    if (tile.type === 'exchange') {
+        // Nothing is forced here: the screen opens, and skipping it is a
+        // button. Landing is only the gate — shares can't be bought from the
+        // sofa, or the mechanic stops being about the board.
+        room.pendingAction = { type: 'exchange', playerId: player.id, tileId: tile.id };
+        return;
+    }
     if (tile.type === 'chance' || tile.type === 'chest') {
         const deckName = tile.type === 'chance' ? 'chance' : 'chest';
         const card = drawCard(room.decks[deckName]);
@@ -1243,7 +1319,33 @@ function resolveLanding(room, player, dice) {
         return;
     }
     const rent = rentFor(room, tile, owner, dice);
-    transfer(room, player, owner, rent, `rent on ${tile.name}`);
+    payRent(room, player, owner, tile, rent);
+}
+
+/**
+ * Rent, and then the shareholders' cut of it.
+ *
+ * Two steps rather than three payments, because the payer may not have the
+ * money: they are charged once, in full, and whatever actually reached the
+ * owner is what gets divided. A shareholder's quarter of a rent half-paid is a
+ * quarter of what was paid, not a claim on the rest.
+ *
+ * A share the owner holds themselves pays nothing — it would be their own
+ * money going round in a circle. It is still worth owning, because it is one
+ * of the two, and the other person can't have it.
+ */
+function payRent(room, payer, owner, tile, rent) {
+    const before = owner.cash;
+    transfer(room, payer, owner, rent, `rent on ${tile.name}`);
+    const got = owner.cash - before;
+    if (got <= 0 || !tile.groupId) return;
+    for (const sh of sharesIn(room, tile.groupId)) {
+        if (sh.holderId === owner.id) continue;
+        const holder = findPlayer(room, sh.holderId);
+        if (!holder || holder.bankrupt) continue;
+        const cut = Math.round(got * SHARE_CUT);
+        if (cut > 0) transfer(room, owner, holder, cut, `${Math.round(SHARE_CUT * 100)}% share in ${groupName(room, tile.groupId)}`);
+    }
 }
 
 function applyCard(room, player, card, dice) {
@@ -1691,6 +1793,95 @@ function sellHouse(room, playerId, tileId) {
 }
 
 /** Sell a whole (building-free) property back to the bank for what it cost. */
+/** A country's name, for the log — the id is a slug nobody says out loud. */
+const groupName = (room, groupId) => groupsOf(room)[groupId]?.name || groupId;
+
+/**
+ * Buy a share, off the back of landing on an exchange. Any country, including
+ * one nobody owns yet and one you own yourself.
+ */
+function buyShare(room, playerId, groupId) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (room.paused) return { error: 'Game is paused' };
+    const action = room.pendingAction;
+    if (action?.type !== 'exchange' || action.playerId !== playerId) {
+        return { error: 'You are not at the exchange' };
+    }
+    if (!groupsOf(room)[groupId]) return { error: 'No such country' };
+    if (sharesIn(room, groupId).length >= SHARES_PER_GROUP) {
+        return { error: `${groupName(room, groupId)} has no shares left` };
+    }
+    if (sharesIn(room, groupId).some((sh) => sh.holderId === playerId)) {
+        return { error: `You already hold a share in ${groupName(room, groupId)}` };
+    }
+    const price = sharePrice(room, groupId);
+    if (player.cash < price) return { error: `A share in ${groupName(room, groupId)} costs $${price}` };
+
+    player.cash -= price;
+    room.shares.push({ groupId, holderId: playerId, paid: price });
+    room.pendingAction = null;
+    log(room, `${player.name} bought a ${Math.round(SHARE_CUT * 100)}% share in ${groupName(room, groupId)} for $${price}`);
+    return {};
+}
+
+/** Walk away from the exchange without buying. */
+function leaveExchange(room, playerId) {
+    const action = room.pendingAction;
+    if (action?.type !== 'exchange' || action.playerId !== playerId) {
+        return { error: 'You are not at the exchange' };
+    }
+    room.pendingAction = null;
+    return {};
+}
+
+/**
+ * Sell a share back to the bank, at what it cost. The same price rather than
+ * half of it, because deeds sell back at their price too — and because this
+ * is the way out of a debt, which is no use to anyone at a discount.
+ */
+function sellShare(room, playerId, groupId) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (room.paused) return { error: 'Game is paused' };
+    const share = sharesOf(room, playerId).find((sh) => sh.groupId === groupId);
+    if (!share) return { error: 'You do not hold that share' };
+
+    room.shares = room.shares.filter((sh) => sh !== share);
+    player.cash += share.paid;
+    log(room, `${player.name} sold their share in ${groupName(room, groupId)} back for $${share.paid}`);
+    payDownDebt(room, player);
+    return {};
+}
+
+/**
+ * Take a share back off whoever holds it, at half again what they paid. Open
+ * to anyone holding a deed in the country — not only whoever holds all of
+ * them, since on this board most countries are split.
+ *
+ * Not the shareholder's decision. They are not being robbed: they wanted money
+ * out of the country and they are getting fifty per cent of it, today.
+ */
+function buyBackShare(room, playerId, groupId) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (room.paused) return { error: 'Game is paused' };
+    if (!groupTiles(room, groupId).some((t) => sameSide(room, t.ownerId, playerId))) {
+        return { error: `You hold no deeds in ${groupName(room, groupId)}` };
+    }
+    const share = sharesIn(room, groupId).find((sh) => sh.holderId !== playerId);
+    if (!share) return { error: 'Nothing to buy back' };
+    const price = Math.round(share.paid * BUYBACK_MULT);
+    if (player.cash < price) return { error: `Buying that share back costs $${price}` };
+
+    const holder = findPlayer(room, share.holderId);
+    player.cash -= price;
+    credit(room, holder, price);
+    room.shares = room.shares.filter((sh) => sh !== share);
+    log(room, `${player.name} bought back ${holder ? holder.name + "'s" : 'a'} share in ${groupName(room, groupId)} for $${price}`);
+    return {};
+}
+
 function sellProperty(room, playerId, tileId) {
     const player = findPlayer(room, playerId);
     const tile = room.tiles[tileId];
@@ -2343,6 +2534,19 @@ module.exports = {
     removeSpectator,
     isSpectator,
     sameSide,
+    // Exported for the tests: landing is where the rent split happens, and
+    // rolling until the dice cooperate is a slower test that fails sometimes.
+    resolveLanding,
+    SHARE_CUT,
+    SHARES_PER_GROUP,
+    sharePrice,
+    sharesIn,
+    sharesOf,
+    shareValue,
+    buyShare,
+    leaveExchange,
+    sellShare,
+    buyBackShare,
     teammate,
     teammates,
     startAuction,

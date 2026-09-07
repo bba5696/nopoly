@@ -23,6 +23,25 @@ const ICONS = {
             </>
         ),
     },
+    exchange: {
+        glow: '#3ddc97',
+        paths: (
+            <>
+                {/* Three candles and the line through them. */}
+                <rect x="4.2" y="12.4" width="3.1" height="6.6" rx="1" fill="#2fae7a" />
+                <rect x="10.4" y="9.2" width="3.1" height="9.8" rx="1" fill="#3ddc97" />
+                <rect x="16.6" y="5.4" width="3.1" height="13.6" rx="1" fill="#7ef0bd" />
+                <path
+                    d="M4.6 11.2 11 8.1l6.2-3.6"
+                    fill="none"
+                    stroke="#7ef0bd"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </>
+        ),
+    },
     chest: {
         glow: '#ffa23a',
         paths: (

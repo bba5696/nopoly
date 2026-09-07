@@ -106,6 +106,34 @@ rather than a CSS transform, so the text is rendered at the size it is read
 at. On a laptop, and for Classic on a phone, the board already clears the
 floor and none of this shows up.
 
+## The exchange: a stake in somebody else's country
+
+A monopoly is the only thing on a normal board worth having, and at twelve
+players most of the table never gets one — the deeds run out first. Grand Tour
+puts four exchange squares on the ring, one a side. Landing on one opens a
+market in every country at once, rather than a market in the one country the
+tile happens to name, which would be dead four times in five.
+
+A share is a quarter of every rent that country's tiles collect, bought from
+the bank, with the deed left where it is. Two to a country. The cut comes out
+of the rent rather than out of the bank: the payer pays what they always paid,
+and no new money enters a game that already inflates through Start. A rent
+half-paid divides what actually arrived, not what was owed — the shortfall is
+the payer's debt, not the shareholder's claim.
+
+The bargain is symmetric on purpose. Whoever holds the deeds can buy a share
+back at half again what it cost, and the shareholder has no say: they wanted
+money out of the country, and they are getting fifty per cent of it today. So
+a shareholder cannot be robbed, only bought out at a profit, and an owner is
+never taxed forever — only expensively. Neither side has to wait on the other's
+decision, which is what a table of twelve cannot afford.
+
+Shares count in net worth and in liquid value, and the bank buys them back at
+what they cost. That is deliberate: a share is money a player can reach, so it
+belongs in the test for whether a debt can be covered rather than only in the
+ranking. A share held in your own country pays you nothing and is still worth
+buying, because it is one of the two.
+
 ## The host's door is the lobby's, and only the lobby's
 
 The host can remove somebody before the game starts; after it starts the same

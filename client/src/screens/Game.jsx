@@ -33,6 +33,7 @@ import { TradeBuilder } from '@/components/modals/TradeBuilder';
 import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { AuctionModal } from '@/components/modals/AuctionModal';
+import { ExchangeModal } from '@/components/modals/ExchangeModal';
 import { BailoutModal } from '@/components/modals/BailoutModal';
 import { VoteKickModal, VoteKickPicker, VoteStatusChip } from '@/components/modals/VoteKickModal';
 import { Button } from '@/components/ui/button';
@@ -342,6 +343,7 @@ export function Game() {
             <BuyModal open={buyOpen} />
             <CardModal open={cardOpen} />
             <AuctionModal />
+            <ExchangeModal />
             <VoteKickPicker open={kickOpen} onClose={() => setKickOpen(false)} />
             {/* Last, so they sit over anything else already open — both freeze
                 someone's turn until they're answered. */}

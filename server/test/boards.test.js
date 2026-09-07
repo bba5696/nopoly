@@ -67,7 +67,9 @@ for (const board of Object.values(BOARDS)) {
 
     // Two tiles with the same name make a card's destination ambiguous, and the
     // decks resolve destinations by name.
-    const named = layout.filter((t) => !['chest', 'chance'].includes(t[1])).map((t) => t[0]);
+    // Card and exchange squares repeat by design; everything a card can be
+    // sent to has to be findable by name.
+    const named = layout.filter((t) => !['chest', 'chance', 'exchange'].includes(t[1])).map((t) => t[0]);
     ok(`${id}: names are unique`, new Set(named).size === named.length, String(named.length - new Set(named).size));
 
     // Cards name their destinations, and a name that isn't here quietly becomes

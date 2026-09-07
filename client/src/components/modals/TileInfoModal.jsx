@@ -54,6 +54,18 @@ export function TileInfoModal({ tile, onClose }) {
     if (!tile) return null;
 
     const owner = state.players.find((p) => p.id === tile.ownerId);
+    // The exchange, from the deed's side: a share out on this country, whose it
+    // is, and what taking it back would cost.
+    const share = (state.shares || []).find((sh) => sh.groupId === tile.groupId);
+    const shareHolder = share && state.players.find((p) => p.id === share.holderId);
+    const shareCut = Math.round((state.shareCut ?? 0.25) * 100);
+    const buyback = share ? Math.round(share.paid * (state.buybackMult ?? 1.5)) : 0;
+    // Anyone holding a deed in the country can buy it back, since most of them
+    // are split on the big board — but not off your own share.
+    const canBuyBack =
+        !!share &&
+        share.holderId !== me?.id &&
+        state.tiles.some((t) => t.groupId === tile.groupId && t.ownerId === me?.id);
     const group = board?.groups?.[tile.groupId];
     const color = group?.color || (tile.type === 'airport' ? '#9aa0b5' : tile.type === 'utility' ? '#7dd3fc' : '#5a5a70');
     // Building goes by side, selling by deed: a teammate can develop your set
@@ -135,6 +147,39 @@ export function TileInfoModal({ tile, onClose }) {
                             carries its own rule, and wrapping them in one that
                             demands the deed is what hid Upgrade on a
                             teammate's property — the case teams exist for. */}
+                        {/* Somebody holds a piece of this country's rent.
+                            Shown on the deed rather than anywhere else, because
+                            here is where you find out about it — and the way
+                            out is a button in the same place. */}
+                        {share && (
+                            <div className="flex items-center gap-3 rounded-xl border border-[#3ddc97]/25 bg-[#3ddc97]/[0.06] px-3 py-2.5">
+                                <span className="min-w-0 flex-1 text-[13px] leading-snug text-muted-foreground">
+                                    {share.holderId === me?.id ? (
+                                        <>
+                                            You hold a {shareCut}% share in {group?.name || 'this country'} —
+                                            your own pays you nothing, but nobody else can have it.
+                                        </>
+                                    ) : (
+                                        <>
+                                            {shareHolder?.name || 'Someone'} holds a {shareCut}% share in{' '}
+                                            {group?.name || 'this country'} — its owner keeps {100 - shareCut}% of
+                                            the rent.
+                                        </>
+                                    )}
+                                </span>
+                                {canBuyBack && (
+                                    <Button
+                                        variant="outline"
+                                        className="h-9 shrink-0"
+                                        onClick={() => send('share:buyback', { groupId: tile.groupId })}
+                                        title={`Take the share back for ${money(buyback)}`}
+                                    >
+                                        Buy back {money(buyback)}
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+
                         {(upgradeOk || downgradeOk || sellOk) && (
                             <div className="flex gap-2">
                                 {upgradeOk && (

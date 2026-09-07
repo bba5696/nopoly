@@ -627,6 +627,14 @@ io.on('connection', (socket) => {
 
     socket.on('auction:bid', ({ amount } = {}) => act(socket, (room, pid) => engine.placeBid(room, pid, amount)));
 
+    // The exchange. Buying is gated on standing on one, which the engine
+    // checks; selling and buying back are not, because both are ways out of a
+    // debt and a debt does not wait for your turn.
+    socket.on('exchange:buy', ({ groupId } = {}) => act(socket, (room, pid) => engine.buyShare(room, pid, groupId)));
+    socket.on('exchange:leave', () => act(socket, engine.leaveExchange));
+    socket.on('share:sell', ({ groupId } = {}) => act(socket, (room, pid) => engine.sellShare(room, pid, groupId)));
+    socket.on('share:buyback', ({ groupId } = {}) => act(socket, (room, pid) => engine.buyBackShare(room, pid, groupId)));
+
     socket.on('game:start', () => act(socket, engine.startGame));
     socket.on('game:roll', () => act(socket, engine.rollDice));
     socket.on('game:buy', () => act(socket, engine.buyProperty));
