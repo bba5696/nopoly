@@ -108,6 +108,26 @@ rather than a CSS transform, so the text is rendered at the size it is read
 at. On a laptop, and for Classic on a phone, the board already clears the
 floor and none of this shows up.
 
+## Net worth, itemised
+
+`worthOf` returns the parts and `netWorth` returns their sum, so there is one
+calculation rather than two that can drift. Cash, every deed at what the board
+says it is worth now, houses and hotels at what they cost to put up — all five
+levels — shares at what was paid, and a get-out-of-jail card at the fine it
+saves. An unsettled debt comes off, because a bill you cannot pay is a real
+liability and leaving it out ranks somebody above a rival they cannot afford to
+stay in the game against.
+
+Buildings count at full cost here and at half in `liquidValue`, and that
+difference is the point: net worth measures what you have, liquid value
+measures what you could raise before the bill is due.
+
+Landmarks are deliberately absent — nothing will buy one, so any figure put on
+one would be invented.
+
+The client is sent the parts alongside the total and shows them when the number
+is tapped, so "why is my net worth that?" has an answer on screen.
+
 ## The exchange: a stake in somebody else's country
 
 A monopoly is the only thing on a normal board worth having, and at twelve

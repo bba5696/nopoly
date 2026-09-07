@@ -92,6 +92,9 @@ function SendCash({ mate }) {
 
 export function YouRail({ onOpenTile }) {
     const { state, me, board, send } = useGame();
+    // The net figure comes apart on a tap; closed by default, because most of
+    // the time the total is all anybody wants.
+    const [worthOpen, setWorthOpen] = useState(false);
     if (!me) return null;
 
     const owned = me.properties.map((id) => state.tiles[id]).sort((a, b) => a.id - b.id);
@@ -118,6 +121,18 @@ export function YouRail({ onOpenTile }) {
     // Landmarks are permanent and unsellable, so this is a record rather than a
     // control — what they give, in the words the board used.
     const landmarks = (me.landmarks || []).map((id) => state.tiles[id]).filter(Boolean);
+    // What the net figure is made of, in the server's own numbers rather than
+    // added up again here — two sums of the same thing is how they come to
+    // disagree. Landmarks are missing on purpose: nothing will buy one.
+    const worth = me.worth || {};
+    const worthRows = [
+        ['cash', worth.cash],
+        ['property', worth.deeds],
+        ['houses & hotels', worth.buildings],
+        ['shares', worth.shares],
+        ['jail cards', worth.jailCards],
+        ['owed', worth.debt ? -worth.debt : 0],
+    ].filter(([, value]) => !!value);
 
     return (
         <>
@@ -141,8 +156,34 @@ export function YouRail({ onOpenTile }) {
                     >
                         {money(balance)}
                     </motion.span>
-                    <span className="label">net {money(me.netWorth)}</span>
+                    <button
+                        type="button"
+                        onClick={() => setWorthOpen((v) => !v)}
+                        className="label transition-colors hover:text-foreground"
+                        title="What this is made of"
+                    >
+                        net {money(me.netWorth)}
+                    </button>
                 </div>
+                {/* The total was being doubted, so it comes apart on a tap.
+                    Only the lines that apply: a row of zeroes explains
+                    nothing. */}
+                {worthOpen && (
+                    <div className="flex flex-col gap-0.5 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+                        {worthRows.map(([label, value]) => (
+                            <span key={label} className="flex items-baseline justify-between gap-3 text-[12px]">
+                                <span className="text-muted-foreground">{label}</span>
+                                <span className="mono" style={value < 0 ? { color: '#ff9db2' } : undefined}>
+                                    {value < 0 ? `-${money(-value)}` : money(value)}
+                                </span>
+                            </span>
+                        ))}
+                        <span className="mt-1 flex items-baseline justify-between gap-3 border-t border-white/8 pt-1 text-[12px]">
+                            <span className="text-muted-foreground">net worth</span>
+                            <span className="mono">{money(me.netWorth)}</span>
+                        </span>
+                    </div>
+                )}
                 {me.jailCards > 0 && <span className="label">{me.jailCards} get-out-of-jail card(s)</span>}
                 {/* This panel is where the selling happens, so the amount owed
                     belongs next to it rather than only out on the board. */}

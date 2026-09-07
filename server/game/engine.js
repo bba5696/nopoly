@@ -430,14 +430,57 @@ function sharePrices(room) {
     return out;
 }
 
-function netWorth(room, player) {
-    const estate = player.properties.reduce((sum, id) => {
+/**
+ * Everything a player is worth, itemised.
+ *
+ * One function rather than a sum, because the number on the rail was being
+ * doubted — and a total nobody can take apart is a total nobody believes. The
+ * client is sent the parts and shows them, so "why is my net worth that?" has
+ * an answer on screen instead of an argument.
+ *
+ * What counts, and why:
+ *
+ *   cash       obvious.
+ *   deeds      every property, airport and utility, at what the board says it
+ *              is worth now — which is the list price, or the market's price
+ *              when dynamic values are on, because that is what it would fetch.
+ *   buildings  houses and hotels at what they cost to put up, all five levels
+ *              of them. Not half, the way `liquidValue` counts them: this is a
+ *              measure of what you have, not of what you could raise by
+ *              tomorrow morning.
+ *   shares     at what was paid, which is also what the bank buys them back at.
+ *   jailCards  worth the fine they save, since that is exactly what a player
+ *              spends one to avoid.
+ *   debt       subtracted. An unsettled bill is a real liability, and leaving
+ *              it out would rank someone above a rival they cannot actually
+ *              afford to stay in the game against.
+ *
+ * Landmarks are deliberately absent: they cannot be sold, traded or taken, so
+ * any figure put on one would be invented.
+ */
+function worthOf(room, player) {
+    let deeds = 0;
+    let buildings = 0;
+    for (const id of player.properties) {
         const tile = room.tiles[id];
-        return sum + market.priceOf(room, tile) + tile.houses * (tile.houseCost || 0);
-    }, player.cash + shareValue(room, player));
-    // An unsettled debt is a real liability — leaving it out would rank someone
-    // above a rival they can't actually afford to stay in the game against.
-    return estate - (player.debt?.amount ?? 0);
+        if (!tile) continue;
+        deeds += market.priceOf(room, tile);
+        buildings += tile.houses * (tile.houseCost || 0);
+    }
+    const parts = {
+        cash: player.cash,
+        deeds,
+        buildings,
+        shares: shareValue(room, player),
+        jailCards: (player.jailCards || 0) * JAIL_FINE,
+        debt: player.debt?.amount ?? 0,
+    };
+    parts.total = parts.cash + parts.deeds + parts.buildings + parts.shares + parts.jailCards - parts.debt;
+    return parts;
+}
+
+function netWorth(room, player) {
+    return worthOf(room, player).total;
 }
 
 /**
@@ -463,7 +506,10 @@ function publicState(room) {
     return {
         roomCode: room.roomCode,
         hostId: room.hostId,
-        players: room.players.map((p) => ({ ...p, netWorth: netWorth(room, p) })),
+        players: room.players.map((p) => {
+            const worth = worthOf(room, p);
+            return { ...p, netWorth: worth.total, worth };
+        }),
         // Names only — there's nothing else about a watcher worth sending, and
         // the table should be able to see who's looking over their shoulder.
         spectators: room.spectators.map(({ id, name, seated }) => ({ id, name, seated })),
@@ -2598,6 +2644,7 @@ module.exports = {
     SHARE_CUT,
     SHARES_PER_GROUP,
     sharePrice,
+    worthOf,
     boonsOf,
     landmarkBlurb,
     sharesIn,
