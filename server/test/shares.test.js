@@ -33,10 +33,10 @@ function atExchange(r, player) {
     const { r } = mk();
     const exchanges = r.tiles.filter((t) => t.type === 'exchange');
     ok('grand tour has four exchanges', exchanges.length === 4, String(exchanges.length));
-    ok('one per side', new Set(exchanges.map((t) => Math.floor(t.id / 16))).size === 4);
-    // Italy: 210 + 210 + 220 + 220 = 860, a fifth of it to the nearest ten.
-    ok('a share is a fifth of the country', e.sharePrice(r, 'italy') === 170, String(e.sharePrice(r, 'italy')));
-    ok('the cheap sets are cheap', e.sharePrice(r, 'mexico') === 20, String(e.sharePrice(r, 'mexico')));
+    ok('one per side', new Set(exchanges.map((t) => Math.floor(t.id / 13))).size === 4);
+    // Italy: 170 + 170 + 180 + 190 = 710, a fifth of it to the nearest ten.
+    ok('a share is a fifth of the country', e.sharePrice(r, 'italy') === 140, String(e.sharePrice(r, 'italy')));
+    ok('the cheap sets are cheap', e.sharePrice(r, 'lebanon') === 20, String(e.sharePrice(r, 'lebanon')));
 }
 
 /* ------------------------------------------------------------- buying one */
@@ -48,10 +48,10 @@ function atExchange(r, player) {
     const before = p.Cy.cash;
     const res = e.buyShare(r, p.Cy.id, 'italy');
     ok('landing on one lets you buy', !res.error, res.error);
-    ok('it costs what it says', p.Cy.cash === before - 170, String(p.Cy.cash));
+    ok('it costs what it says', p.Cy.cash === before - 140, String(p.Cy.cash));
     ok('and is held', e.sharesOf(r, p.Cy.id).length === 1);
     ok('the screen closes behind you', r.pendingAction === null);
-    ok('the log says so', r.log.some((l) => /Cy bought a 25% share in Italy for \$170/.test(l.text || l)), '');
+    ok('the log says so', r.log.some((l) => /Cy bought a 25% share in Italy for \$140/.test(l.text || l)), '');
 
     atExchange(r, p.Cy);
     ok('one each per country', /already hold/.test(e.buyShare(r, p.Cy.id, 'italy').error || ''));
@@ -88,9 +88,9 @@ function atExchange(r, player) {
     e.resolveLanding(r, p.Bo, [3, 4]);
 
     const rent = boBefore - p.Bo.cash;
-    ok('the payer pays the book rent', rent === 18, String(rent));
-    ok('the shareholder takes a quarter', p.Cy.cash - cyBefore === 5, String(p.Cy.cash - cyBefore));
-    ok('the owner keeps the rest', p.Ada.cash - adaBefore === 13, String(p.Ada.cash - adaBefore));
+    ok('the payer pays the book rent', rent === 15, String(rent));
+    ok('the shareholder takes a quarter', p.Cy.cash - cyBefore === 4, String(p.Cy.cash - cyBefore));
+    ok('the owner keeps the rest', p.Ada.cash - adaBefore === 11, String(p.Ada.cash - adaBefore));
     ok('and no money was invented', rent === (p.Cy.cash - cyBefore) + (p.Ada.cash - adaBefore));
     ok(
         'the feed names the cut',
@@ -106,14 +106,14 @@ function atExchange(r, player) {
     rome.ownerId = p.Ada.id;
     p.Ada.properties.push(rome.id);
     r.shares = [
-        { groupId: 'italy', holderId: p.Cy.id, paid: 170 },
-        { groupId: 'italy', holderId: p.Di.id, paid: 170 },
+        { groupId: 'italy', holderId: p.Cy.id, paid: 140 },
+        { groupId: 'italy', holderId: p.Di.id, paid: 140 },
     ];
     const adaBefore = p.Ada.cash;
     p.Bo.position = rome.id;
     r.turnIndex = r.players.indexOf(p.Bo);
     e.resolveLanding(r, p.Bo, [3, 4]);
-    ok('the owner is left with half', p.Ada.cash - adaBefore === 18 - 5 - 5, String(p.Ada.cash - adaBefore));
+    ok('the owner is left with half', p.Ada.cash - adaBefore === 15 - 4 - 4, String(p.Ada.cash - adaBefore));
 }
 
 /* ------------------------- a rent half-paid is a share of what was paid */
@@ -122,8 +122,8 @@ function atExchange(r, player) {
     const rome = tile(r, 'Rome');
     rome.ownerId = p.Ada.id;
     p.Ada.properties.push(rome.id);
-    r.shares = [{ groupId: 'italy', holderId: p.Cy.id, paid: 170 }];
-    // Bo has four dollars and owes eighteen; only the four ever arrive, so a
+    r.shares = [{ groupId: 'italy', holderId: p.Cy.id, paid: 140 }];
+    // Bo has four dollars and owes fifteen; only the four ever arrive, so a
     // quarter of four is all the share is worth here.
     p.Bo.cash = 4;
     const adaBefore = p.Ada.cash;
@@ -162,15 +162,15 @@ function atExchange(r, player) {
     const cyBefore = p.Cy.cash;
     const res = e.buyBackShare(r, p.Ada.id, 'italy');
     ok('the deed holder can', !res.error, res.error);
-    ok('at half again what it cost', p.Ada.cash === adaBefore - 255, String(adaBefore - p.Ada.cash));
-    ok('which the shareholder gets', p.Cy.cash === cyBefore + 255, String(p.Cy.cash - cyBefore));
+    ok('at half again what it cost', p.Ada.cash === adaBefore - 210, String(adaBefore - p.Ada.cash));
+    ok('which the shareholder gets', p.Cy.cash === cyBefore + 210, String(p.Cy.cash - cyBefore));
     ok('and the share is gone', e.sharesIn(r, 'italy').length === 0);
     ok('nothing left to buy back', !!e.buyBackShare(r, p.Ada.id, 'italy').error);
 
     atExchange(r, p.Cy);
     e.buyShare(r, p.Cy.id, 'italy');
     p.Ada.cash = 10;
-    ok('and it has to be affordable', /costs \$255/.test(e.buyBackShare(r, p.Ada.id, 'italy').error || ''));
+    ok('and it has to be affordable', /costs \$210/.test(e.buyBackShare(r, p.Ada.id, 'italy').error || ''));
 }
 
 /* ------------------------------------------------- selling, and paying debts */
@@ -217,10 +217,10 @@ function atExchange(r, player) {
 {
     const { r, p } = mk();
     atExchange(r, p.Cy);
-    e.buyShare(r, p.Cy.id, 'india');
+    e.buyShare(r, p.Cy.id, 'china');
     const st = e.publicState(r);
-    ok('the state carries the shares', st.shares.length === 1 && st.shares[0].groupId === 'india');
-    ok('and what one costs', st.sharePrices.india === e.sharePrice(r, 'india'));
+    ok('the state carries the shares', st.shares.length === 1 && st.shares[0].groupId === 'china');
+    ok('and what one costs', st.sharePrices.china === e.sharePrice(r, 'china'));
     ok('and the terms', st.shareCut === 0.25 && st.sharesPerGroup === 2 && st.buybackMult === 1.5);
 }
 

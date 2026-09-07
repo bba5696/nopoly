@@ -90,11 +90,13 @@ and a phone is hopeless. That was the ceiling until the viewport below, which
 lifts it by letting the board be bigger than the window.
 
 What a big table actually needs is deeds: twelve people on a forty-tile board
-run out of property long before they run out of players. Grand Tour is 64 tiles
-and 40 deeds over sixteen countries, mostly pairs — ten sets of two, four of
+run out of property long before they run out of players. Grand Tour is 52 tiles
+and 31 deeds over twelve countries, mostly pairs — seven sets of two, three of
 three, two of four — because a table of twelve rarely assembles three of
 anything by luck, and a board where nobody completes a set is a board where
-nobody builds.
+nobody builds. Sixty-four was tried once the viewport made it possible, and was
+still too much board to look at; the deeds a shorter lap cannot carry are found
+in the exchange instead.
 
 Past that, the board stops shrinking and the window starts moving.
 `BoardViewport` measures the space it has, works out the width at which a
