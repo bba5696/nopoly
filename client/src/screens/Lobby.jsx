@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, UserMinus, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -255,6 +255,10 @@ export function Lobby() {
     const blockedReason = (() => {
         if (state.players.length < 2) return 'need at least 2 players';
         if (!settings.teams) return null;
+        const cap = settings.maxTeamSize;
+        if (cap && teamIds.length * cap < state.players.length) {
+            return `${teamIds.length} teams of ${cap} can't hold ${state.players.length} players`;
+        }
         if (state.players.some((p) => !p.teamId)) return 'everyone needs a team';
         if (roster.length < 2) return 'need at least 2 teams';
         return null;
@@ -356,6 +360,19 @@ export function Lobby() {
                                                 disabled={!isHost}
                                                 onPick={(teamId) => send('room:team', { playerId: p.id, teamId })}
                                             />
+                                        )}
+                                        {/* Only in the lobby, and only for
+                                            somebody else. Once the game starts
+                                            this is a vote instead. */}
+                                        {isHost && p.id !== playerId && (
+                                            <button
+                                                type="button"
+                                                title={`Remove ${p.name} from the room`}
+                                                onClick={() => send('room:kick', { playerId: p.id })}
+                                                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-[#ff5c7c]/10 hover:text-[#ff5c7c]"
+                                            >
+                                                <UserMinus className="size-4" />
+                                            </button>
                                         )}
                                     </motion.div>
                                 ))}
@@ -486,6 +503,39 @@ export function Lobby() {
                                     onChange={patch('startingCash')}
                                 />
                             </SettingRow>
+                            {/* Only while teams are on — off, they are two
+                                numbers about nothing. Changing either re-deals
+                                the sides, which is what the hint warns about. */}
+                            {settings.teams && (
+                                <>
+                                    <SettingRow
+                                        icon={UsersRound}
+                                        label="Teams"
+                                        hint="How many sides are in play. Changing it re-deals everyone — the host can move people afterwards"
+                                    >
+                                        <NumberField
+                                            value={settings.maxTeams}
+                                            disabled={!isHost}
+                                            min={2}
+                                            max={8}
+                                            onChange={patch('maxTeams')}
+                                        />
+                                    </SettingRow>
+                                    <SettingRow
+                                        icon={Users}
+                                        label="Max per team"
+                                        hint="The most players one side may hold. 0 means no limit, and sides never have to be the same size"
+                                    >
+                                        <NumberField
+                                            value={settings.maxTeamSize}
+                                            disabled={!isHost}
+                                            min={0}
+                                            max={99}
+                                            onChange={patch('maxTeamSize')}
+                                        />
+                                    </SettingRow>
+                                </>
+                            )}
                             <SettingRow
                                 icon={Users}
                                 label="Maximum players"

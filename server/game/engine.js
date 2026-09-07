@@ -62,6 +62,11 @@ const DEFAULT_SETTINGS = {
     dynamicValues: false,
     auctionBalance: false,
     teams: false,
+    // The shape of the sides, when teams are on. Eight letters and no size cap
+    // is the open end of it; a host who wants four threes says so here and the
+    // deal, the picker and the start check all follow the same two numbers.
+    maxTeams: 8,
+    maxTeamSize: 0,
     turnTimer: true,
     board: DEFAULT_BOARD,
 };
@@ -103,6 +108,10 @@ const SETTING_LIMITS = {
     startingCash: { min: 500, max: 10000 },
     passStartBonus: { min: 0, max: 1000 },
     maxPlayers: { min: 2, max: 999 },
+    maxTeams: { min: 2, max: 8 },
+    // Zero is the default and means no cap — a side holds whoever the host puts
+    // on it. Anything above that is a real limit the picker enforces.
+    maxTeamSize: { min: 0, max: 99 },
 };
 
 const uid = () => crypto.randomUUID();
@@ -277,6 +286,9 @@ function sameSide(room, a, b) {
     return !!ta && ta === teamOf(room, b);
 }
 
+/** The team letters this room is playing with, in order. */
+const teamIdsFor = (room) => TEAM_IDS.slice(0, room.settings.maxTeams || TEAM_IDS.length);
+
 /** Everyone else on a player's side — any number of them, since a team is not a pair. */
 function teammates(room, player) {
     if (!player?.teamId || !room.settings.teams) return [];
@@ -419,7 +431,7 @@ function publicState(room) {
         winnerId: room.winnerId,
         winnerTeam: room.winnerTeam,
         teams: room.settings.teams ? teamSummary(room) : null,
-        teamIds: TEAM_IDS,
+        teamIds: teamIdsFor(room),
         teamColors: TEAM_COLORS,
         // The palette to choose from, so the picker and the validation that
         // guards it can't drift apart.
@@ -642,6 +654,9 @@ function updateSettings(room, playerId, patch = {}) {
     if (room.hostId !== playerId) return { error: 'Only the host can change the rules' };
     if (room.phase !== 'waiting') return { error: 'Rules are locked once the game starts' };
 
+    const shape = () => `${room.settings.maxTeams}/${room.settings.maxTeamSize}`;
+    const wasShaped = shape();
+
     for (const [key, raw] of Object.entries(patch)) {
         if (!(key in DEFAULT_SETTINGS)) continue;
         if (key === 'board') {
@@ -663,6 +678,10 @@ function updateSettings(room, playerId, patch = {}) {
     if (room.settings.maxPlayers < room.players.length) {
         room.settings.maxPlayers = room.players.length;
     }
+    // Changing how many sides there are, or how big they may be, re-deals them.
+    // The alternative is leaving people on a letter that is no longer in play
+    // and making the host find them.
+    if (room.settings.teams && shape() !== wasShaped) autoAssignTeams(room);
     // Nobody has moved yet, so a starting-cash change applies retroactively.
     for (const p of room.players) p.cash = room.settings.startingCash;
     return {};
@@ -688,6 +707,11 @@ function interleaveTeams(room) {
 }
 
 function teamsReady(room) {
+    const ids = teamIdsFor(room);
+    const cap = room.settings.maxTeamSize;
+    if (cap && ids.length * cap < room.players.length) {
+        return { error: `${ids.length} teams of ${cap} can't hold ${room.players.length} players` };
+    }
     const counts = {};
     for (const p of room.players) {
         if (!p.teamId) return { error: `${p.name} is not on a team` };
@@ -696,6 +720,8 @@ function teamsReady(room) {
     // Sides no longer have to match. Three against two is a game people
     // deliberately set up, and refusing it only ever sent the odd player home.
     if (Object.keys(counts).length < 2) return { error: 'Need at least 2 teams' };
+    const over = cap && Object.entries(counts).find(([, n]) => n > cap);
+    if (over) return { error: `Team ${over[0]} is over the ${cap}-player limit` };
     return {};
 }
 
@@ -803,16 +829,38 @@ function recolourTeams(room) {
 }
 
 /** Host-only, lobby-only. Pass a null team to take someone off a team. */
+/**
+ * The host showing somebody the door, which only exists in the lobby.
+ *
+ * Once the game has started this is a vote instead: by then the table has a
+ * shared stake in who is at it, and one person removing another from a game in
+ * progress is the thing the vote rules were written to stop. Here nothing has
+ * happened yet, the room is the host's to set up, and the alternative is
+ * abandoning a room code because a stranger wandered in.
+ */
+function kickPlayer(room, hostId, playerId) {
+    if (room.hostId !== hostId) return { error: 'Only the host can remove someone' };
+    if (room.phase !== 'waiting') return { error: 'Once the game starts it takes a vote' };
+    if (playerId === hostId) return { error: 'You cannot remove yourself' };
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    return removePlayer(room, playerId, { note: `${player.name} was removed by the host` });
+}
+
 function setTeam(room, hostId, playerId, teamId) {
     if (room.hostId !== hostId) return { error: 'Only the host can pick teams' };
     if (room.phase !== 'waiting') return { error: 'Teams are locked once the game starts' };
     if (!room.settings.teams) return { error: 'Teams are off' };
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
-    if (teamId !== null && !TEAM_IDS.includes(teamId)) return { error: 'Unknown team' };
-    // No cap on a side. Whoever is setting the table can see it, and a rule
-    // that stops five friends playing two against three was never protecting
-    // them from anything.
+    if (teamId !== null && !teamIdsFor(room).includes(teamId)) return { error: 'That team is not in play' };
+    // The only cap on a side is the one the host set. Left at zero there isn't
+    // one, because a rule that stops five friends playing two against three was
+    // never protecting them from anything.
+    const cap = room.settings.maxTeamSize;
+    if (cap && teamId && room.players.filter((p) => p.teamId === teamId && p.id !== playerId).length >= cap) {
+        return { error: `Team ${teamId} is full — ${cap} players` };
+    }
     player.teamId = teamId;
     recolourTeams(room);
     return {};
@@ -826,9 +874,11 @@ function setTeam(room, hostId, playerId, teamId) {
  * starting point in the lobby, not a rule: the host moves people afterwards.
  */
 function autoAssignTeams(room) {
-    const per = Math.max(TEAM_PAIR, Math.ceil(room.players.length / TEAM_IDS.length));
+    const ids = teamIdsFor(room);
+    const cap = room.settings.maxTeamSize || Infinity;
+    const per = Math.min(cap, Math.max(TEAM_PAIR, Math.ceil(room.players.length / ids.length)));
     room.players.forEach((p, i) => {
-        p.teamId = room.settings.teams ? TEAM_IDS[Math.floor(i / per)] || null : null;
+        p.teamId = room.settings.teams ? ids[Math.floor(i / per)] || null : null;
     });
     recolourTeams(room);
 }
@@ -2150,7 +2200,7 @@ function setActivity(room, playerId, activity = {}) {
  * they were the host — took the ability to change any setting or start the
  * game with them.
  */
-function removePlayer(room, playerId) {
+function removePlayer(room, playerId, { note } = {}) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
     if (room.phase !== 'waiting') {
@@ -2160,7 +2210,7 @@ function removePlayer(room, playerId) {
 
     room.players = room.players.filter((p) => p.id !== playerId);
     dropVoteFor(room, playerId);
-    log(room, `${player.name} left`);
+    log(room, note || `${player.name} left`);
     // The room outlives its host — otherwise the rules are frozen for everyone
     // left behind and nobody can start.
     if (room.hostId === playerId) {
@@ -2272,6 +2322,7 @@ module.exports = {
     DEFAULT_SETTINGS,
     updateSettings,
     setTeam,
+    kickPlayer,
     sendCash,
     respondBailout,
     startVoteKick,

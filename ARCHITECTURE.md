@@ -68,6 +68,25 @@ A debt is judged against the whole side, too: everyone still playing on it is
 counted before anyone goes bankrupt, since with four teammates the money that
 saves the debtor may be sitting with the one nobody asked.
 
+The shape of the sides is two numbers the host sets: how many sides are in play
+(`maxTeams`) and the most one may hold (`maxTeamSize`, zero for no limit). They
+are limits rather than a layout, but between them they say what to do — four
+sides out of twelve players deals three each, six sides deals pairs — so the
+deal, the picker's letters and the start check all read the same two numbers.
+Changing either re-deals, because the alternative is leaving people on a letter
+that is no longer in play and making the host go find them.
+
+## The host's door is the lobby's, and only the lobby's
+
+The host can remove somebody before the game starts; after it starts the same
+thing takes a vote. The line is who has a stake. In the lobby nothing has
+happened yet, the room is the host's to set up, and without this the answer to a
+stranger wandering in on a shared code is to abandon the code. Once play begins
+everyone at the table has a game they are invested in, and one person deciding
+who is still in it is exactly what the vote rules exist to prevent. The kicked
+player's socket is taken out of the room and told, rather than left drawing a
+lobby its owner is no longer in.
+
 ## The turn clock measures inactivity, not elapsed time
 
 A flat sixty seconds from the start of a turn would cut off someone reading a

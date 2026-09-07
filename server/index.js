@@ -598,6 +598,28 @@ io.on('connection', (socket) => {
     socket.on('room:team', ({ playerId, teamId } = {}) =>
         act(socket, (room, pid) => engine.setTeam(room, pid, playerId, teamId ?? null)),
     );
+    // Not routed through `act`, because the person it acts on has to be shown
+    // the door as well as removed from the roster — a socket still in the room
+    // would keep drawing a lobby its owner is no longer in.
+    socket.on('room:kick', ({ playerId } = {}) => {
+        const room = getRoom(socket.data.roomCode);
+        if (!room) return socket.emit('error:game', 'Room not found');
+        const res = engine.kickPlayer(room, socket.data.playerId, playerId);
+        if (res.error) return socket.emit('error:game', res.error);
+        for (const s of io.sockets.sockets.values()) {
+            if (s.data.roomCode !== room.roomCode || s.data.playerId !== playerId) continue;
+            s.leave(room.roomCode);
+            s.data.roomCode = null;
+            s.data.spectating = false;
+            // The same event a closed room sends: from where they are standing
+            // it is the same thing — the room is gone, with a line saying why.
+            s.emit('room:closed', 'The host removed you from the room.');
+        }
+        touch(room);
+        broadcast(room);
+        pushPresence();
+    });
+
     socket.on('auction:bid', ({ amount } = {}) => act(socket, (room, pid) => engine.placeBid(room, pid, amount)));
 
     socket.on('game:start', () => act(socket, engine.startGame));

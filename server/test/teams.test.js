@@ -302,6 +302,62 @@ function firstGroup(r) {
         new Set(rest.map((q) => q.color)).size === 5, rest.map((q) => q.color).join(' '));
 }
 
+/* ------------------------------------------------- the shape of the sides */
+{
+    // Twelve players and four sides: the deal works out three each rather than
+    // pairing everyone off, because the host said how many sides there are.
+    const r = e.createRoom('SHAPE');
+    const host = e.addPlayer(r, { name: 'Ada' }).player;
+    e.updateSettings(r, host.id, { maxPlayers: 12 });
+    for (const n of ['Bo', 'Cy', 'Di', 'Ev', 'Fi', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lu']) {
+        e.addPlayer(r, { name: n });
+    }
+    e.updateSettings(r, host.id, { maxTeams: 4, teams: true });
+    const counts = {};
+    for (const p of r.players) counts[p.teamId] = (counts[p.teamId] || 0) + 1;
+    ok('four sides of three', JSON.stringify(counts) === '{"A":3,"B":3,"C":3,"D":3}', JSON.stringify(counts));
+    ok('only the letters in play are offered', e.publicState(r).teamIds.join('') === 'ABCD');
+    ok('a letter out of play is refused', !!e.setTeam(r, host.id, r.players[1].id, 'F').error);
+
+    // Six sides of two out of the same twelve, just by saying six.
+    e.updateSettings(r, host.id, { maxTeams: 6 });
+    const six = {};
+    for (const p of r.players) six[p.teamId] = (six[p.teamId] || 0) + 1;
+    ok('changing the count re-deals', Object.keys(six).length === 6, JSON.stringify(six));
+
+    // The cap is what stops someone piling onto one side.
+    e.updateSettings(r, host.id, { maxTeams: 4, maxTeamSize: 3 });
+    const full = e.setTeam(r, host.id, r.players.find((p) => p.teamId === 'B').id, 'A');
+    ok('a full side turns the next one away', !!full.error, JSON.stringify(full));
+    ok('and says what the limit is', /full/.test(full.error || ''), full.error);
+
+    // A shape that cannot hold the room is refused at the start, not silently.
+    e.updateSettings(r, host.id, { maxTeams: 2, maxTeamSize: 2 });
+    const res = e.startGame(r, host.id);
+    ok('a shape too small to hold everyone is refused', !!res.error, JSON.stringify(res));
+    ok('and the refusal does the arithmetic', /can't hold 12 players/.test(res.error || ''), res.error);
+}
+
+/* ------------------------------------------------- the host shows the door */
+{
+    const r = e.createRoom('DOOR');
+    const host = e.addPlayer(r, { name: 'Ada' }).player;
+    const bo = e.addPlayer(r, { name: 'Bo' }).player;
+    const cy = e.addPlayer(r, { name: 'Cy' }).player;
+    ok('a guest cannot remove anyone', !!e.kickPlayer(r, bo.id, cy.id).error);
+    ok('the host cannot remove themselves', !!e.kickPlayer(r, host.id, host.id).error);
+    ok('the host can remove a guest', !e.kickPlayer(r, host.id, bo.id).error);
+    ok('and they are gone', r.players.length === 2 && !r.players.some((p) => p.id === bo.id));
+    ok('the log says it was not their idea', /Bo was removed by the host/.test(r.log.at(-1).text), r.log.at(-1).text);
+
+    // Mid-game it is a vote, which is the whole point of the vote.
+    e.addPlayer(r, { name: 'Di' });
+    e.startGame(r, host.id);
+    const late = e.kickPlayer(r, host.id, cy.id);
+    ok('mid-game the door is closed', !!late.error, JSON.stringify(late));
+    ok('and it points at the vote', /vote/.test(late.error || ''), late.error);
+}
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const f of fails) console.log('  FAIL ' + f);
 process.exit(fails.length ? 1 : 0);

@@ -87,6 +87,29 @@ async function main() {
     await quiet(b);
     ok('only the host picks teams', errors.length > before2);
 
+    // A fifth player arrives and the host shows them the door. Worth doing over
+    // the wire because the removal is only half of it — their socket has to be
+    // taken out of the room and told, or they sit watching a lobby they are not
+    // in any more.
+    const ev = await connect('Ev');
+    ev.s.on('error:game', (e) => errors.push(`Ev: ${e}`));
+    const evJoin = await new Promise((r) => ev.s.emit('room:join', { roomCode: code, name: 'Ev' }, r));
+    st = await until(a, (s) => s.players.length === 5, 'ev joined');
+    let closedText = null;
+    ev.s.once('room:closed', (t) => (closedText = t));
+
+    const settle = () => new Promise((r) => setTimeout(r, 200));
+    const before1 = errors.length;
+    b.s.emit('room:kick', { playerId: cc.id });
+    await settle();
+    ok('only the host removes anyone', errors.length > before1, JSON.stringify(errors.slice(before1)));
+
+    a.s.emit('room:kick', { playerId: evJoin.playerId });
+    st = await until(a, (s) => s.players.length === 4, 'ev gone');
+    ok('the kicked player is off the roster', !st.players.some((p) => p.id === evJoin.playerId));
+    await settle();
+    ok('and is told rather than left there', /removed/.test(closedText || ''), String(closedText));
+
     a.s.emit('game:start');
     st = await until(a, (s) => s.phase === 'rolling', 'game start');
     ok('game starts', st.phase === 'rolling', st.phase);
@@ -126,7 +149,7 @@ async function main() {
 
     console.log(`\n${pass} passed, ${fails.length} failed`);
     for (const f of fails) console.log('  FAIL ' + f);
-    for (const c of [a, b, cc, d]) c.s.close();
+    for (const c of [a, b, cc, d, ev]) c.s.close();
     process.exit(fails.length ? 1 : 0);
 }
 
