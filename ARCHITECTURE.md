@@ -94,9 +94,15 @@ they run out of players. Grand Tour buys the deeds back by keeping the sets
 small — twelve countries of two to four rather than eight of three — so 56
 tiles hold 35 properties against Classic's 28.
 
-Still open: on a phone every board past Classic is cramped, because the board
-shrinks to fit rather than staying legible and letting the viewport move. A
-zoomed, scrollable board on narrow screens would fix all three at once.
+Past that, the board stops shrinking and the window starts moving.
+`BoardViewport` measures the space it has, works out the width at which a
+middle slot is 34px across — the floor for a name being a name rather than a
+smudge — and lays the board out at the larger of the two, scrolling if that
+overflows. A finger drags it, ctrl+wheel or a trackpad pinch resizes it, and
+Fit puts the whole board back on screen to see who owns what. Real layout
+rather than a CSS transform, so the text is rendered at the size it is read
+at. On a laptop, and for Classic on a phone, the board already clears the
+floor and none of this shows up.
 
 ## The host's door is the lobby's, and only the lobby's
 

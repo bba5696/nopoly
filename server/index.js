@@ -392,6 +392,11 @@ function scheduleIdle(room) {
             engine.expireIdle(room);
             broadcast(room);
             scheduleIdle(room);
+            // A played-for-them turn can open an auction, and only a player'''s
+            // own action used to arm that clock — so an auction started by the
+            // turn timer sat at nought seconds forever, with the whole table
+            // waiting on a bid nobody had been asked for.
+            scheduleAuction(room);
         }, delay),
     );
 }

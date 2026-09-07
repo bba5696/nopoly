@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useGame } from '@/lib/game-context';
+import { cn } from '@/lib/utils';
 import { useElementSize } from '@/lib/use-element-size';
 import { useNameSize } from '@/lib/use-name-size';
 import { gridFor } from '@/lib/board-layout';
@@ -12,7 +13,7 @@ const GAP = 3;
 /** How much deeper a ring slot is than it is wide, along the top and bottom. */
 const DEPTH_RATIO = 1.3;
 
-export function Board({ display, moving, spotlight, onSelectTile }) {
+export function Board({ display, moving, spotlight, onSelectTile, sizePx }) {
     const { state, board, current } = useGame();
     const [gridRef, size] = useElementSize();
 
@@ -65,7 +66,18 @@ export function Board({ display, moving, spotlight, onSelectTile }) {
         // wider makes the top and bottom slots chunky and the sides thin.
         // Leftover width goes to the rails instead.
         // Height budget: header (~42px) + the layout's 8px padding top and bottom.
-        <div className="relative mx-auto aspect-square w-full max-w-[min(100%,calc(100svh-58px))]">
+        //
+        // `sizePx` hands that decision to BoardViewport, which sizes the board
+        // to what its tiles need to be readable and scrolls if that is larger
+        // than the room available. Without it the board fits itself to its box,
+        // which is what every other caller wants.
+        <div
+            className={cn(
+                'relative aspect-square',
+                sizePx ? 'shrink-0' : 'mx-auto w-full max-w-[min(100%,calc(100svh-58px))]',
+            )}
+            style={sizePx ? { width: sizePx, height: sizePx } : undefined}
+        >
             <div
                 ref={gridRef}
                 className="grid size-full rounded-3xl border border-white/[0.06] bg-[#0b0b12]/80 shadow-[0_50px_110px_-60px_rgba(0,0,0,1),inset_0_1px_0_rgba(255,255,255,.04)]"

@@ -20,7 +20,7 @@ import { loadIdentity } from '@/lib/socket';
 import { useTokenPositions } from '@/lib/use-token-positions';
 import { useTableSounds } from '@/lib/use-table-sounds';
 import { useIdlePing } from '@/lib/use-idle-ping';
-import { Board } from '@/components/board/Board';
+import { BoardViewport } from '@/components/board/BoardViewport';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
 import { useTurn } from '@/lib/use-turn';
 import { PlayerRail } from '@/components/rails/PlayerRail';
@@ -246,11 +246,14 @@ export function Game() {
                 as direct children of the aside exactly as they did before. */}
             <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 xl:grid xl:grid-cols-[288px_minmax(0,1fr)_288px] xl:gap-4">
                 <main className="flex min-h-0 shrink-0 items-center justify-center xl:col-start-2 xl:row-start-1 xl:shrink">
-                    {/* Stacked, the board is capped against the viewport height
-                        rather than its width, or on a tall narrow screen it
-                        would push the panel below it off the bottom. */}
-                    <div className="w-full max-w-[min(100%,52svh)] xl:max-w-none">
-                        <Board
+                    {/* Stacked, the board gets a fixed slice of the viewport
+                        height rather than growing with its width, or on a tall
+                        narrow screen it would push the panel below it off the
+                        bottom. The board inside that slice is drawn at whatever
+                        size its tiles need and pans — see BoardViewport. */}
+                    <div className="h-[52svh] w-full xl:h-auto">
+                        <BoardViewport
+                            className="size-full xl:mx-auto xl:aspect-square xl:h-auto xl:max-w-[min(100%,calc(100svh-58px))]"
                             display={display}
                             moving={moving}
                             spotlight={spotlight}
