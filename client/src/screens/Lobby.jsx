@@ -138,39 +138,33 @@ const CORE_RULES = RULES.filter((r) => !r.beta);
 const BETA_RULES = RULES.filter((r) => r.beta);
 
 /**
- * The team picker on a roster row. Letters rather than names because the row is
- * already carrying an avatar, a name and two badges — and the letter is what
- * the team is called everywhere else in the game.
+ * Which team section a point is over, by hit-testing the sections' boxes.
+ *
+ * Sides are set by dragging a player onto one, because a row of letters was a
+ * legend you had to learn: the sections are already on screen with the names in
+ * them, so the thing you want to say — put this person with those people — is
+ * the thing you do. Measured live rather than once at the start of the drag,
+ * since the roster reflows the moment a row lifts out of it.
  */
-function TeamPicker({ player, teamIds, teamColors, disabled, onPick }) {
-    return (
-        <span className="flex shrink-0 flex-wrap justify-end gap-1">
-            {teamIds.map((id) => {
-                const active = player.teamId === id;
-                return (
-                    <button
-                        key={id}
-                        type="button"
-                        disabled={disabled}
-                        title={`Move ${player.name} to team ${id}`}
-                        onClick={() => onPick(active ? null : id)}
-                        className={cn(
-                            'mono size-7 rounded-md border text-[11px] transition-colors',
-                            active ? 'text-black/85' : 'text-muted-foreground',
-                            !active && !disabled && 'hover:border-white/30 hover:text-foreground',
-                            disabled && 'cursor-default',
-                        )}
-                        style={{
-                            background: active ? teamColors[id] : 'transparent',
-                            borderColor: active ? teamColors[id] : 'rgba(255,255,255,.12)',
-                        }}
-                    >
-                        {id}
-                    </button>
-                );
-            })}
-        </span>
-    );
+/**
+ * Nudge the roster along while a row is held near its top or bottom edge. The
+ * column is its own scroller and eight sides do not fit in it — without this, a
+ * side you can't see is a side you can't drop on.
+ */
+function edgeScroll(el, y) {
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    if (y < box.top + 64) el.scrollTop -= 14;
+    else if (y > box.bottom - 64) el.scrollTop += 14;
+}
+
+function zoneAt(zones, x, y) {
+    for (const [key, el] of zones) {
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return key;
+    }
+    return null;
 }
 
 /** One line of the settings list: icon, label, explanation, control. */
@@ -215,6 +209,14 @@ export function Lobby() {
     }, [state.players.length]);
 
     const [tab, setTab] = useState('rules');
+    // The row being carried and the section under it. Both are only ever set
+    // while a drag is in flight; `dragged` is the one that outlives it, long
+    // enough to stop the drop from also counting as a click on the row.
+    const [draggingId, setDraggingId] = useState(null);
+    const [dragOver, setDragOver] = useState(null);
+    const zones = useRef(new Map());
+    const list = useRef(null);
+    const dragged = useRef(false);
     const settings = state.settings;
     const away = state.players.filter((p) => !p.connected).length;
     // Surfaced on the tab itself, so an experimental rule someone turned on
@@ -238,18 +240,22 @@ export function Lobby() {
 
     // Grouped under team headers when teams are on, one flat group otherwise —
     // so the roster you set up here is laid out the way the rail will be.
+    // Empty sides stay on screen, unlike the empty unassigned pile: a side with
+    // nobody on it is a place to drop somebody, and a pile with nobody left in
+    // it is a job finished.
     const roster = settings.teams
         ? [
-              ...teamIds
-                  .map((id) => ({
-                      key: id,
-                      teamId: id,
-                      players: state.players.filter((p) => p.teamId === id),
-                  }))
-                  .filter((g) => g.players.length),
+              ...teamIds.map((id) => ({
+                  key: id,
+                  teamId: id,
+                  players: state.players.filter((p) => p.teamId === id),
+              })),
               { key: 'unassigned', teamId: null, players: state.players.filter((p) => !p.teamId) },
-          ].filter((g) => g.players.length)
+          ].filter((g) => g.teamId || g.players.length)
         : [{ key: 'all', teamId: null, players: state.players }];
+
+    /** Only the host moves anyone, and only while there are sides to move between. */
+    const canDrag = isHost && settings.teams;
 
     // Why the button is dead, in the same words the server would use.
     const blockedReason = (() => {
@@ -260,7 +266,7 @@ export function Lobby() {
             return `${teamIds.length} teams of ${cap} can't hold ${state.players.length} players`;
         }
         if (state.players.some((p) => !p.teamId)) return 'everyone needs a team';
-        if (roster.length < 2) return 'need at least 2 teams';
+        if (new Set(state.players.map((p) => p.teamId)).size < 2) return 'need at least 2 teams';
         return null;
     })();
 
@@ -297,44 +303,119 @@ export function Lobby() {
                         scroll container. Stacked, there's no overflow rule
                         here — the parent scrolls — so letting it shrink below
                         its content spills the roster over the settings. */}
-                    <div className="scroll-thin flex shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                    <div
+                        ref={list}
+                        className="scroll-thin flex shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+                    >
                         <span className="label flex shrink-0 items-center gap-2">
                             Players ({state.players.length}/{settings.maxPlayers})
                             {/* Someone whose tab dropped still holds their seat
                                 for a moment, and a host counting heads before
                                 pressing Start should see that. */}
                             {away > 0 && <span className="text-[#ff5c7c]">{away} away</span>}
+                            {canDrag && <span className="normal-case opacity-60">drag a player onto a side</span>}
                         </span>
-                        {roster.map((group) => (
-                            <div key={group.key} className="flex shrink-0 flex-col gap-2">
-                                {group.teamId && (
+                        {roster.map((group) => {
+                            const cap = settings.maxTeamSize;
+                            const full = !!cap && !!group.teamId && group.players.length >= cap;
+                            // Lit only for a row that isn't already here — picking
+                            // somebody up shouldn't make their own side look like a
+                            // destination.
+                            const over =
+                                dragOver === group.key &&
+                                !!draggingId &&
+                                !group.players.some((p) => p.id === draggingId);
+                            return (
+                            <div
+                                key={group.key}
+                                ref={(el) => zones.current.set(group.key, el)}
+                                className={cn(
+                                    'flex shrink-0 flex-col gap-2',
+                                    canDrag && 'rounded-xl border border-dashed p-2 transition-colors',
+                                    canDrag &&
+                                        (over
+                                            ? full
+                                                ? 'border-[#ff5c7c]/60 bg-[#ff5c7c]/[0.06]'
+                                                : 'border-white/40 bg-white/[0.05]'
+                                            : 'border-white/10'),
+                                )}
+                            >
+                                {settings.teams && (
                                     <span className="label flex items-center gap-2 pt-1">
                                         <span
-                                            className="size-2 rounded-full"
-                                            style={{ background: teamColors[group.teamId] }}
+                                            className={cn('size-2 rounded-full', !group.teamId && 'border border-dashed border-white/40')}
+                                            style={{ background: group.teamId ? teamColors[group.teamId] : 'transparent' }}
                                         />
-                                        Team {group.teamId}
+                                        {group.teamId ? `Team ${group.teamId}` : 'No team'}
                                         {/* Sides are allowed to be uneven, so this
                                             is a count rather than a complaint —
                                             it's only there so the host can see the
                                             shape of the table before starting. */}
                                         <span className="normal-case opacity-70">
-                                            {group.players.length === 1 ? 'on their own' : `${group.players.length} players`}
+                                            {group.players.length === 1
+                                                ? 'on their own'
+                                                : `${group.players.length} players`}
+                                            {full && ' · full'}
                                         </span>
                                     </span>
+                                )}
+                                {!group.players.length && (
+                                    <div className="rounded-xl border border-dashed border-white/10 px-4 py-3 text-center text-[13px] text-muted-foreground">
+                                        {canDrag ? 'drag someone here to start this side' : 'nobody yet'}
+                                    </div>
                                 )}
                                 {group.players.map((p) => (
                                     <motion.div
                                         layout
                                         key={p.id}
+                                        drag={canDrag}
+                                        // Back where it came from on a bad drop,
+                                        // and no throwing: this is a list, not a
+                                        // physics toy.
+                                        dragSnapToOrigin
+                                        dragMomentum={false}
+                                        dragElastic={0.12}
+                                        whileDrag={{ scale: 1.02, zIndex: 40, cursor: 'grabbing' }}
+                                        onDragStart={() => {
+                                            dragged.current = true;
+                                            setDraggingId(p.id);
+                                        }}
+                                        onDrag={(e, info) => {
+                                            const y = info.point.y - window.scrollY;
+                                            edgeScroll(list.current, y);
+                                            setDragOver(zoneAt(zones.current, info.point.x - window.scrollX, y));
+                                        }}
+                                        onDragEnd={(e, info) => {
+                                            const key = zoneAt(
+                                                zones.current,
+                                                info.point.x - window.scrollX,
+                                                info.point.y - window.scrollY,
+                                            );
+                                            setDraggingId(null);
+                                            setDragOver(null);
+                                            // Cleared late, because the click the
+                                            // drop generates arrives after this.
+                                            setTimeout(() => {
+                                                dragged.current = false;
+                                            }, 120);
+                                            const teamId = key === 'unassigned' ? null : key;
+                                            if (key && teamId !== p.teamId) send('room:team', { playerId: p.id, teamId });
+                                        }}
                                         // Your own row opens your profile. Nobody
                                         // else's does anything, so there's no
                                         // mis-tap to make.
                                         role={p.id === playerId ? 'button' : undefined}
-                                        onClick={p.id === playerId ? () => setProfileOpen(true) : undefined}
+                                        onClick={
+                                            p.id === playerId
+                                                ? () => {
+                                                      if (!dragged.current) setProfileOpen(true);
+                                                  }
+                                                : undefined
+                                        }
                                         className={cn(
                                             'flex shrink-0 items-center gap-3 rounded-xl border px-4 py-3',
                                             p.id === playerId && 'cursor-pointer transition-colors hover:border-white/40',
+                                            canDrag && 'cursor-grab',
                                         )}
                                         style={{ borderColor: alpha(p.color, 0.35), background: alpha(p.color, 0.07) }}
                                     >
@@ -352,15 +433,6 @@ export function Lobby() {
                                             </span>
                                         )}
                                         {p.id === state.hostId && <Crown className="size-4 shrink-0 text-[#ffb648]" />}
-                                        {settings.teams && (
-                                            <TeamPicker
-                                                player={p}
-                                                teamIds={teamIds}
-                                                teamColors={teamColors}
-                                                disabled={!isHost}
-                                                onPick={(teamId) => send('room:team', { playerId: p.id, teamId })}
-                                            />
-                                        )}
                                         {/* Only in the lobby, and only for
                                             somebody else. Once the game starts
                                             this is a vote instead. */}
@@ -377,7 +449,8 @@ export function Lobby() {
                                     </motion.div>
                                 ))}
                             </div>
-                        ))}
+                            );
+                        })}
                         {state.players.length < settings.maxPlayers && (
                             <div className="flex shrink-0 items-center justify-center rounded-xl border border-dashed border-white/12 px-4 py-4 text-[15px] text-muted-foreground">
                                 empty seat — share the code

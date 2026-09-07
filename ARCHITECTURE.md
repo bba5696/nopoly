@@ -72,7 +72,10 @@ The shape of the sides is two numbers the host sets: how many sides are in play
 (`maxTeams`) and the most one may hold (`maxTeamSize`, zero for no limit). They
 are limits rather than a layout, but between them they say what to do — four
 sides out of twelve players deals three each, six sides deals pairs — so the
-deal, the picker's letters and the start check all read the same two numbers.
+deal, the sections the lobby lays out and the start check all read the same two
+numbers. Sides are set by dragging a player onto one: the lobby draws every
+letter in play as a section, empty ones included, so an empty side is simply
+somewhere to drop somebody.
 Changing either re-deals, because the alternative is leaving people on a letter
 that is no longer in play and making the host go find them.
 
