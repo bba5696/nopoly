@@ -86,13 +86,15 @@ is derived from the length of the layout, so the grid, the corners and the lap
 all follow from how many tiles are in it. What does not scale is the drawing.
 The ring is a square sized to the window, so every tile added takes width off
 every other one — at sixteen tiles a side the names break mid-word on a laptop
-and a phone is hopeless. Fourteen a side (56 tiles) is the practical ceiling.
+and a phone is hopeless. That was the ceiling until the viewport below, which
+lifts it by letting the board be bigger than the window.
 
-That caps how much property a board can carry, which is the thing a big table
-actually needs: twelve people on a forty-tile board run out of deeds long before
-they run out of players. Grand Tour buys the deeds back by keeping the sets
-small — twelve countries of two to four rather than eight of three — so 56
-tiles hold 35 properties against Classic's 28.
+What a big table actually needs is deeds: twelve people on a forty-tile board
+run out of property long before they run out of players. Grand Tour is 64 tiles
+and 40 deeds over sixteen countries, mostly pairs — ten sets of two, four of
+three, two of four — because a table of twelve rarely assembles three of
+anything by luck, and a board where nobody completes a set is a board where
+nobody builds.
 
 Past that, the board stops shrinking and the window starts moving.
 `BoardViewport` measures the space it has, works out the width at which a

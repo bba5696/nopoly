@@ -13,6 +13,7 @@
 
 export const FLAG_SRC = {
     mexico: '/flags/mexico.png',
+    lebanon: '/flags/lebanon.png',
     brazil: '/flags/brazil.png',
     egypt: '/flags/egypt.png',
     palestine: '/flags/palestine.png',
@@ -22,7 +23,9 @@ export const FLAG_SRC = {
     china: '/flags/china.png',
     france: '/flags/france.png',
     india: '/flags/india.png',
-    turkey: '/flags/turkey.png',
+    pakistan: '/flags/pakistan.png',
+    indonesia: '/flags/indonesia.png',
+    australia: '/flags/australia.png',
     japan: '/flags/japan.png',
     uk: '/flags/uk.png',
     usa: '/flags/usa.png',
