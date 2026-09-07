@@ -49,6 +49,9 @@ function makeTiles(board) {
         houseCost,
         // Only tax tiles carry this: { amount } or { percent } of net worth.
         tax: type === 'tax' ? extra || { amount: 100 } : null,
+        // And only landmarks this: { startBonus } or { rentOff }, kept for
+        // whoever stands on the tile rather than for the tile itself.
+        boon: type === 'landmark' ? extra || null : null,
         ownerId: null,
         houses: 0,
         // What the last auction says this is worth, as a share of `price`.

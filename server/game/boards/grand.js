@@ -3,25 +3,26 @@
 // Built for a full table, and sized by what a person will actually look at:
 // sixty-four tiles fit once the board could pan, and were still too much board.
 // Thirteen a side is a lap half again as long as Classic's, twelve countries
-// against eight, and thirty-one deeds against twenty-eight — enough that
+// against eight, and thirty deeds against twenty-eight — enough that
 // twelve people each hold something worth trading.
 //
-// Mostly pairs, deliberately: seven sets of two, three of three and two of
+// Mostly pairs, deliberately: eight sets of two, two of three and two of
 // four. A pair completes quickly, which is the point when the deeds are spread
 // across twelve people — a table this size rarely assembles a set of three by
 // luck, and a board where nobody ever builds is a board where nothing happens.
 // Italy and China are the fours, and the ones worth fighting over.
 //
-// Four exchange squares, one a side: the market where a share in somebody
-// else's country is bought — see the engine's SHARE_CUT and ARCHITECTURE.md.
-// They are what the deeds a shorter board cannot carry are traded for.
+// Three exchange squares, where a share in somebody else's country is bought,
+// and two landmarks, which cost nothing and are claimed by standing on them.
+// Between them they are what the deeds a shorter ring cannot carry are traded
+// for — see the engine's SHARE_CUT and boonsOf, and ARCHITECTURE.md.
 //
 // Layout tuple: [name, type, groupId, price, rent[], houseCost, extra]
 
 const GROUPS = {
     lebanon: { name: 'Lebanon', color: '#ef4444', size: 2 },
     brazil: { name: 'Brazil', color: '#eab308', size: 3 },
-    egypt: { name: 'Egypt', color: '#f97316', size: 3 },
+    egypt: { name: 'Egypt', color: '#f97316', size: 2 },
     palestine: { name: 'Palestine', color: '#14b8a6', size: 3 },
     bangladesh: { name: 'Bangladesh', color: '#a3e635', size: 2 },
     pakistan: { name: 'Pakistan', color: '#10b981', size: 2 },
@@ -46,7 +47,7 @@ const LAYOUT = [
     ['Rio', 'property', 'brazil', 90, [6, 30, 90, 270, 400, 550], 50],
     ['Solar Company', 'utility', 'utility', 150, null, 0],
     ['Luxor', 'property', 'egypt', 100, [8, 40, 100, 300, 450, 600], 50],
-    ['Giza', 'property', 'egypt', 100, [8, 40, 100, 300, 450, 600], 50],
+    ['The Pyramids', 'landmark', null, 0, null, 0, { startBonus: 25 }],
     ['Cairo', 'property', 'egypt', 110, [8, 40, 100, 300, 450, 600], 50],
     // top-right corner, then the right column top to bottom
     ['In Jail / Just Visiting', 'corner', null, 0, null, 0],
@@ -80,12 +81,12 @@ const LAYOUT = [
     ['Go to Jail', 'corner', null, 0, null, 0],
     ['Shenzhen', 'property', 'china', 220, [18, 90, 250, 700, 875, 1050], 150],
     ['Guangzhou', 'property', 'china', 220, [18, 90, 250, 700, 875, 1050], 150],
-    ['Exchange', 'exchange', null, 0, null, 0],
     ['Beijing', 'property', 'china', 240, [20, 100, 300, 750, 925, 1100], 150],
     ['Shanghai', 'property', 'china', 240, [20, 100, 300, 750, 925, 1100], 150],
     ['JFK Airport', 'airport', 'airport', 200, null, 0],
     ['Bandung', 'property', 'indonesia', 260, [22, 110, 330, 800, 975, 1150], 150],
     ['Jakarta', 'property', 'indonesia', 260, [22, 110, 330, 800, 975, 1150], 150],
+    ['Uluru', 'landmark', null, 0, null, 0, { rentOff: 10 }],
     ['Melbourne', 'property', 'australia', 300, [26, 130, 390, 900, 1100, 1275], 200],
     ['Sydney', 'property', 'australia', 300, [26, 130, 390, 900, 1100, 1275], 200],
     ['San Francisco', 'property', 'usa', 400, [50, 200, 600, 1400, 1700, 2000], 250],
@@ -95,7 +96,7 @@ const LAYOUT = [
 module.exports = {
     id: 'grand',
     name: 'Grand Tour',
-    tagline: 'Twelve countries, four exchanges, and deeds enough for a full table.',
+    tagline: 'Twelve countries, an exchange on every side, and two landmarks nobody can buy.',
     groups: GROUPS,
     layout: LAYOUT,
     airportRent: [30, 70, 150, 300],

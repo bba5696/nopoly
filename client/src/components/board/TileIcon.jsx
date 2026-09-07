@@ -42,6 +42,18 @@ const ICONS = {
             </>
         ),
     },
+    landmark: {
+        glow: '#ffd166',
+        paths: (
+            <>
+                {/* A monument on a plinth: whatever the tile is called, the
+                    shape says "somewhere worth reaching". */}
+                <path d="M12 3.2 19.2 16H4.8z" fill="#ffd166" />
+                <path d="M12 7.4 16.4 16H7.6z" fill="#f2a93b" />
+                <rect x="3.6" y="16.4" width="16.8" height="2.6" rx="1.1" fill="#ffe6a8" />
+            </>
+        ),
+    },
     chest: {
         glow: '#ffa23a',
         paths: (

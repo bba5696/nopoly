@@ -1,8 +1,12 @@
 // A longer 48-tile loop: 13x13, corners every 12 tiles.
 //
-// Ten countries instead of eight, a third utility, four Treasures and an
-// Earnings Tax that takes a share of net worth rather than a flat fee — so the
-// leader pays the most.
+// Ten countries instead of eight, a third utility, and an Earnings Tax that
+// takes a share of net worth rather than a flat fee — so the leader pays the
+// most.
+//
+// One exchange and one landmark, where Grand Tour has three and two: enough
+// that a longer game meets both, not so many that this stops being the board
+// people already know.
 //
 // Layout tuple: [name, type, groupId, price, rent[], houseCost, extra]
 
@@ -42,14 +46,14 @@ const LAYOUT = [
     ['Rome', 'property', 'italy', 160, [12, 60, 180, 500, 700, 900], 100],
     ['MUC Airport', 'airport', 'airport', 200, null, 0],
     ['Frankfurt', 'property', 'germany', 180, [14, 70, 200, 550, 750, 950], 100],
-    ['Treasure', 'chest', null, 0, null, 0],
+    ['Exchange', 'exchange', null, 0, null, 0],
     ['Munich', 'property', 'germany', 180, [14, 70, 200, 550, 750, 950], 100],
     ['Gas Company', 'utility', 'utility', 150, null, 0],
     ['Berlin', 'property', 'germany', 200, [16, 80, 220, 600, 800, 1000], 100],
     // bottom-right corner, then the bottom row right to left
     ['Vacation', 'corner', null, 0, null, 0],
     ['Shenzhen', 'property', 'china', 220, [18, 90, 250, 700, 875, 1050], 150],
-    ['Surprise', 'chance', null, 0, null, 0],
+    ['Great Wall', 'landmark', null, 0, null, 0, { startBonus: 25 }],
     ['Beijing', 'property', 'china', 220, [18, 90, 250, 700, 875, 1050], 150],
     ['Treasure', 'chest', null, 0, null, 0],
     ['Shanghai', 'property', 'china', 240, [20, 100, 300, 750, 925, 1100], 150],
@@ -77,7 +81,7 @@ const LAYOUT = [
 module.exports = {
     id: 'worldwide',
     name: 'Worldwide',
-    tagline: 'A longer lap, a third utility, and a tax that scales with your worth.',
+    tagline: 'A longer lap, a share market, and a tax that scales with your worth.',
     groups: GROUPS,
     layout: LAYOUT,
     airportRent: [25, 50, 100, 200],

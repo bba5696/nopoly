@@ -32,8 +32,8 @@ function atExchange(r, player) {
 {
     const { r } = mk();
     const exchanges = r.tiles.filter((t) => t.type === 'exchange');
-    ok('grand tour has four exchanges', exchanges.length === 4, String(exchanges.length));
-    ok('one per side', new Set(exchanges.map((t) => Math.floor(t.id / 13))).size === 4);
+    ok('grand tour has three exchanges', exchanges.length === 3, String(exchanges.length));
+    ok('spread around the ring', new Set(exchanges.map((t) => Math.floor(t.id / 13))).size === 3);
     // Italy: 170 + 170 + 180 + 190 = 710, a fifth of it to the nearest ten.
     ok('a share is a fifth of the country', e.sharePrice(r, 'italy') === 140, String(e.sharePrice(r, 'italy')));
     ok('the cheap sets are cheap', e.sharePrice(r, 'lebanon') === 20, String(e.sharePrice(r, 'lebanon')));
@@ -222,6 +222,86 @@ function atExchange(r, player) {
     ok('the state carries the shares', st.shares.length === 1 && st.shares[0].groupId === 'china');
     ok('and what one costs', st.sharePrices.china === e.sharePrice(r, 'china'));
     ok('and the terms', st.shareCut === 0.25 && st.sharesPerGroup === 2 && st.buybackMult === 1.5);
+}
+
+/* -------------------------------------------------- landmarks, which are free */
+{
+    const { r, p } = mk();
+    const pyramids = r.tiles.find((t) => t.name === 'The Pyramids');
+    const uluru = r.tiles.find((t) => t.name === 'Uluru');
+    ok('grand tour has two landmarks', r.tiles.filter((t) => t.type === 'landmark').length === 2);
+    ok('and they carry their boon', !!pyramids.boon.startBonus && !!uluru.boon.rentOff);
+
+    const cash = p.Cy.cash;
+    p.Cy.position = pyramids.id;
+    e.resolveLanding(r, p.Cy, [1, 1]);
+    ok('standing on one claims it', p.Cy.landmarks.includes(pyramids.id));
+    ok('it costs nothing', p.Cy.cash === cash, String(p.Cy.cash));
+    ok('and says what it gives', r.log.some((l) => /reached The Pyramids/.test(l.text || l)));
+    ok('the boon adds up', e.boonsOf(r, p.Cy).startBonus === 25, String(e.boonsOf(r, p.Cy).startBonus));
+
+    e.resolveLanding(r, p.Cy, [1, 1]);
+    ok('twice is once', p.Cy.landmarks.length === 1);
+
+    // Not a race: the next person to reach it gets the same thing.
+    p.Bo.position = pyramids.id;
+    e.resolveLanding(r, p.Bo, [1, 1]);
+    ok('everybody can have it', p.Bo.landmarks.includes(pyramids.id));
+    ok('and Cy still has it', p.Cy.landmarks.includes(pyramids.id));
+
+    // From the last tile every roll wraps, so passing Start needs no luck.
+    const paid = (player) => {
+        player.position = r.tiles.length - 1;
+        player.cash = 0;
+        r.turnIndex = r.players.indexOf(player);
+        r.phase = 'rolling';
+        r.hasRolled = false;
+        r.doublesCount = 0;
+        e.rollDice(r, player.id);
+        return player.cash;
+    };
+    // Whatever they land on may charge them, so this is a floor rather than an
+    // equality: what matters is that the landmark's $25 is in there.
+    ok('Start pays the bonus on top', paid(p.Cy) >= 225 || p.Cy.debt, String(p.Cy.cash));
+    ok('and pays the plain rate without one', paid(p.Ada) <= 200 + 0 || !!p.Ada.debt, String(p.Ada.cash));
+    ok(
+        'the feed says what was paid',
+        r.log.some((l) => /passed Start \(\+\$225\)/.test(l.text || l)),
+        '',
+    );
+}
+
+/* ------------------------------------------- the discount comes off the rent */
+{
+    const { r, p } = mk();
+    const rome = r.tiles.find((t) => t.name === 'Rome');
+    const uluru = r.tiles.find((t) => t.name === 'Uluru');
+    rome.ownerId = p.Ada.id;
+    p.Ada.properties.push(rome.id);
+    p.Bo.landmarks.push(uluru.id);
+    ok('ten per cent off', e.boonsOf(r, p.Bo).rentOff === 10);
+
+    const boBefore = p.Bo.cash;
+    const adaBefore = p.Ada.cash;
+    p.Bo.position = rome.id;
+    r.turnIndex = r.players.indexOf(p.Bo);
+    e.resolveLanding(r, p.Bo, [3, 4]);
+    // Rome's book rent is 15; a tenth off, rounded, is 14.
+    ok('the payer pays less', boBefore - p.Bo.cash === 14, String(boBefore - p.Bo.cash));
+    ok('and the owner gets what was paid', p.Ada.cash - adaBefore === 14, String(p.Ada.cash - adaBefore));
+}
+
+/* ---------------------------------------------- the other boards carry theirs */
+{
+    const { BOARDS } = require('../game/board');
+    const counts = (id) => {
+        const c = {};
+        for (const t of BOARDS[id].layout) c[t[1]] = (c[t[1]] || 0) + 1;
+        return c;
+    };
+    ok('classic stays as it was', !counts('classic').exchange && !counts('classic').landmark);
+    ok('worldwide gets one of each', counts('worldwide').exchange === 1 && counts('worldwide').landmark === 1);
+    ok('grand tour three and two', counts('grand').exchange === 3 && counts('grand').landmark === 2);
 }
 
 console.log(`\n${pass} passed, ${fails.length} failed`);

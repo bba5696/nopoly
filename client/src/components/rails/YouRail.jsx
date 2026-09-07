@@ -115,6 +115,9 @@ export function YouRail({ onOpenTile }) {
     // number, not a constant repeated here.
     const mine = (state.shares || []).filter((sh) => sh.holderId === me.id);
     const cutLabel = `${Math.round((state.shareCut ?? 0.25) * 100)}%`;
+    // Landmarks are permanent and unsellable, so this is a record rather than a
+    // control — what they give, in the words the board used.
+    const landmarks = (me.landmarks || []).map((id) => state.tiles[id]).filter(Boolean);
 
     return (
         <>
@@ -156,6 +159,20 @@ export function YouRail({ onOpenTile }) {
             {/* Only on a board that has an exchange, and only once you hold
                 something — an empty panel explaining a mechanic you haven't met
                 is a panel in the way. */}
+            {!!landmarks.length && (
+                <section className="panel flex flex-col gap-1.5 p-4">
+                    <span className="label">Landmarks ({landmarks.length})</span>
+                    {landmarks.map((t) => (
+                        <span key={t.id} className="flex items-baseline justify-between gap-3 text-[13px]">
+                            <span className="truncate text-[#ffd166]">{t.name}</span>
+                            <span className="mono shrink-0 text-[11px] text-muted-foreground">
+                                {t.boon?.startBonus ? `+$${t.boon.startBonus} at Start` : `-${t.boon?.rentOff}% rent`}
+                            </span>
+                        </span>
+                    ))}
+                </section>
+            )}
+
             {!!mine.length && (
                 <section className="panel flex flex-col">
                     <header className="panel-divider flex items-center justify-between px-4 py-3">

@@ -53,6 +53,19 @@ const TEAM_PAIR = 2;
  * shareholder cannot be robbed, only bought out at a profit, and the owner is
  * never taxed forever, only expensively.
  */
+/**
+ * Landmarks: the one thing on the board money cannot buy.
+ *
+ * Everything else here rewards being ahead — rent needs deeds, shares need
+ * cash, and the player who started badly is priced out of both. A landmark is
+ * claimed by standing on it, costs nothing, and is not exclusive: everyone who
+ * lands there keeps it for the rest of the game. It is the one race a losing
+ * player can still win, and it takes nothing from anybody to do it.
+ *
+ * Two kinds, named in the layout's `extra`: a bigger payout every time you pass
+ * Start, or a standing discount on rent you pay. Both are permanent, both stack
+ * with a second landmark of the same kind, and neither can be traded or taken.
+ */
 const SHARE_CUT = 0.25;
 const SHARES_PER_GROUP = 2;
 /** A share's price, as a fraction of what the country's deeds cost together. */
@@ -374,6 +387,26 @@ function ownsFullGroup(room, playerId, groupId) {
     return tiles.length > 0 && tiles.every((t) => sameSide(room, t.ownerId, playerId));
 }
 
+/**
+ * What a player's landmarks add up to. Read fresh from the tiles each time
+ * rather than kept as a running total, so a snapshot written before landmarks
+ * existed, or a board swapped underneath a room, cannot leave a stale bonus
+ * attached to somebody.
+ */
+function boonsOf(room, player) {
+    let startBonus = 0;
+    let rentOff = 0;
+    for (const id of player.landmarks || []) {
+        const boon = room.tiles[id]?.boon;
+        if (!boon) continue;
+        startBonus += boon.startBonus || 0;
+        rentOff += boon.rentOff || 0;
+    }
+    // Half off is as far as it goes, however many landmarks a long game hands
+    // out — rent that rounds to nothing would stop the board working.
+    return { startBonus, rentOff: Math.min(rentOff, 50) };
+}
+
 /** Every share out in a country. Guarded for rooms restored from older saves. */
 const sharesIn = (room, groupId) => (room.shares || []).filter((sh) => sh.groupId === groupId);
 /** Every share one player holds. */
@@ -576,6 +609,9 @@ function addPlayer(room, { name, playerId, initials, color }) {
         // rather than a statistic.
         stalls: 0,
         lastStallAt: null,
+        // Landmarks stood on, by tile id. Kept as ids rather than as totals so
+        // the client can say which ones, and so landing twice is free.
+        landmarks: [],
     };
     room.players.push(player);
     // A watcher taking a seat when the lobby reopens after a rematch.
@@ -1205,8 +1241,9 @@ function movePlayerTo(room, player, target, { collectStart = true, direct = fals
     const to = ((target % size) + size) % size;
     const passedStart = collectStart && !direct && to < from;
     if (passedStart) {
-        player.cash += room.settings.passStartBonus;
-        log(room, `${player.name} passed Start (+$${room.settings.passStartBonus})`);
+        const paid = room.settings.passStartBonus + boonsOf(room, player).startBonus;
+        player.cash += paid;
+        log(room, `${player.name} passed Start (+$${paid})`);
     }
     player.position = to;
     room.moveSeq += 1;
@@ -1284,6 +1321,15 @@ function resolveLanding(room, player, dice) {
         payBank(room, player, taxFor(room, player, tile), tile.name);
         return;
     }
+    if (tile.type === 'landmark') {
+        // Free, and not a race anybody loses: the second visitor gets the same
+        // as the first. Only the second visit by the same person is nothing.
+        if (!player.landmarks.includes(tile.id)) {
+            player.landmarks.push(tile.id);
+            log(room, `${player.name} reached ${tile.name} — ${landmarkBlurb(tile)}`);
+        }
+        return;
+    }
     if (tile.type === 'exchange') {
         // Nothing is forced here: the screen opens, and skipping it is a
         // button. Landing is only the gate — shares can't be bought from the
@@ -1318,7 +1364,11 @@ function resolveLanding(room, player, dice) {
         log(room, `${owner.name} is in prison — no rent on ${tile.name}`);
         return;
     }
-    const rent = rentFor(room, tile, owner, dice);
+    // A landmark's discount comes off before anyone is charged, so the payer
+    // pays less and the owner and any shareholders divide what is left — the
+    // discount is the payer's, not something the landlord subsidises twice.
+    const off = boonsOf(room, player).rentOff;
+    const rent = Math.round(rentFor(room, tile, owner, dice) * (1 - off / 100));
     payRent(room, player, owner, tile, rent);
 }
 
@@ -1793,6 +1843,14 @@ function sellHouse(room, playerId, tileId) {
 }
 
 /** Sell a whole (building-free) property back to the bank for what it cost. */
+/** What a landmark gives, in the words the feed and the client both use. */
+function landmarkBlurb(tile) {
+    const boon = tile.boon || {};
+    if (boon.startBonus) return `+$${boon.startBonus} every time they pass Start`;
+    if (boon.rentOff) return `${boon.rentOff}% off every rent they pay`;
+    return 'nothing at all';
+}
+
 /** A country's name, for the log — the id is a slug nobody says out loud. */
 const groupName = (room, groupId) => groupsOf(room)[groupId]?.name || groupId;
 
@@ -2540,6 +2598,8 @@ module.exports = {
     SHARE_CUT,
     SHARES_PER_GROUP,
     sharePrice,
+    boonsOf,
+    landmarkBlurb,
     sharesIn,
     sharesOf,
     shareValue,

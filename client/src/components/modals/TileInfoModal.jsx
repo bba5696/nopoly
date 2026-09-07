@@ -225,6 +225,20 @@ export function TileInfoModal({ tile, onClose }) {
                             and one that grows with the game. */}
                         {tile.type === 'tax' && taxRule(tile)}
                         {tile.type === 'chance' && 'Draw a Surprise card.'}
+                        {tile.type === 'exchange' &&
+                            'Land here to buy a share in any country — a quarter of every rent it collects, with the deeds left where they are.'}
+                        {tile.type === 'landmark' && (
+                            <>
+                                {tile.boon?.startBonus
+                                    ? `Stand here once and collect an extra $${tile.boon.startBonus} every time you pass Start, for the rest of the game.`
+                                    : `Stand here once and pay ${tile.boon?.rentOff}% less rent for the rest of the game.`}{' '}
+                                {/* Free, permanent, and not exclusive — worth
+                                    saying, because every other tile on the
+                                    board is one of those three things only. */}
+                                Costs nothing, and everyone who reaches it keeps it.
+                                {me?.landmarks?.includes(tile.id) && ' You have this one.'}
+                            </>
+                        )}
                         {tile.type === 'chest' && 'Draw a Treasure card.'}
                         {tile.type === 'corner' && 'Nothing happens here — unless it does.'}
                     </p>

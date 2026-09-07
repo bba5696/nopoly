@@ -136,6 +136,29 @@ belongs in the test for whether a debt can be covered rather than only in the
 ranking. A share held in your own country pays you nothing and is still worth
 buying, because it is one of the two.
 
+## Landmarks: the one square money cannot buy
+
+Everything else on the board rewards being ahead. Rent needs deeds, shares need
+cash, and a player who started badly is priced out of both — which is exactly
+the player most likely to stop playing. A landmark is claimed by standing on
+it, costs nothing, and is not exclusive: the second person to reach it gets the
+same thing the first did, and landing on it twice is worth nothing extra. It is
+the one race a losing player can still win, and winning it takes nothing from
+anybody.
+
+Two kinds, named in the layout's `extra` and carried on the tile as `boon`: a
+larger payout every time you pass Start, or a standing discount on rent you pay.
+Both are permanent and neither can be traded, sold or taken. The discount comes
+off before anyone is charged, so the payer pays less and the owner and any
+shareholders divide what is left — a discount is the payer's, not something a
+landlord pays for twice. `boonsOf` reads the totals from the tiles each time
+rather than keeping a running number on the player, so a snapshot written before
+landmarks existed cannot leave a stale bonus attached to somebody.
+
+Grand Tour carries two and three exchanges; Worldwide carries one of each,
+enough that a long game meets both without becoming a different board; Classic
+carries neither, and is left exactly as people already know it.
+
 ## The host's door is the lobby's, and only the lobby's
 
 The host can remove somebody before the game starts; after it starts the same

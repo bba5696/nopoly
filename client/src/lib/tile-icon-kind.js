@@ -25,5 +25,6 @@ export function iconKindFor(tile) {
     if (tile.type === 'chest') return 'chest';
     if (tile.type === 'airport') return 'airport';
     if (tile.type === 'exchange') return 'exchange';
+    if (tile.type === 'landmark') return 'landmark';
     return BY_NAME[tile.name] || null;
 }
