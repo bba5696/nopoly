@@ -8,10 +8,12 @@
 
 const classic = require('./boards/classic');
 const worldwide = require('./boards/worldwide');
+const grand = require('./boards/grand');
 
 const BOARDS = {
     [classic.id]: classic,
     [worldwide.id]: worldwide,
+    [grand.id]: grand,
 };
 
 const DEFAULT_BOARD = classic.id;

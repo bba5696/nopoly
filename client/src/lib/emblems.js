@@ -12,13 +12,17 @@
 // components/board/TileIcon.jsx.
 
 export const FLAG_SRC = {
+    mexico: '/flags/mexico.png',
     brazil: '/flags/brazil.png',
+    egypt: '/flags/egypt.png',
     palestine: '/flags/palestine.png',
     bangladesh: '/flags/bangladesh.png',
     italy: '/flags/italy.png',
     germany: '/flags/germany.png',
     china: '/flags/china.png',
     france: '/flags/france.png',
+    india: '/flags/india.png',
+    turkey: '/flags/turkey.png',
     japan: '/flags/japan.png',
     uk: '/flags/uk.png',
     usa: '/flags/usa.png',

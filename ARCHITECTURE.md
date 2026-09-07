@@ -79,6 +79,25 @@ somewhere to drop somebody.
 Changing either re-deals, because the alternative is leaving people on a letter
 that is no longer in play and making the host go find them.
 
+## A board is as big as a square can be
+
+Boards live in `server/game/boards`, and adding one is adding a file: geometry
+is derived from the length of the layout, so the grid, the corners and the lap
+all follow from how many tiles are in it. What does not scale is the drawing.
+The ring is a square sized to the window, so every tile added takes width off
+every other one — at sixteen tiles a side the names break mid-word on a laptop
+and a phone is hopeless. Fourteen a side (56 tiles) is the practical ceiling.
+
+That caps how much property a board can carry, which is the thing a big table
+actually needs: twelve people on a forty-tile board run out of deeds long before
+they run out of players. Grand Tour buys the deeds back by keeping the sets
+small — twelve countries of two to four rather than eight of three — so 56
+tiles hold 35 properties against Classic's 28.
+
+Still open: on a phone every board past Classic is cramped, because the board
+shrinks to fit rather than staying legible and letting the viewport move. A
+zoomed, scrollable board on narrow screens would fix all three at once.
+
 ## The host's door is the lobby's, and only the lobby's
 
 The host can remove somebody before the game starts; after it starts the same
