@@ -1,6 +1,7 @@
 # nopoly
 
-A real-time multiplayer property-trading board game for a private friend group.
+Two real-time multiplayer games for a private friend group, sharing one server:
+**nopoly**, a property-trading board game, and **nouno**, a shedding card game.
 No player caps, no paywalls, no ads.
 
 ![The board mid-game](docs/board.jpg)
@@ -11,7 +12,13 @@ original.
 
 ## What it does
 
-- **Two boards**, swappable in the lobby, and adding another is adding one file
+Both games share everything that isn't the rules: room codes, reconnecting into
+your seat, presence, chat, kick, spectating, the turn clock, snapshots, past
+games and share links. Which game a room is playing is picked when it is made.
+
+### nopoly — the board
+
+- **Three boards**, swappable in the lobby, and adding another is adding one file
 - **The full game** — buy, rent, colour sets, houses and hotels, jail, cards,
   auctions, trades, bankruptcy
 - **Teams (beta)** — up to eight sides of any size, set in the lobby, sharing
@@ -29,6 +36,21 @@ original.
   bench at `/sounds.html`
 - **End-of-game stats**, with net worth charted over the whole game
 
+### nouno — the cards
+
+- **A hundred and eight cards** in four suits: numbers, Halt, Turn, Plus Two,
+  and the two wilds. Classic counts, our own names and artwork
+- **Your hand is yours** — the state the room is sent carries how many cards
+  everyone holds and never what they are; the cards themselves go down a
+  private channel to one person
+- **A table you sit at**, with everyone else round the far side of it and your
+  own hand fanned in front of you
+- **Last card** to call before you play your second-to-last one, or draw two
+  for the silence
+- Everything above it inherits: reconnect, spectate, kick, the turn clock
+  (which draws and passes for anyone who has gone quiet), past games and share
+  links
+
 ![The lobby](docs/lobby.jpg)
 
 ## Stack
@@ -37,9 +59,16 @@ original.
 Recharts
 **Server** — Node, Express 5, Socket.IO 4
 
-The server is authoritative: every rule lives in `server/game/engine.js`, and
-`server/index.js` only wires sockets to it and broadcasts the resulting state.
-Clients render what they're told and never decide an outcome themselves.
+The server is authoritative: the rules live in `server/game/` and
+`server/index.js` only wires sockets to them and broadcasts the resulting
+state. Clients render what they're told and never decide an outcome themselves.
+
+A room carries which game it is playing, and a rules module owns the handful of
+things a game cannot share — what a fresh room holds, what a player carries,
+what starting means, what the turn clock does for someone who has gone quiet,
+what happens to a player who is removed, and which slice of the state the
+client is sent. `server/game/rules.js` is the registry; everything else in
+`engine.js` is common ground.
 
 Game state is held **in memory** — there is no database, so the server cannot
 run as more than one process. That is a deliberate trade rather than an
@@ -63,7 +92,7 @@ of quietly publishing the site.
 ## Tests
 
 ```bash
-cd server && npm test        # 24 suites
+cd server && npm test        # 29 suites
 npm test idle                # only suites matching "idle"
 ```
 

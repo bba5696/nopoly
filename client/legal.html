@@ -149,8 +149,10 @@
             <p class="sub">By loading or playing nopoly, you agree to what follows. If you don't, please close the tab — that's the whole enforcement mechanism.</p>
 
             <p>
-                nopoly ("the game", "the site") is a free, non-commercial multiplayer board game
-                made and run by one person as a personal project. These terms are between you and
+                nopoly ("the game", "the site") is a free, non-commercial multiplayer site
+                made and run by one person as a personal project. It hosts two games — a
+                property board game, and nouno, a card game — and everything below applies
+                to both. These terms are between you and
                 that person, referred to below as "we" or "us". Nothing here is sold, and no payment
                 is accepted for anything.
             </p>
@@ -203,7 +205,7 @@
 
             <h3 id="ip">Intellectual property</h3>
             <p>
-                The nopoly source code, board layouts, artwork and sounds are original work and
+                The nopoly source code, board layouts, card decks, artwork and sounds are original work and
                 remain the property of their author. The source is published on GitHub for people to
                 read; publishing it is not a grant of any licence to reuse it, and no open-source
                 licence applies unless a <code>LICENSE</code> file in that repository says otherwise.
@@ -215,6 +217,12 @@
                 by <a href="https://richup.io" rel="noopener noreferrer">richup.io</a>. Board layouts,
                 tile names, card text, rules and artwork here are our own. Any trademarks mentioned
                 belong to their respective owners.
+            </div>
+            <div class="note">
+                <strong>Not affiliated with Mattel.</strong> nouno is not associated with,
+                endorsed by, sponsored by or derived from <em>UNO</em> or any Mattel product.
+                It is an original take on the shedding card game, a family of games far older
+                than any trademark in it. Its suits, card names, artwork and wording are our own.
             </div>
             <p>
                 Chat messages and display names you type remain yours. By sending them you give us
@@ -322,7 +330,7 @@
                     <tr><td><code>nopoly.client</code></td><td>The random browser ID described above</td></tr>
                     <tr><td><code>nopoly:muted</code></td><td>Whether you muted the sound</td></tr>
                     <tr><td><code>nopoly:music</code></td><td>Whether you turned the music on</td></tr>
-                    <tr><td><code>nopoly.history</code></td><td>The end screens of your last 25 finished games — names, colours, final standings, the net-worth chart, and any name you gave the game. Kept only on this device and never uploaded; delete a game from the Past games screen, or all of them by clearing site data</td></tr>
+                    <tr><td><code>nopoly.history</code></td><td>The end screens of your last 25 finished games — names, colours, final standings, the chart the end screen drew, and any name you gave the game. Kept only on this device and never uploaded; delete a game from the Past games screen, or all of them by clearing site data</td></tr>
                 </tbody>
             </table>
             <p>
@@ -333,9 +341,11 @@
 
             <h3 id="sharing">Sharing a finished game</h3>
             <p>
-                The <strong>Link</strong> button on an end screen sends that game's result to the
-                nopoly server so a link can show it: names, colours, final standings and the
-                net-worth chart. It is held in memory for about an hour and then dropped,
+                The <strong>Share</strong> button on an end screen sends that game's result to the
+                nopoly server so a link can show it, and copies the link to your clipboard: names,
+                colours, final standings and the chart the end screen drew. Nothing that was secret
+                during the game is sent — a card game's result carries how many cards people were
+                left holding, never which ones. It is held in memory for about an hour and then dropped,
                 whether anyone opened it or not — it is never written to disk and never indexed,
                 and there is no way to list shared games, so the link is the only way to reach it.
                 Anyone who has the link can see it while it lasts, including people who are not in
@@ -345,7 +355,8 @@
             <h3 id="retention">How long anything is kept</h3>
             <ul>
                 <li><strong>Live games</strong> — held in the server's memory only, and never written to a database. A restart ends them. So does the server's own cleanup, which discards a room <strong>30 minutes</strong> after the last player disconnects, <strong>30 minutes</strong> after the game finishes, or after <strong>3 hours</strong> in which nobody in it has done anything — whichever comes first. Everything in that room, chat included, goes with it.</li>
-                <li><strong>The crash snapshot</strong> — every 15 seconds, and on shutdown, active games are written to a file on the server so a restart doesn't end everyone's evening. It contains player names, chat and board state. It is deleted the moment it is restored, and ignored and discarded if it is more than <strong>6 hours</strong> old.</li>
+                <li><strong>The crash snapshot</strong> — every 15 seconds, and on shutdown, active games are written to a file on the server so a restart doesn't end everyone's evening. It contains player names, chat, and the state of the game in progress — which,
+                    for a card game, means the cards in each player's hand. It is deleted the moment it is restored, and ignored and discarded if it is more than <strong>6 hours</strong> old.</li>
                 <li><strong>Failed password attempts</strong> — an IP address is held in memory for up to <strong>10 minutes</strong> after a wrong password, purely to apply the cooldown, then dropped.</li>
                 <li><strong>Web server access logs</strong> — standard request logs, kept short-term for security and debugging, then rotated away.</li>
             </ul>

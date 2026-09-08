@@ -153,6 +153,54 @@ scoreboard would be theatre, and a connection would put a spectator nobody
 invited into the presence count. Making a link is therefore a decision, which
 is why it is a button and not something that happens when a game ends.
 
+## One room, two games
+
+The expensive half of this project was never the property rules. It is rooms,
+codes, reconnecting into a seat, presence, chat, kick, spectating, the turn
+clock, snapshots, past games and share links — about a thousand of engine.js's
+lines and most of index.js — and none of it cares what is being played. A
+second game is worth having only if it costs the rules and nothing else.
+
+So a room carries a `game`, and `server/game/rules.js` is a registry shaped
+like `board.js`: keyed by id, a getter that falls back rather than throwing, a
+list precomputed for the picker. A rules module owns six things — `createRoom`,
+`addPlayerFields`, `startGame`, `playIdleTurn`, `removeFromPlay`, `view` — plus
+its own actions and, optionally, its own deadline. Everything else stays put.
+
+The property game is one of those modules and it lives inside engine.js,
+because `advanceTurn`, `goBankrupt` and `snapshotNetWorth` are internals and
+exporting a dozen of them to satisfy a wrapper in another file would widen the
+module's surface for nobody. What the seam is worth is not where the code sits;
+it is that engine.js no longer decides what "start" or "an idle turn" mean.
+
+`turnIndex` deliberately stayed generic. Both games have a seat order, and the
+client reads `players[turnIndex]` to know who is playing — so the whole
+context, `current` and `isMyTurn` included, works for both with no branch.
+
+An old snapshot has no `game` field and resumes as nopoly. `persist.js` needed
+no change at all: it stringifies whole rooms and validates only the code.
+
+## A hand is not a board
+
+A board is on the table and one broadcast is the whole truth. A hand is true
+for exactly one person, which is the only structural difference the card game
+makes.
+
+The state the room is sent carries `handCount` and never `hand` — built key by
+key rather than spread-and-delete, because the one line in this project that
+must never leak should not depend on how an encoder treats `undefined`. The
+cards go down a second, smaller event to one socket each.
+
+A second channel rather than a per-viewer `state`: the client is built on one
+payload replacing the whole state, and tailoring that per seat would cost a
+serialisation per player on every action to say the same thing twelve different
+ways. This is additive — a game with no secrets sets `privateFor` to null and
+`broadcast` skips the walk entirely, so nopoly pays nothing. Spectators are
+never on the channel, and `seat()` pushes a hand on the way in or a reconnecting
+player would stare at an empty fan until somebody else moved.
+
+The snapshot on disk now contains hands. It always contained everything.
+
 ## Net worth, itemised
 
 `worthOf` returns the parts and `netWorth` returns their sum, so there is one
@@ -479,7 +527,7 @@ told, because a board that silently stops answering reads as a broken server.
 
 ## Testing
 
-`server/test/` holds 24 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 29 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 
