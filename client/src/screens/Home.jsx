@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, Pencil, Scale, Volume2 } from 'lucide-react';
+import { Eye, History, Pencil, Scale, Volume2 } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -9,6 +9,8 @@ import { PresencePill } from '@/components/ui/presence';
 import { ProfileModal } from '@/components/modals/ProfileModal';
 import { loadIdentity } from '@/lib/socket';
 import { alpha, initials } from '@/lib/color';
+import { historyCount } from '@/lib/history';
+import { PastGames } from '@/screens/PastGames';
 
 export function Home() {
     const { createRoom, joinRoom, spectate, joining, connected } = useGame();
@@ -20,9 +22,17 @@ export function Home() {
     const [profileOpen, setProfileOpen] = useState(false);
     // Why the join was refused, when watching is still on the table.
     const [watchOffer, setWatchOffer] = useState(null);
+    // Games finished on this device. Counted once on mount: the list is only
+    // written to when a game ends, which cannot happen while this screen is up.
+    const [pastOpen, setPastOpen] = useState(false);
+    const [pastCount] = useState(() => historyCount());
 
     const trimmed = name.trim();
     const ready = trimmed.length > 0 && connected && !joining;
+
+    // A screen rather than a modal: it holds a whole end screen inside it,
+    // and a modal that big is a screen wearing a costume.
+    if (pastOpen) return <PastGames onClose={() => setPastOpen(false)} />;
 
     return (
         <div className="flex min-h-svh items-center justify-center p-6">
@@ -117,6 +127,15 @@ export function Home() {
                         >
                             <Volume2 className="size-3.5" /> Hear the sounds
                         </a>
+                        {pastCount > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => setPastOpen(true)}
+                                className="flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+                            >
+                                <History className="size-3.5" /> Past games ({pastCount})
+                            </button>
+                        )}
                         <a
                             href="/legal.html"
                             className="flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"

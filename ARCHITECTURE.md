@@ -108,6 +108,27 @@ rather than a CSS transform, so the text is rendered at the size it is read
 at. On a laptop, and for Classic on a phone, the board already clears the
 floor and none of this shows up.
 
+## Past games live on the device, not on the server
+
+A room is reclaimed within the hour and there is no database behind any of
+this, so a finished game used to exist only for as long as the tab stayed open.
+The history keeps the numbers the end screen was drawn from in localStorage
+instead: the last twenty-five games, each with its standings, its chart, its
+stats and whatever name it was given.
+
+The trade is deliberate. A per-device history is private by default, needs no
+endpoint, no account and no retention policy, and cannot leak a game to anyone
+who was not sitting at that browser. What it cannot be is one shared archive:
+four people who played the same game each keep their own copy, and clearing
+site data clears it. Sharing is therefore a picture rather than a link, which
+is what the share card already made for the end screen — it now carries the
+game's name, and the file is dated the day the game was played.
+
+`Scoreboard` draws the end screen from a plain record rather than from the live
+room, and both `GameOver` and the history render it. Two renderings of the same
+numbers would drift, and the point of keeping a game is looking at the screen
+you remember.
+
 ## Net worth, itemised
 
 `worthOf` returns the parts and `netWorth` returns their sum, so there is one

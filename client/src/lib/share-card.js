@@ -216,6 +216,18 @@ export function drawShareCard(canvas, card) {
     label(ctx, card.host, W - PAD, PAD + 4);
     ctx.textAlign = 'left';
 
+    // A game given a name in the history carries it here, top right under the
+    // host — the picture is the thing that gets posted, so the name people
+    // gave the game should be on it.
+    if (card.title) {
+        ctx.textAlign = 'right';
+        ctx.font = sans(19, 400);
+        ctx.fillStyle = INK;
+        const title = card.title.length > 44 ? `${card.title.slice(0, 43)}…` : card.title;
+        ctx.fillText(title, W - PAD, PAD + 34);
+        ctx.textAlign = 'left';
+    }
+
     label(ctx, card.teamLabel, PAD, PAD + 52);
     if (card.winners.length) {
         drawWinners(ctx, card.winners, PAD, PAD + 96);
@@ -261,6 +273,9 @@ export function cardFromState(state) {
     const ms = (state.stats.endedAt || Date.now()) - (state.stats.startedAt || Date.now());
     return {
         host: typeof location === 'undefined' ? 'nopoly' : location.host,
+        // When it finished, so a card made from the history is dated the day
+        // the game was played rather than the day it was exported.
+        endedAt: state.stats.endedAt || Date.now(),
         teamLabel: state.winnerTeam ? `winning team · ${state.winnerTeam}` : 'winner',
         winners: winners.map((w) => ({ name: w.name, color: w.color, initials: w.initials })),
         facts: [
@@ -289,6 +304,10 @@ export async function shareCardBlob(card) {
 }
 
 export function shareFileName(card) {
-    const who = card.winners[0]?.name?.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'game';
-    return `nopoly-${who}-${new Date().toISOString().slice(0, 10)}.png`;
+    // The name it was given, or whoever won it — either way, something you can
+    // find again in a downloads folder.
+    const slug = (text) => text.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    const who = (card.title && slug(card.title)) || slug(card.winners[0]?.name || '') || 'game';
+    const when = new Date(card.endedAt || Date.now()).toISOString().slice(0, 10);
+    return `nopoly-${who}-${when}.png`;
 }
