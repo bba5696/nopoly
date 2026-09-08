@@ -53,7 +53,7 @@ export function SharedGame({ id }) {
                     <Clock className="size-7 text-muted-foreground/70" />
                     <span className="text-xl">{state.error || 'This link has expired'}</span>
                     <p className="text-[13px] leading-snug text-muted-foreground">
-                        Shared games are held for a few minutes and then dropped — nothing is kept on the
+                        Shared games are held for an hour and then dropped — nothing is kept on the
                         server. Ask whoever sent it for a fresh link, or for the picture instead.
                     </p>
                     <Button variant="outline" className="mt-2" onClick={() => (location.href = '/')}>

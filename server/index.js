@@ -236,7 +236,8 @@ app.post('/auth/login', (req, res) => {
 // it and no use at all for showing somebody else. This is the smallest thing
 // that fixes that: the client posts the end screen it already has, the server
 // keeps it in memory under an unguessable id, and it is gone at the deadline
-// whether anybody opened it or not.
+// whether anybody opened it or not — an hour, which is long enough to post a
+// link and have people come back to it after the next game.
 //
 // Deliberately not a database. Nothing here survives a restart, nothing is
 // written to disk, and there is no way to list what exists — a link is the
@@ -248,7 +249,7 @@ app.post('/auth/login', (req, res) => {
 // final standings. Anyone with the link sees it, including on a password-gated
 // instance — that is what sharing means, and the person clicking Link is the
 // one who decided it.
-const SHARE_MS = Number(process.env.NOPOLY_SHARE_MS) || 10 * 60 * 1000;
+const SHARE_MS = Number(process.env.NOPOLY_SHARE_MS) || 60 * 60 * 1000;
 /** Everything live at once. A few hundred end screens is a few megabytes. */
 const MAX_SHARES = Number(process.env.NOPOLY_MAX_SHARES) || 300;
 const SHARES_PER_IP = Number(process.env.NOPOLY_SHARES_PER_IP) || 20;

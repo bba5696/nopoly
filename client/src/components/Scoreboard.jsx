@@ -53,6 +53,19 @@ export function ShareCard({ card, entry, flash }) {
     const [done, setDone] = useState(null);
     const [busy, setBusy] = useState(false);
     const [link, setLink] = useState(null);
+    // Shown on the row itself rather than only through `flash`: this component
+    // renders in three places and only one of them is inside the game context,
+    // so a failure that went to `flash` alone was a button that did nothing.
+    const [problem, setProblem] = useState(null);
+
+    const report = useCallback(
+        (message) => {
+            setProblem(message);
+            flash?.(message);
+            setTimeout(() => setProblem(null), 6000);
+        },
+        [flash],
+    );
 
     const build = useCallback(async () => {
         const blob = await shareCardBlob(card);
@@ -72,12 +85,12 @@ export function ShareCard({ card, entry, flash }) {
                 // A cancelled share sheet throws the same as a failure, and
                 // telling someone their own cancel went wrong is worse noise
                 // than saying nothing.
-                if (err?.name !== 'AbortError') flash?.(`Could not ${what === 'saved' ? 'save' : 'copy'} the image`);
+                if (err?.name !== 'AbortError') report(`Could not ${what === 'saved' ? 'save' : 'copy'} the image`);
             } finally {
                 setBusy(false);
             }
         },
-        [build, busy, flash],
+        [build, busy, report],
     );
 
     /**
@@ -91,6 +104,7 @@ export function ShareCard({ card, entry, flash }) {
     const makeLink = useCallback(async () => {
         if (busy || !entry) return;
         setBusy(true);
+        setProblem(null);
         try {
             const made = await createShareLink({ ...entry, nickname: card?.title || entry.nickname || '' });
             setLink(made);
@@ -121,11 +135,11 @@ export function ShareCard({ card, entry, flash }) {
             }
             setTimeout(() => setDone(null), 2600);
         } catch (err) {
-            flash?.(err.message || 'Could not make a link');
+            report(err.message || 'Could not make a link');
         } finally {
             setBusy(false);
         }
-    }, [busy, card, entry, flash]);
+    }, [busy, card, entry, report]);
 
     const canCopy = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write;
 
@@ -138,7 +152,7 @@ export function ShareCard({ card, entry, flash }) {
                 </span>
             )}
             {!!entry && (
-                <Button variant="ghost" size="sm" disabled={busy} onClick={makeLink} title="A link that works for a few minutes">
+                <Button variant="ghost" size="sm" disabled={busy} onClick={makeLink} title="A link anyone can open for the next hour">
                     <Share2 /> Share
                 </Button>
             )}
@@ -176,6 +190,9 @@ export function ShareCard({ card, entry, flash }) {
                 <Download /> Save image
             </Button>
         </div>
+        {problem && (
+            <span className="max-w-[42ch] text-right text-[11px] leading-snug text-[#ff9db2]">{problem}</span>
+        )}
         {/* Shown rather than only copied: a clipboard write can be refused,
             and a link nobody can read is a link nobody can send. */}
         {link && (

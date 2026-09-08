@@ -133,8 +133,8 @@ you remember.
 
 The history is per-device, which is no use for showing somebody else, so Link
 posts the end screen to the server. It is held in memory under an unguessable
-id and dropped at the deadline whether it was opened or not — ten minutes by
-default, `NOPOLY_SHARE_MS`. Nothing is written to disk, nothing survives a
+id and dropped at the deadline whether it was opened or not — an hour by default,
+`NOPOLY_SHARE_MS`. Nothing is written to disk, nothing survives a
 restart, and there is no endpoint that lists what exists: a link is the only
 way in, and only the person who pressed the button has one. An id that is gone
 answers 410 rather than 404, because "you are too late" and "never existed" are

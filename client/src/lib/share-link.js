@@ -26,8 +26,22 @@ export async function createShareLink(entry) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload(entry)),
     });
-    const data = await res.json().catch(() => ({}));
+    // A server that predates this route answers the single-page 404 in HTML,
+    // which is a confusing thing to report as "could not make a link" — say
+    // what it actually is, since the fix is a restart rather than a retry.
+    const body = await res.text();
+    let data = {};
+    try {
+        data = JSON.parse(body);
+    } catch {
+        throw new Error(
+            res.status === 404
+                ? 'Sharing links needs the server restarted on this deploy'
+                : `The server answered ${res.status} instead of a link`,
+        );
+    }
     if (!res.ok) throw new Error(data.error || 'Could not make a link');
+    if (!data.path) throw new Error('The server did not return a link');
     return { ...data, url: `${location.origin}${data.path}` };
 }
 
