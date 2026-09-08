@@ -111,6 +111,19 @@ export function Home() {
                             Join
                         </Button>
                     </form>
+
+                    {/* Its own button rather than a line in the footer: the
+                        games you have played are a place you go, not a
+                        footnote. Shown before you have any, because the empty
+                        state is what says the feature exists. */}
+                    <Button
+                        variant="ghost"
+                        className="text-base text-muted-foreground"
+                        style={{ height: 46 }}
+                        onClick={() => setPastOpen(true)}
+                    >
+                        <History /> Past games{pastCount > 0 ? ` (${pastCount})` : ''}
+                    </Button>
                 </div>
 
                 <div className="flex flex-col gap-2 border-t border-white/8 pt-5">
@@ -127,15 +140,6 @@ export function Home() {
                         >
                             <Volume2 className="size-3.5" /> Hear the sounds
                         </a>
-                        {pastCount > 0 && (
-                            <button
-                                type="button"
-                                onClick={() => setPastOpen(true)}
-                                className="flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-                            >
-                                <History className="size-3.5" /> Past games ({pastCount})
-                            </button>
-                        )}
                         <a
                             href="/legal.html"
                             className="flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
