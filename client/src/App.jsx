@@ -9,6 +9,8 @@ import { Home } from '@/screens/Home';
 import { Lobby } from '@/screens/Lobby';
 import { Game } from '@/screens/Game';
 import { GameOver } from '@/screens/GameOver';
+import { SharedGame } from '@/screens/SharedGame';
+import { sharedIdFromPath } from '@/lib/share-link';
 
 function Notice() {
     const { notice } = useGame();
@@ -45,6 +47,9 @@ function Router() {
  */
 export default function App() {
     const [unlocked, setUnlocked] = useState(null); // null = still deciding
+    // A shared end screen is its own page: no socket, no room, and no gate.
+    // Read once, because nothing in the app navigates to or away from it.
+    const [sharedId] = useState(() => sharedIdFromPath());
 
     const open = useCallback(() => {
         setUnlocked(true);
@@ -52,6 +57,10 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        // A shared page never opens a socket: it has nothing to say to the
+        // server beyond the one fetch, and a connection would put a spectator
+        // nobody invited into the presence count.
+        if (sharedId) return undefined;
         let live = true;
         (async () => {
             const required = await authRequired();
@@ -62,7 +71,7 @@ export default function App() {
         return () => {
             live = false;
         };
-    }, [open]);
+    }, [open, sharedId]);
 
     // A stale or revoked token is rejected at the handshake — drop it and put
     // the gate back rather than retrying forever.
@@ -81,6 +90,11 @@ export default function App() {
     // up a new build rather than logging in against a stale one.
     const updating = useLiveUpdate();
     if (updating) return <UpdateOverlay />;
+
+    // Before the gate on purpose: whoever holds the link was sent it, and
+    // asking them for the room password to look at a scoreboard would be
+    // theatre. Nothing on this page can join, chat or play.
+    if (sharedId) return <SharedGame id={sharedId} />;
 
     if (unlocked === null) return null;
     if (!unlocked) return <Gate onUnlocked={open} />;

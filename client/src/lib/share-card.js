@@ -296,6 +296,40 @@ export function cardFromState(state) {
     };
 }
 
+/**
+ * The same card, built from a saved or shared game rather than a live room.
+ *
+ * A link carries the end screen and not the picture: the picture is derived
+ * from it, so there is one description of a finished game travelling rather
+ * than two copies of the same numbers.
+ */
+export function cardFromEntry(entry) {
+    const winners = entry.players.filter((p) => entry.winnerIds.includes(p.id));
+    const ms = (entry.endedAt || Date.now()) - (entry.startedAt || entry.endedAt || Date.now());
+    return {
+        host: typeof location === 'undefined' ? 'nopoly' : location.host,
+        endedAt: entry.endedAt,
+        title: entry.nickname || undefined,
+        teamLabel: entry.winnerTeam ? `winning team · ${entry.winnerTeam}` : 'winner',
+        winners: winners.map((w) => ({ name: w.name, color: w.color, initials: w.initials })),
+        facts: [
+            `${Math.floor(ms / 60000)} min ${Math.floor((ms % 60000) / 1000)} sec`,
+            `${entry.facts.turnCount} turns`,
+            `${entry.players.length} players`,
+            `${entry.facts.trades} trades`,
+        ],
+        series: entry.players.map((p) => ({
+            name: p.name,
+            color: p.color,
+            points: (entry.series || []).map((s) => ({ turn: s.turn, value: s.values[p.id] ?? 0 })),
+        })),
+        standings: entry.players
+            .slice()
+            .sort((a, b) => Number(a.bankrupt) - Number(b.bankrupt) || b.netWorth - a.netWorth)
+            .map((p) => ({ name: p.name, color: p.color, bankrupt: p.bankrupt, netWorth: p.netWorth })),
+    };
+}
+
 /** Render to a PNG. Waits on the fonts, or the card comes out in Times. */
 export async function shareCardBlob(card) {
     await document.fonts?.ready;

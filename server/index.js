@@ -154,7 +154,7 @@ function noteRoom(ip) {
 }
 
 app.get('/health', (req, res) => {
-    res.json({ ok: true, rooms: rooms.size, ...presence() });
+    res.json({ ok: true, rooms: rooms.size, shares: shares.size, ...presence() });
 });
 
 /* ------------------------------------------------------------------ version */
@@ -226,6 +226,139 @@ app.post('/auth/login', (req, res) => {
     }
     auth.clearAttempts(ip);
     res.json({ token: auth.issueToken() });
+});
+
+/* ------------------------------------------------------- shared end screens */
+
+// A finished game, put somewhere a link can reach, for a few minutes.
+//
+// The history lives in the player's own browser, which is the right place for
+// it and no use at all for showing somebody else. This is the smallest thing
+// that fixes that: the client posts the end screen it already has, the server
+// keeps it in memory under an unguessable id, and it is gone at the deadline
+// whether anybody opened it or not.
+//
+// Deliberately not a database. Nothing here survives a restart, nothing is
+// written to disk, and there is no way to list what exists — a link is the
+// only way in, and only the person who made it has one. The cost is that a
+// share does not outlive a redeploy, which for something advertised as lasting
+// minutes is a fair trade.
+//
+// What is stored is whatever the sharer chose to share: names, colours and
+// final standings. Anyone with the link sees it, including on a password-gated
+// instance — that is what sharing means, and the person clicking Link is the
+// one who decided it.
+const SHARE_MS = Number(process.env.NOPOLY_SHARE_MS) || 10 * 60 * 1000;
+/** Everything live at once. A few hundred end screens is a few megabytes. */
+const MAX_SHARES = Number(process.env.NOPOLY_MAX_SHARES) || 300;
+const SHARES_PER_IP = Number(process.env.NOPOLY_SHARES_PER_IP) || 20;
+
+/** id -> { entry, expiresAt } */
+const shares = new Map();
+/** ip -> { count, until } — the same shape as the room and login limiters. */
+const sharesMade = new Map();
+
+const shareId = () => require('crypto').randomBytes(9).toString('base64url');
+
+function sweepShares() {
+    const now = Date.now();
+    for (const [id, rec] of shares) if (rec.expiresAt <= now) shares.delete(id);
+    for (const [ip, rec] of sharesMade) if (rec.until <= now) sharesMade.delete(ip);
+}
+setInterval(sweepShares, 60_000).unref();
+
+/**
+ * Keep only the fields the end screen draws, at bounded sizes.
+ *
+ * The body is a stranger's JSON: storing it as sent would let anyone with the
+ * URL park whatever they liked in this process's memory under the name of a
+ * game. Rebuilding it field by field costs a few lines and means what comes
+ * back out is the shape the client expects.
+ */
+function cleanShare(body) {
+    if (!body || typeof body !== 'object') return null;
+    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+    const num = (v) => (Number.isFinite(v) ? v : 0);
+    const players = Array.isArray(body.players) ? body.players.slice(0, 24) : [];
+    if (!players.length) return null;
+
+    const entry = {
+        nickname: str(body.nickname, 60),
+        startedAt: num(body.startedAt) || null,
+        endedAt: num(body.endedAt) || Date.now(),
+        boardName: str(body.boardName, 40) || null,
+        winnerTeam: str(body.winnerTeam, 4) || null,
+        winnerIds: (Array.isArray(body.winnerIds) ? body.winnerIds : []).slice(0, 24).map((v) => str(v, 64)),
+        players: players.map((p) => ({
+            id: str(p?.id, 64),
+            name: str(p?.name, 24),
+            color: str(p?.color, 24),
+            initials: str(p?.initials, 4) || null,
+            teamId: str(p?.teamId, 4) || null,
+            bankrupt: !!p?.bankrupt,
+            netWorth: num(p?.netWorth),
+        })),
+        series: (Array.isArray(body.series) ? body.series : []).slice(0, 500).map((point) => ({
+            turn: num(point?.turn),
+            values: Object.fromEntries(
+                Object.entries(point?.values || {})
+                    .slice(0, 24)
+                    .map(([k, v]) => [String(k).slice(0, 64), num(v)]),
+            ),
+        })),
+        facts: {
+            turnCount: num(body.facts?.turnCount),
+            doubles: num(body.facts?.doubles),
+            trades: num(body.facts?.trades),
+            chatMessages: num(body.facts?.chatMessages),
+        },
+        mostVisited: body.mostVisited
+            ? { name: str(body.mostVisited.name, 40), count: num(body.mostVisited.count) }
+            : null,
+        mostJail: body.mostJail
+            ? { name: str(body.mostJail.name, 24), count: num(body.mostJail.count) }
+            : null,
+    };
+    // The card is rebuilt from the rest rather than trusted from the body: it
+    // is only what the picture is drawn from, and it is the largest thing in
+    // the payload.
+    return entry;
+}
+
+// Its own body parser: the global one is sized for a password, and an end
+// screen with a long game's chart in it is bigger than that.
+app.post('/api/share', express.json({ limit: '96kb' }), (req, res) => {
+    const ip = req.ip || 'unknown';
+    const rec = sharesMade.get(ip);
+    const live = rec && Date.now() < rec.until ? rec.count : 0;
+    if (live >= SHARES_PER_IP) return res.status(429).json({ error: 'Too many links from here — try again later' });
+    if (shares.size >= MAX_SHARES) {
+        sweepShares();
+        if (shares.size >= MAX_SHARES) return res.status(503).json({ error: 'Too many shared games right now' });
+    }
+
+    const entry = cleanShare(req.body);
+    if (!entry) return res.status(400).json({ error: 'That does not look like a finished game' });
+
+    const id = shareId();
+    const expiresAt = Date.now() + SHARE_MS;
+    shares.set(id, { entry, expiresAt });
+    sharesMade.set(ip, {
+        count: live + 1,
+        until: rec && Date.now() < rec.until ? rec.until : Date.now() + 10 * 60 * 1000,
+    });
+    res.json({ id, path: `/s/${id}`, expiresAt, ttlMs: SHARE_MS });
+});
+
+app.get('/api/share/:id', (req, res) => {
+    const rec = shares.get(String(req.params.id || ''));
+    if (!rec || rec.expiresAt <= Date.now()) {
+        shares.delete(String(req.params.id || ''));
+        // 410 rather than 404: the difference between "never existed" and "you
+        // are too late" is the whole point of a link that expires.
+        return res.status(410).json({ error: 'This link has expired' });
+    }
+    res.set('Cache-Control', 'no-store').json({ entry: rec.entry, expiresAt: rec.expiresAt });
 });
 
 /* ------------------------------------------------------------------- client */

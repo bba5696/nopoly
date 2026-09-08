@@ -129,6 +129,30 @@ room, and both `GameOver` and the history render it. Two renderings of the same
 numbers would drift, and the point of keeping a game is looking at the screen
 you remember.
 
+## A shared game is a link with a deadline
+
+The history is per-device, which is no use for showing somebody else, so Link
+posts the end screen to the server. It is held in memory under an unguessable
+id and dropped at the deadline whether it was opened or not — ten minutes by
+default, `NOPOLY_SHARE_MS`. Nothing is written to disk, nothing survives a
+restart, and there is no endpoint that lists what exists: a link is the only
+way in, and only the person who pressed the button has one. An id that is gone
+answers 410 rather than 404, because "you are too late" and "never existed" are
+different things to be told.
+
+Three limits, for the same reason the room caps exist: a global cap on how many
+are live, a per-IP cap on how many can be made, and a 96kb body — this is the
+one route in the process that a stranger can put bytes into. What is stored is
+rebuilt field by field from the request rather than kept as sent, so what comes
+back out is the shape the client expects and nothing else is parked in memory
+under the name of a game.
+
+The page renders before the password gate and opens no socket. Whoever holds
+the link was sent it, asking them for the room's password to look at a
+scoreboard would be theatre, and a connection would put a spectator nobody
+invited into the presence count. Making a link is therefore a decision, which
+is why it is a button and not something that happens when a game ends.
+
 ## Net worth, itemised
 
 `worthOf` returns the parts and `netWorth` returns their sum, so there is one
