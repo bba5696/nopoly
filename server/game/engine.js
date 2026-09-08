@@ -203,6 +203,16 @@ const VOTE_OPEN_PER_PLAYER_MS = Number(process.env.NOPOLY_VOTE_OPEN_PER_PLAYER_M
  */
 const STALL_WINDOW_MS = 10 * 60_000;
 
+/**
+ * The rules this room is playing by.
+ *
+ * Required inside the call rather than at the top of the file: rules.js
+ * requires this module to register the property game, so a top-level require
+ * here would be a cycle and hand one of the two a half-built exports object.
+ * `require` caches, so after the first call this is a map lookup.
+ */
+const rulesFor = (room) => require('./rules').rulesFor(room);
+
 /* ------------------------------------------------------------------ rooms */
 
 function makeRoomCode() {
@@ -212,10 +222,20 @@ function makeRoomCode() {
     return code;
 }
 
-function createRoom(code, boardId = DEFAULT_BOARD) {
-    const board = getBoard(boardId);
-    return {
+/**
+ * A room, in two halves: everything every game needs, and then whatever the
+ * game being played adds to it.
+ *
+ * `opts` also accepts a bare board id, which is what the second argument used
+ * to be — a room made by an older caller is still a room.
+ */
+function createRoom(code, opts = {}) {
+    const { game, boardId } = typeof opts === 'string' ? { boardId: opts } : opts;
+    const room = {
         roomCode: code,
+        // Which rules module owns this room. Set once, at creation: changing it
+        // later would mean rebuilding every player record mid-lobby.
+        game: require('./rules').gameId(game),
         hostId: null,
         // Both read by the sweep in index.js, and both here rather than sprung
         // into existence there, so a snapshot round-trips the same shape it
@@ -228,49 +248,32 @@ function createRoom(code, boardId = DEFAULT_BOARD) {
         // Watching, not playing: people who arrived after the game started, and
         // people who are out of it but still want to see how it ends.
         spectators: [],
-        board,
-        tiles: makeTiles(board),
+        // Whose turn it is. Generic on purpose: every game here has a seat
+        // order, and the client reads `players[turnIndex]` to work out who is
+        // playing without knowing which game it is looking at.
         turnIndex: 0,
         paused: false,
         pausedBy: null,
-        diceRoll: [0, 0],
         phase: 'waiting',
-        // transient turn state
-        doublesCount: 0,
-        hasRolled: false,
-        pendingAction: null, // { type: 'buy' | 'exchange', playerId, tileId }
-        shares: [],          // [{ groupId, holderId, paid }]
-        pendingCard: null,   // { deck, text, playerId }
-        lastMove: null,      // { playerId, from, to, passedStart, seq }
-        moveSeq: 0,
-        trades: [],
         log: [],
         chat: [],
-        decks: makeDecks(board),
-        winnerId: null,
-        winnerTeam: null,
-        auction: null,        // { tileId, bid, bidderId, endsAt }
         vote: null,           // { targetId, byId, yes: [], no: [], endsAt }
         idle: null,           // { playerId, endsAt } — the turn clock
-        lastPayment: null,    // { seq, fromId, toId, amount, reason }
-        paySeq: 0,
         banned: [],           // player ids a vote removed; they can't come back
         voteCooldown: {},     // targetId -> when they may be voted on again
         callerCooldown: {},   // callerId -> when they may start another vote
-        vacationPot: 0,       // taxes and fines waiting on Vacation
+        winnerId: null,
+        winnerTeam: null,
         settings: { ...DEFAULT_SETTINGS },
         stats: {
             startedAt: null,
             endedAt: null,
             turnCount: 0,
-            doubles: 0,
-            trades: 0,
             chatMessages: 0,
-            visits: {},          // tileId -> count
-            jailVisits: {},      // playerId -> count
-            netWorth: [],        // [{ turn, values: { playerId: net } }]
         },
     };
+    rulesFor(room).createRoom(room, { boardId });
+    return room;
 }
 
 /* ---------------------------------------------------------------- helpers */
@@ -508,18 +511,74 @@ function completedGroups(room) {
 }
 
 /** State shape sent to clients — strips server-only bits like the decks. */
-function publicState(room) {
-    const sets = completedGroups(room);
+/**
+ * What everyone in the room is told, in two halves.
+ *
+ * The common half is below; the game supplies the rest, and supplies it last
+ * so it can sharpen anything it needs to — the property game's `players`
+ * carry an estate, and a card game's carry a hand count and nothing else.
+ *
+ * `viewerId` is who is being told. It exists for games where the state is not
+ * the same for everybody; the property game ignores it, because a board is on
+ * the table and everyone can see it.
+ */
+function publicState(room, viewerId = null) {
+    return { ...baseState(room), ...rulesFor(room).view(room, viewerId) };
+}
+
+function baseState(room) {
     return {
         roomCode: room.roomCode,
+        // Which game this is, so the client can pick a screen before it reads
+        // anything else.
+        game: room.game,
         hostId: room.hostId,
+        // Names only — there's nothing else about a watcher worth sending, and
+        // the table should be able to see who's looking over their shoulder.
+        spectators: room.spectators.map(({ id, name, seated }) => ({ id, name, seated })),
+        turnIndex: room.turnIndex,
+        paused: room.paused,
+        pausedBy: room.pausedBy,
+        phase: room.phase,
+        vote: room.vote,
+        voteMs: VOTE_MS,
+        // When kicking becomes possible, and how long a stalled turn keeps
+        // someone eligible. Sent rather than duplicated in the client, so the
+        // rule the picker greys people out by is the rule the server enforces.
+        voteOpensAt: voteOpensAt(room),
+        stallWindowMs: STALL_WINDOW_MS,
+        // Both cooldowns, so the picker can say why a name is greyed out
+        // instead of letting someone find out by pressing it. Not secret —
+        // every one of them was put there by a vote the whole table watched.
+        voteCooldown: room.voteCooldown,
+        callerCooldown: room.callerCooldown || {},
+        idle: room.idle,
+        idleMs: IDLE_MS,
+        log: room.log,
+        chat: room.chat,
+        winnerId: room.winnerId,
+        winnerTeam: room.winnerTeam,
+        teams: room.settings.teams ? teamSummary(room) : null,
+        teamIds: teamIdsFor(room),
+        teamColors: TEAM_COLORS,
+        // The palette to choose from, so the picker and the validation that
+        // guards it can't drift apart.
+        playerColors: PLAYER_COLORS,
+        teamPair: TEAM_PAIR,
+        settings: room.settings,
+        games: require('./rules').GAME_LIST,
+        stats: room.stats,
+    };
+}
+
+/** The property game's half of it. */
+function nopolyView(room) {
+    const sets = completedGroups(room);
+    return {
         players: room.players.map((p) => {
             const worth = worthOf(room, p);
             return { ...p, netWorth: worth.total, worth };
         }),
-        // Names only — there's nothing else about a watcher worth sending, and
-        // the table should be able to see who's looking over their shoulder.
-        spectators: room.spectators.map(({ id, name, seated }) => ({ id, name, seated })),
         // `price` stays the book value; the market numbers ride alongside it so
         // the client can show both what a tile costs and which way it's moving.
         // `side` is what the client compares against `completedGroups` — with
@@ -530,11 +589,7 @@ function publicState(room) {
             side: sideKey(room, t.ownerId),
             ...market.marketView(room, t, !!t.groupId && sets[t.groupId] === sideKey(room, t.ownerId)),
         })),
-        turnIndex: room.turnIndex,
-        paused: room.paused,
-        pausedBy: room.pausedBy,
         diceRoll: room.diceRoll,
-        phase: room.phase,
         hasRolled: room.hasRolled,
         doublesCount: room.doublesCount,
         pendingAction: room.pendingAction,
@@ -550,37 +605,11 @@ function publicState(room) {
         buybackMult: BUYBACK_MULT,
         lastMove: room.lastMove,
         auction: room.auction,
-        vote: room.vote,
-        voteMs: VOTE_MS,
-        // When kicking becomes possible, and how long a stalled turn keeps
-        // someone eligible. Sent rather than duplicated in the client, so the
-        // rule the picker greys people out by is the rule the server enforces.
-        voteOpensAt: voteOpensAt(room),
-        stallWindowMs: STALL_WINDOW_MS,
-        // Both cooldowns, so the picker can say why a name is greyed out
-        // instead of letting someone find out by pressing it. Not secret —
-        // every one of them was put there by a vote the whole table watched.
-        voteCooldown: room.voteCooldown,
-        callerCooldown: room.callerCooldown || {},
-        idle: room.idle,
-        idleMs: IDLE_MS,
         lastPayment: room.lastPayment,
         vacationPot: room.vacationPot,
         bidSteps: BID_STEPS,
         trades: room.trades,
-        log: room.log,
-        chat: room.chat,
-        winnerId: room.winnerId,
-        winnerTeam: room.winnerTeam,
-        teams: room.settings.teams ? teamSummary(room) : null,
-        teamIds: teamIdsFor(room),
-        teamColors: TEAM_COLORS,
-        // The palette to choose from, so the picker and the validation that
-        // guards it can't drift apart.
-        playerColors: PLAYER_COLORS,
-        teamPair: TEAM_PAIR,
         offTurnFee: OFF_TURN_FEE,
-        settings: room.settings,
         // Board meta rides along with the state rather than being handed out
         // once on join, since the host can swap boards in the lobby.
         board: boardMeta(room.board),
@@ -643,29 +672,22 @@ function addPlayer(room, { name, playerId, initials, color }) {
         initials: cleanInitials(initials),
         // Assigned by the host in the lobby; null in a free-for-all.
         teamId: null,
-        cash: room.settings.startingCash,
-        position: 0,
-        properties: [],
-        inJail: false,
-        jailTurns: 0,
-        jailCards: 0,
         connected: true,
         disconnectedAt: null,
+        // Both read by the vote rules, the sweep and the client, whatever is
+        // being played — out of the game is out of the game.
         bankrupt: false,
         resigned: false,
-        // { amount, toId } while they owe more than they held in cash. Blocks
-        // their turn until they've sold enough to clear it.
-        debt: null,
         activity: null,
         // Times the turn clock has had to step in for them, and when it last
         // did. The only grounds for a vote-kick mid-game, so this is evidence
         // rather than a statistic.
         stalls: 0,
         lastStallAt: null,
-        // Landmarks stood on, by tile id. Kept as ids rather than as totals so
-        // the client can say which ones, and so landing twice is free.
-        landmarks: [],
     };
+    // Money, deeds, a hand of cards — whatever this game gives someone to
+    // hold.
+    rulesFor(room).addPlayerFields(room, player);
     room.players.push(player);
     // A watcher taking a seat when the lobby reopens after a rematch.
     removeSpectator(room, player.id);
@@ -1029,19 +1051,23 @@ function autoAssignTeams(room) {
 }
 
 function startGame(room, playerId) {
+    const rules = rulesFor(room);
     if (room.hostId !== playerId) return { error: 'Only the host can start' };
     if (room.phase !== 'waiting') return { error: 'Already started' };
-    if (room.players.length < 2) return { error: 'Need at least 2 players' };
-    if (room.settings.teams) {
+    if (room.players.length < rules.minPlayers) {
+        return { error: `Need at least ${rules.minPlayers} players` };
+    }
+    if (room.settings.teams && rules.supportsTeams) {
         const ready = teamsReady(room);
         if (ready.error) return ready;
         interleaveTeams(room);
     }
-    room.phase = 'rolling';
     room.turnIndex = 0;
-    room.hasRolled = false;
     room.stats.startedAt = Date.now();
-    snapshotNetWorth(room);
+    // Dealing, or setting the board out: the game says what starting means,
+    // including which phase it starts in.
+    const started = rules.startGame(room);
+    if (started?.error) return started;
     log(room, 'Game started — good luck');
     armIdle(room);
     return {};
@@ -1615,24 +1641,16 @@ function expireIdle(room) {
     // holding the game up skipped it, it would miss the worst offender.
     player.stalls = (player.stalls || 0) + 1;
     player.lastStallAt = Date.now();
-    if (player.debt) {
+    const rules = rulesFor(room);
+    // Some states can't be played through on somebody's behalf — an unpaid
+    // debt is nobody else's decision to make.
+    if (rules.blocksIdle(room, player)) {
         armIdle(room);
         return {};
     }
 
     log(room, `${player.name} was away — their turn was played for them`);
-    if (room.phase === 'rolling' && !room.hasRolled) rollDice(room, player.id);
-    // Whatever the roll turned up, take the passive option: don't buy, and get
-    // the card off the screen. An auction may open, which everyone else can
-    // still bid in.
-    if (room.pendingAction?.type === 'buy' && room.pendingAction.playerId === player.id) {
-        declinePurchase(room, player.id);
-    }
-    room.pendingCard = null;
-    // A roll can end the turn on its own — jail, or going bankrupt.
-    if (isCurrent(room, player.id) && room.phase !== 'ended' && !player.debt) {
-        endTurn(room, player.id);
-    }
+    rules.playIdleTurn(room, player);
     armIdle(room);
     return {};
 }
@@ -2439,21 +2457,11 @@ function finishVote(room, passed) {
         removePlayer(room, target.id);
         return {};
     }
-    // Mid-game it's the same exit as resigning: the estate goes back to the
-    // bank, so being kicked can't become a way to hand a friend your property.
-    const wasCurrent = isCurrent(room, target.id);
+    // Mid-game it's the same exit as resigning: whatever they were holding
+    // goes back where it came from, so being kicked can't become a way to hand
+    // a friend your property.
     target.resigned = true;
-    goBankrupt(room, target);
-    if (room.auction?.bidderId === target.id) {
-        room.auction.bidderId = null;
-        room.auction.bid = 0;
-        room.auction.nextBid = room.auction.opening ?? market.MIN_OPENING_BID;
-    }
-    if (room.phase !== 'ended' && wasCurrent) {
-        room.pendingAction = null;
-        room.pendingCard = null;
-        advanceTurn(room);
-    }
+    rulesFor(room).removeFromPlay(room, target);
     return {};
 }
 
@@ -2556,56 +2564,36 @@ function skipIfStillGone(room, playerId) {
     if (!player || player.connected || room.phase === 'waiting' || room.phase === 'ended') return false;
     if (!isCurrent(room, playerId)) return false;
     log(room, `${player.name} is away — turn skipped`);
-    advanceTurn(room);
+    rulesFor(room).skipTurn(room, player);
     return true;
 }
 
 function resetForRematch(room) {
-    room.tiles = makeTiles(room.board);
-    room.decks = makeDecks(room.board);
     room.turnIndex = 0;
     room.phase = 'waiting';
     room.paused = false;
     room.pausedBy = null;
-    room.diceRoll = [0, 0];
-    room.doublesCount = 0;
-    room.hasRolled = false;
-    room.pendingAction = null;
-    room.pendingCard = null;
-    room.lastMove = null;
-    room.trades = [];
     room.winnerId = null;
     room.winnerTeam = null;
-    room.auction = null;
     room.vote = null;
     room.idle = null;
-    room.lastPayment = null;
     // Cooldowns are per-game grudges; the ban list is not — someone voted out
     // stays out of this room rather than reappearing for the next round.
     room.voteCooldown = {};
     room.callerCooldown = {};
-    room.vacationPot = 0;
     room.log = [];
-    room.stats = {
-        startedAt: null, endedAt: null, turnCount: 0, doubles: 0, trades: 0,
-        chatMessages: 0, visits: {}, jailVisits: {}, netWorth: [],
-    };
+    room.stats = { startedAt: null, endedAt: null, turnCount: 0, chatMessages: 0 };
     room.players = room.players
         .filter((p) => p.connected && !p.resigned)
         .map((p) => ({
             ...p,
-            cash: room.settings.startingCash,
-            position: 0,
-            properties: [],
-            inJail: false,
-            jailTurns: 0,
-            jailCards: 0,
             bankrupt: false,
-            debt: null,
             // Last game's slowness isn't grounds for a vote in this one.
             stalls: 0,
             lastStallAt: null,
         }));
+    // The board back in its box, or the cards back in the deck.
+    rulesFor(room).resetForRematch(room);
     if (room.players.length && !room.players.some((p) => p.id === room.hostId)) {
         room.hostId = room.players[0].id;
     }
@@ -2614,7 +2602,139 @@ function resetForRematch(room) {
     log(room, 'New game — back to the lobby');
 }
 
+/* ----------------------------------------------------------- the rules seam */
+
+/**
+ * The property game, as a rules module.
+ *
+ * It lives in this file rather than beside rules.js because everything it
+ * needs is already in scope here — `advanceTurn`, `goBankrupt`,
+ * `snapshotNetWorth` and the rest are internals, and exporting a dozen of them
+ * to satisfy a wrapper would widen this module's surface for no one's benefit.
+ * What the seam is worth is not where the code sits; it is that engine.js no
+ * longer decides what "start", "an idle turn" or "out of the game" mean.
+ */
+const rules = {
+    id: 'nopoly',
+    name: 'nopoly',
+    tagline: 'Buy the board, charge the rent, outlast everyone.',
+    minPlayers: 2,
+    supportsTeams: true,
+
+    /** The half of a room that is a property game. */
+    createRoom(room, { boardId } = {}) {
+        const board = getBoard(boardId ?? DEFAULT_BOARD);
+        room.board = board;
+        room.tiles = makeTiles(board);
+        room.decks = makeDecks(board);
+        room.diceRoll = [0, 0];
+        // transient turn state
+        room.doublesCount = 0;
+        room.hasRolled = false;
+        room.pendingAction = null; // { type: 'buy' | 'exchange', playerId, tileId }
+        room.shares = [];          // [{ groupId, holderId, paid }]
+        room.pendingCard = null;   // { deck, text, playerId }
+        room.lastMove = null;      // { playerId, from, to, passedStart, seq }
+        room.moveSeq = 0;
+        room.trades = [];
+        room.auction = null;       // { tileId, bid, bidderId, endsAt }
+        room.lastPayment = null;   // { seq, fromId, toId, amount, reason }
+        room.paySeq = 0;
+        room.vacationPot = 0;      // taxes and fines waiting on Vacation
+        Object.assign(room.stats, {
+            doubles: 0,
+            trades: 0,
+            visits: {},          // tileId -> count
+            jailVisits: {},      // playerId -> count
+            netWorth: [],        // [{ turn, values: { playerId: net } }]
+        });
+    },
+
+    /** What a player holds here: money, deeds, and a debt they may owe on it. */
+    addPlayerFields(room, player) {
+        player.cash = room.settings.startingCash;
+        player.position = 0;
+        player.properties = [];
+        player.inJail = false;
+        player.jailTurns = 0;
+        player.jailCards = 0;
+        // { amount, toId } while they owe more than they held in cash. Blocks
+        // their turn until they've sold enough to clear it.
+        player.debt = null;
+        // Landmarks stood on, by tile id. Kept as ids rather than as totals so
+        // the client can say which ones, and so landing twice is free.
+        player.landmarks = [];
+    },
+
+    startGame(room) {
+        room.phase = 'rolling';
+        room.hasRolled = false;
+        snapshotNetWorth(room);
+        return {};
+    },
+
+    view: (room) => nopolyView(room),
+
+    /** Nothing here is secret — the board is on the table. */
+    privateFor: () => null,
+
+    /** A debt is theirs to settle; nobody else may decide what to sell. */
+    blocksIdle: (room, player) => !!player.debt,
+
+    playIdleTurn(room, player) {
+        if (room.phase === 'rolling' && !room.hasRolled) rollDice(room, player.id);
+        // Whatever the roll turned up, take the passive option: don't buy, and
+        // get the card off the screen. An auction may open, which everyone else
+        // can still bid in.
+        if (room.pendingAction?.type === 'buy' && room.pendingAction.playerId === player.id) {
+            declinePurchase(room, player.id);
+        }
+        room.pendingCard = null;
+        // A roll can end the turn on its own — jail, or going bankrupt.
+        if (isCurrent(room, player.id) && room.phase !== 'ended' && !player.debt) {
+            endTurn(room, player.id);
+        }
+    },
+
+    skipTurn(room) {
+        advanceTurn(room);
+    },
+
+    /** The estate goes back to the bank, and the table plays on without them. */
+    removeFromPlay(room, player) {
+        const wasCurrent = isCurrent(room, player.id);
+        goBankrupt(room, player);
+        if (room.auction?.bidderId === player.id) {
+            room.auction.bidderId = null;
+            room.auction.bid = 0;
+            room.auction.nextBid = room.auction.opening ?? market.MIN_OPENING_BID;
+        }
+        if (room.phase !== 'ended' && wasCurrent) {
+            room.pendingAction = null;
+            room.pendingCard = null;
+            advanceTurn(room);
+        }
+    },
+
+    resetForRematch(room) {
+        this.createRoom(room, { boardId: room.board?.id });
+        for (const p of room.players) this.addPlayerFields(room, p);
+    },
+
+    /** The auction clock, which is the only deadline this game runs on. */
+    timer: (room) =>
+        room.auction ? { endsAt: room.auction.endsAt, resolve: (r) => resolveAuction(r) } : null,
+
+    /** Its actions are wired by name in index.js, not through the registry. */
+    actions: {},
+};
+
 module.exports = {
+    rules,
+    baseState,
+    // Every game writes to the same feed, so the way to write to it is part of
+    // what a rules module is handed.
+    log,
     PLAYER_COLORS,
     TEAM_IDS,
     TEAM_COLORS,
