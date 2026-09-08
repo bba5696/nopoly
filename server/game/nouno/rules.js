@@ -163,9 +163,11 @@ function playCard(room, playerId, { cardId, suit } = {}) {
     if (isWild(card)) {
         room.stats.wilds = (room.stats.wilds || 0) + 1;
         // Two steps rather than one payload: the suit is a decision, and a
-        // client that has not made it yet must not be able to skip it.
-        if (SUIT_IDS.includes(suit)) return chooseSuit(room, playerId, { suit });
+        // client that has not made it yet must not be able to skip it. Set
+        // before naming, not after — naming is the same call either way, and
+        // it refuses when there is nothing to name.
         room.choosing = { playerId, cardId: card.id };
+        if (SUIT_IDS.includes(suit)) return chooseSuit(room, playerId, { suit });
         return {};
     }
 

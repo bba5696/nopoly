@@ -25,11 +25,11 @@ const path = require('path');
 const fs = require('fs');
 
 const ENGINE = [
-    'payment', 'idle', 'spectate', 'build', 'teams', 'vote', 'boards', 'shares', 'worth',
+    'payment', 'idle', 'spectate', 'build', 'teams', 'vote', 'boards', 'shares', 'worth', 'nouno',
     'abandon', 'profile', 'leave', 'jail-persist', 'tax',
 ];
 const WIRE = [
-    'wire', 'votewire', 'leavewire', 'abandonwire',
+    'wire', 'nounowire', 'votewire', 'leavewire', 'abandonwire',
     'spectatewire', 'idlewire', 'rentwire', 'presence', 'polling',
 ];
 const SOLO = ['redeploy', 'limits', 'cleanup'];

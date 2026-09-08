@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const engine = require('./game/engine');
+const { GAMES, GAME_LIST, rulesFor } = require('./game/rules');
 const auth = require('./auth');
 const persist = require('./persist');
 
@@ -54,8 +55,8 @@ const io = new Server(server, { cors: corsOptions });
 const rooms = new Map();
 /** playerId -> timeout handle for the disconnect grace period. */
 const graceTimers = new Map();
-/** roomCode -> timeout handle closing the running auction. */
-const auctionTimers = new Map();
+/** roomCode -> timeout handle for whatever deadline the game is running. */
+const gameTimers = new Map();
 /** roomCode -> timeout handle closing the running vote-kick. */
 const voteTimers = new Map();
 /** roomCode -> timeout handle for the turn clock. */
@@ -214,7 +215,7 @@ app.get('/auth/required', (req, res) => {
 // rather than duplicated in the client, so the list the picker draws and the
 // list the server validates against can't drift apart.
 app.get('/meta', (req, res) => {
-    res.json({ playerColors: engine.PLAYER_COLORS });
+    res.json({ playerColors: engine.PLAYER_COLORS, games: GAME_LIST });
 });
 
 app.post('/auth/login', (req, res) => {
@@ -400,8 +401,37 @@ io.use((socket, next) => {
     next(err);
 });
 
+/**
+ * Tell the room where it stands.
+ *
+ * One payload for everybody, which is the whole truth for a game played on a
+ * board in the middle of the table. A game with hands in it has a second,
+ * smaller truth per person — see `pushHands`.
+ */
 function broadcast(room) {
     io.to(room.roomCode).emit('state', engine.publicState(room));
+    pushHands(room);
+}
+
+/**
+ * The part of the state that is true for one person only.
+ *
+ * A separate event rather than a per-viewer `state`: the client is built on one
+ * payload replacing the whole state, and forking that for every seat would cost
+ * a serialisation per player on every action to say the same thing twelve
+ * different ways. This is additive — games without secrets never send it, and
+ * spectators never receive it, because a watcher who can see the hands is a
+ * watcher who can tell somebody.
+ */
+function pushHands(room, only = null) {
+    const rules = rulesFor(room);
+    if (!rules.privateFor) return;
+    for (const s of io.sockets.sockets.values()) {
+        if (s.data.roomCode !== room.roomCode || s.data.spectating) continue;
+        if (only && s.id !== only.id) continue;
+        const mine = rules.privateFor(room, s.data.playerId);
+        if (mine) s.emit('hand', mine);
+    }
 }
 
 /* ----------------------------------------------------------------- presence */
@@ -481,19 +511,21 @@ function getRoom(code) {
 }
 
 /**
- * Keeps the room's auction timer in sync with `room.auction.endsAt`. Bids push
- * the deadline back, so this is re-armed after every action.
+ * Keeps the room's own deadline in sync, whatever the game says it is — an
+ * auction closing, for the board game; nothing at all, for a card game. Actions
+ * push deadlines back, so this is re-armed after every one.
  */
-function scheduleAuction(room) {
-    clearTimeout(auctionTimers.get(room.roomCode));
-    auctionTimers.delete(room.roomCode);
-    if (!room.auction) return;
-    const delay = Math.max(room.auction.endsAt - Date.now(), 0);
-    auctionTimers.set(
+function scheduleGame(room) {
+    clearTimeout(gameTimers.get(room.roomCode));
+    gameTimers.delete(room.roomCode);
+    const due = rulesFor(room).timer(room);
+    if (!due) return;
+    const delay = Math.max(due.endsAt - Date.now(), 0);
+    gameTimers.set(
         room.roomCode,
         setTimeout(() => {
-            auctionTimers.delete(room.roomCode);
-            engine.resolveAuction(room);
+            gameTimers.delete(room.roomCode);
+            due.resolve(room);
             broadcast(room);
         }, delay),
     );
@@ -536,7 +568,7 @@ function scheduleIdle(room) {
             // own action used to arm that clock — so an auction started by the
             // turn timer sat at nought seconds forever, with the whole table
             // waiting on a bid nobody had been asked for.
-            scheduleAuction(room);
+            scheduleGame(room);
         }, delay),
     );
 }
@@ -563,11 +595,24 @@ function act(socket, fn, { watchers = false } = {}) {
     // the same as moving the mouse.
     engine.noteActive(room, socket.data.playerId);
     broadcast(room);
-    scheduleAuction(room);
+    scheduleGame(room);
     scheduleVote(room);
     scheduleIdle(room);
     return result;
 }
+
+/**
+ * A property-game action.
+ *
+ * Every one of these reads a board — tiles, an auction, a pending purchase —
+ * and a card room has none of that, so an old tab that still knows how to roll
+ * dice would be reaching into undefined rather than being told no. The guard
+ * costs one wrapper and turns a crash into a sentence.
+ */
+const nopolyAct = (socket, fn) =>
+    act(socket, (room, pid) =>
+        rulesFor(room).id === 'nopoly' ? fn(room, pid) : { error: 'There is no board in this game' },
+    );
 
 /**
  * Take a room out of the world: its timers, its sockets, its entry in the Map.
@@ -576,8 +621,8 @@ function act(socket, fn, { watchers = false } = {}) {
  * has forgotten.
  */
 function closeRoom(code, room, notice) {
-    clearTimeout(auctionTimers.get(code));
-    auctionTimers.delete(code);
+    clearTimeout(gameTimers.get(code));
+    gameTimers.delete(code);
     clearTimeout(voteTimers.get(code));
     voteTimers.delete(code);
     clearTimeout(idleTimers.get(code));
@@ -649,7 +694,7 @@ setInterval(sweepRooms, SWEEP_MS).unref();
 io.on('connection', (socket) => {
     pushPresence();
 
-    socket.on('room:create', ({ name, playerId, initials, color } = {}, cb) => {
+    socket.on('room:create', ({ name, playerId, initials, color, game } = {}, cb) => {
         if (rooms.size >= MAX_ROOMS) {
             return cb?.({ error: 'The server is full right now — try again in a few minutes' });
         }
@@ -660,7 +705,7 @@ io.on('connection', (socket) => {
 
         let code = engine.makeRoomCode();
         while (rooms.has(code)) code = engine.makeRoomCode();
-        const room = engine.createRoom(code);
+        const room = engine.createRoom(code, { game });
         // Registered only once it has someone in it, so a refused join cannot
         // strand an empty room holding a code and a slot against the cap.
         // Defensive rather than a fix: none of addPlayer's guards can fire on a
@@ -765,39 +810,54 @@ io.on('connection', (socket) => {
         pushPresence();
     });
 
-    socket.on('auction:bid', ({ amount } = {}) => act(socket, (room, pid) => engine.placeBid(room, pid, amount)));
+    socket.on('auction:bid', ({ amount } = {}) => nopolyAct(socket, (room, pid) => engine.placeBid(room, pid, amount)));
 
     // The exchange. Buying is gated on standing on one, which the engine
     // checks; selling and buying back are not, because both are ways out of a
     // debt and a debt does not wait for your turn.
-    socket.on('exchange:buy', ({ groupId } = {}) => act(socket, (room, pid) => engine.buyShare(room, pid, groupId)));
-    socket.on('exchange:leave', () => act(socket, engine.leaveExchange));
-    socket.on('share:sell', ({ groupId } = {}) => act(socket, (room, pid) => engine.sellShare(room, pid, groupId)));
-    socket.on('share:buyback', ({ groupId } = {}) => act(socket, (room, pid) => engine.buyBackShare(room, pid, groupId)));
+    socket.on('exchange:buy', ({ groupId } = {}) => nopolyAct(socket, (room, pid) => engine.buyShare(room, pid, groupId)));
+    socket.on('exchange:leave', () => nopolyAct(socket, engine.leaveExchange));
+    socket.on('share:sell', ({ groupId } = {}) => nopolyAct(socket, (room, pid) => engine.sellShare(room, pid, groupId)));
+    socket.on('share:buyback', ({ groupId } = {}) => nopolyAct(socket, (room, pid) => engine.buyBackShare(room, pid, groupId)));
+
+    // Each game's own actions, registered from the registry rather than listed
+    // here twice. The guard is the point: a client that has not reloaded since
+    // the other game existed must not be able to reach into this one.
+    for (const game of Object.values(GAMES)) {
+        for (const [event, fn] of Object.entries(game.actions)) {
+            socket.on(event, (payload) =>
+                act(socket, (room, pid) =>
+                    rulesFor(room).id === game.id
+                        ? fn(room, pid, payload)
+                        : { error: 'That is not the game being played here' },
+                ),
+            );
+        }
+    }
 
     socket.on('game:start', () => act(socket, engine.startGame));
-    socket.on('game:roll', () => act(socket, engine.rollDice));
-    socket.on('game:buy', () => act(socket, engine.buyProperty));
-    socket.on('game:decline', () => act(socket, engine.declinePurchase));
-    socket.on('game:endTurn', () => act(socket, engine.endTurn));
-    socket.on('game:payJail', () => act(socket, engine.payJailFine));
-    socket.on('game:useJailCard', () => act(socket, engine.useJailCard));
+    socket.on('game:roll', () => nopolyAct(socket, engine.rollDice));
+    socket.on('game:buy', () => nopolyAct(socket, engine.buyProperty));
+    socket.on('game:decline', () => nopolyAct(socket, engine.declinePurchase));
+    socket.on('game:endTurn', () => nopolyAct(socket, engine.endTurn));
+    socket.on('game:payJail', () => nopolyAct(socket, engine.payJailFine));
+    socket.on('game:useJailCard', () => nopolyAct(socket, engine.useJailCard));
     // Pause is withdrawn for now: any player could freeze everyone else's game
     // for as long as they liked. `engine.togglePause` is left in place so this
     // is one line to restore once it's gated to the host or time-limited.
-    socket.on('game:bankrupt', () => act(socket, engine.declareBankruptcy));
+    socket.on('game:bankrupt', () => nopolyAct(socket, engine.declareBankruptcy));
     socket.on('game:sendCash', ({ toId, amount } = {}) =>
-        act(socket, (room, pid) => engine.sendCash(room, pid, toId, amount)),
+        nopolyAct(socket, (room, pid) => engine.sendCash(room, pid, toId, amount)),
     );
     socket.on('game:bailout', ({ accept } = {}) =>
-        act(socket, (room, pid) => engine.respondBailout(room, pid, !!accept)),
+        nopolyAct(socket, (room, pid) => engine.respondBailout(room, pid, !!accept)),
     );
     socket.on('vote:start', ({ targetId } = {}) =>
         act(socket, (room, pid) => engine.startVoteKick(room, pid, targetId)),
     );
     socket.on('vote:cast', ({ agree } = {}) => act(socket, (room, pid) => engine.castVote(room, pid, !!agree)));
     socket.on('game:dismissCard', () =>
-        act(socket, (room) => {
+        nopolyAct(socket, (room) => {
             room.pendingCard = null;
             return {};
         }),
@@ -810,15 +870,15 @@ io.on('connection', (socket) => {
         }),
     );
 
-    socket.on('game:build', ({ tileId } = {}) => act(socket, (room, pid) => engine.buildHouse(room, pid, tileId)));
-    socket.on('game:sell', ({ tileId } = {}) => act(socket, (room, pid) => engine.sellHouse(room, pid, tileId)));
+    socket.on('game:build', ({ tileId } = {}) => nopolyAct(socket, (room, pid) => engine.buildHouse(room, pid, tileId)));
+    socket.on('game:sell', ({ tileId } = {}) => nopolyAct(socket, (room, pid) => engine.sellHouse(room, pid, tileId)));
     socket.on('game:sellProperty', ({ tileId } = {}) =>
-        act(socket, (room, pid) => engine.sellProperty(room, pid, tileId)),
+        nopolyAct(socket, (room, pid) => engine.sellProperty(room, pid, tileId)),
     );
 
-    socket.on('trade:create', (payload = {}) => act(socket, (room, pid) => engine.createTrade(room, pid, payload)));
+    socket.on('trade:create', (payload = {}) => nopolyAct(socket, (room, pid) => engine.createTrade(room, pid, payload)));
     socket.on('trade:respond', ({ tradeId, response } = {}) =>
-        act(socket, (room, pid) => engine.respondTrade(room, pid, tradeId, response)),
+        nopolyAct(socket, (room, pid) => engine.respondTrade(room, pid, tradeId, response)),
     );
 
     // Whether this tab is actually in front of someone. The server holds the
@@ -900,6 +960,9 @@ function seat(socket, room, result, cb) {
         state: engine.publicState(room),
     });
     broadcast(room);
+    // Their own cards, straight away. Without this a reconnecting player sits
+    // looking at an empty hand until somebody else does something.
+    pushHands(room, socket);
     // Reconnecting can have just called off a countdown, so its timer has to go
     // with it — and the turn clock they were being played out on.
     scheduleVote(room);
@@ -953,7 +1016,7 @@ function restoreRooms() {
         engine.armIdle(room);
         // endsAt is absolute on both, so anything that expired during the
         // restart resolves immediately rather than hanging forever.
-        scheduleAuction(room);
+        scheduleGame(room);
         scheduleVote(room);
         scheduleIdle(room);
     }

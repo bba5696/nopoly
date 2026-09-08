@@ -260,14 +260,20 @@ function atExchange(r, player) {
         e.rollDice(r, player.id);
         return player.cash;
     };
-    // Whatever they land on may charge them, so this is a floor rather than an
-    // equality: what matters is that the landmark's $25 is in there.
-    ok('Start pays the bonus on top', paid(p.Cy) >= 225 || p.Cy.debt, String(p.Cy.cash));
-    ok('and pays the plain rate without one', paid(p.Ada) <= 200 + 0 || !!p.Ada.debt, String(p.Ada.cash));
+    // Asserted on the feed rather than on the cash they end up holding: they
+    // land somewhere after passing Start, and a tax tile taking a slice of it
+    // made this pass or fail on the dice.
+    paid(p.Cy);
     ok(
-        'the feed says what was paid',
-        r.log.some((l) => /passed Start \(\+\$225\)/.test(l.text || l)),
-        '',
+        'Start pays the bonus on top',
+        r.log.some((l) => /Cy passed Start \(\+\$225\)/.test(l.text || l)),
+        r.log.filter((l) => /passed Start/.test(l.text || l)).map((l) => l.text).join(' | '),
+    );
+    paid(p.Ada);
+    ok(
+        'and pays the plain rate without one',
+        r.log.some((l) => /Ada passed Start \(\+\$200\)/.test(l.text || l)),
+        r.log.filter((l) => /passed Start/.test(l.text || l)).map((l) => l.text).join(' | '),
     );
 }
 
