@@ -64,7 +64,14 @@ function runFile(file, env = {}) {
             env: { ...process.env, ...env },
             stdio: 'inherit',
         });
-        proc.on('exit', (code) => resolve(code === 0));
+        // A signal rather than an exit code means nothing about the suite: on a
+        // machine short of memory the OS kills whichever process it likes, and
+        // "FAILED wire.test.js" under a clean tally sends you looking for a bug
+        // that isn't there. Say what actually happened.
+        proc.on('exit', (code, signal) => {
+            if (signal) console.log(`[33m  ${file} was killed by ${signal} — not a test failure[0m`);
+            resolve(code === 0);
+        });
     });
 }
 

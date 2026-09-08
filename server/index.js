@@ -40,8 +40,12 @@ const ORIGINS = (process.env.CLIENT_ORIGIN || '')
 const corsOptions = { origin: ORIGINS.length ? ORIGINS : false };
 
 app.use(cors(corsOptions));
-// Nothing posted here is bigger than a password.
-app.use(express.json({ limit: '16kb' }));
+// Nothing posted here is bigger than a password — except a shared end screen,
+// which brings its own parser with its own limit further down. This one has to
+// stand aside for it: middleware runs in registration order, so leaving it in
+// the way would reject the body with a 413 before the route ever saw it.
+const smallJson = express.json({ limit: '16kb' });
+app.use((req, res, next) => (req.path === '/api/share' ? next() : smallJson(req, res, next)));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: corsOptions });
@@ -327,8 +331,10 @@ function cleanShare(body) {
 }
 
 // Its own body parser: the global one is sized for a password, and an end
-// screen with a long game's chart in it is bigger than that.
-app.post('/api/share', express.json({ limit: '96kb' }), (req, res) => {
+// screen with a long game's chart in it is bigger than that. The client thins
+// the chart to about forty kilobytes before sending; this is headroom for a
+// tab that has not reloaded since it learned to, not an invitation.
+app.post('/api/share', express.json({ limit: '256kb' }), (req, res) => {
     const ip = req.ip || 'unknown';
     const rec = sharesMade.get(ip);
     const live = rec && Date.now() < rec.until ? rec.count : 0;

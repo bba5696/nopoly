@@ -14,11 +14,38 @@
  * `share-card.js` already made for the end screen.
  */
 
-import { cardFromState } from '@/lib/share-card';
-
 const KEY = 'nopoly.history';
 /** Older games fall off the end. Twenty-five is far more than anyone scrolls. */
 const MAX = 25;
+
+/**
+ * Thin the net-worth samples to at most `max` points, keeping the first and the
+ * last.
+ *
+ * One sample per turn is more than the chart can show: it is a few hundred
+ * pixels wide, so past a couple of hundred points every extra one lands on a
+ * pixel already drawn. What they do cost is size — a four-hundred-turn game
+ * with twelve players is over a hundred kilobytes of samples, which is too big
+ * to post as a link and enough to fill a browser's storage in a dozen games.
+ *
+ * Evenly spaced rather than tail-first: the shape of the game is the point, and
+ * dropping its middle would flatten exactly the part people look at.
+ */
+export function thinSeries(series, max) {
+    const list = Array.isArray(series) ? series : [];
+    if (list.length <= max) return list;
+    const step = (list.length - 1) / (max - 1);
+    const out = [];
+    for (let i = 0; i < max; i++) out.push(list[Math.round(i * step)]);
+    // The last sample is the one the standings agree with, so it is never the
+    // one rounding drops.
+    out[out.length - 1] = list[list.length - 1];
+    return out;
+}
+
+/** What a saved game keeps, and what a link carries. */
+const SAVED_POINTS = 300;
+export const SHARED_POINTS = 150;
 
 /** Everything the end screen draws, resolved to plain values. */
 export function entryFromState(state) {
@@ -55,8 +82,9 @@ export function entryFromState(state) {
         winnerTeam: state.winnerTeam || null,
         winnerIds,
         players,
-        // [{ turn, values: { playerId: net } }] — the chart, as the server kept it.
-        series: state.stats.netWorth || [],
+        // [{ turn, values: { playerId: net } }] — the chart, thinned to what it
+        // can actually draw.
+        series: thinSeries(state.stats.netWorth || [], SAVED_POINTS),
         facts: {
             turnCount: state.stats.turnCount || 0,
             doubles: state.stats.doubles || 0,
@@ -67,10 +95,10 @@ export function entryFromState(state) {
         mostJail: jailed
             ? { name: players.find((p) => p.id === jailed[0])?.name || '—', count: jailed[1] }
             : null,
-        // Kept whole rather than rebuilt later: the card is what gets shared,
-        // and a saved game should not need the room it came from to draw it.
-        card: cardFromState(state),
     };
+    // The picture is derived from this record wherever it is needed, not kept
+    // beside it: a stored card is a second copy of the same chart, and two
+    // copies of a thing are two chances for them to disagree.
 }
 
 function read() {

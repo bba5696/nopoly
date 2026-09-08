@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { Clock, LinkIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Scoreboard } from '@/components/Scoreboard';
-import { cardFromEntry } from '@/lib/share-card';
 import { fetchShare, timeLeft } from '@/lib/share-link';
 import { stampOf } from '@/lib/history';
 
@@ -64,7 +63,7 @@ export function SharedGame({ id }) {
         );
     }
 
-    const entry = { ...state.entry, card: cardFromEntry(state.entry) };
+    const entry = state.entry;
 
     return (
         <div className="flex min-h-svh flex-col items-center gap-5 p-6">

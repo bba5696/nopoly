@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { money, shortMoney } from '@/lib/board-layout';
 import { alpha, tag } from '@/lib/color';
 import { durationOf } from '@/lib/history';
-import { shareCardBlob, shareFileName } from '@/lib/share-card';
+import { cardFromEntry, shareCardBlob, shareFileName } from '@/lib/share-card';
 import { createShareLink, timeLeft } from '@/lib/share-link';
 
 /**
@@ -101,6 +101,31 @@ export function ShareCard({ card, entry, flash }) {
      * made on demand rather than for every game, because making one puts the
      * end screen on the server and that should be a decision.
      */
+    const copyLink = useCallback(async (url) => {
+        try {
+            await navigator.clipboard.writeText(url);
+            setDone('link copied');
+            setProblem(null);
+            setTimeout(() => setDone(null), 2600);
+            return true;
+        } catch {
+            // A blocked clipboard, or a page that was not focused when the
+            // write went out. The link is on screen with a button next to it,
+            // so this is a nuisance rather than a dead end.
+            setProblem('Could not copy it for you — use the copy button');
+            return false;
+        }
+    }, []);
+
+    /**
+     * A link somebody else can open, for as long as the server holds it.
+     *
+     * Straight to the clipboard rather than through the system share sheet:
+     * the sheet is a whole dialog to choose between apps you were not going to
+     * use, when the only thing anybody does with a link is paste it into the
+     * chat they are already in. The link stays on screen with its own copy
+     * button, so a clipboard the browser refuses is still a link you can take.
+     */
     const makeLink = useCallback(async () => {
         if (busy || !entry) return;
         setBusy(true);
@@ -108,38 +133,13 @@ export function ShareCard({ card, entry, flash }) {
         try {
             const made = await createShareLink({ ...entry, nickname: card?.title || entry.nickname || '' });
             setLink(made);
-            // The device's own share sheet where there is one, the clipboard
-            // otherwise — and the link stays on screen either way, so a
-            // refused permission or a cancelled sheet costs nothing.
-            const copy = async () => {
-                try {
-                    await navigator.clipboard?.writeText(made.url);
-                    return 'link copied';
-                } catch {
-                    // No clipboard permission. The link is on screen, which is
-                    // the whole reason it is shown rather than only copied.
-                    return 'link ready';
-                }
-            };
-            if (navigator.share) {
-                try {
-                    await navigator.share({ url: made.url, title: card?.title || 'Nopoly' });
-                    setDone('shared');
-                } catch {
-                    // Cancelled, or a browser that offers the sheet and then
-                    // refuses it. Either way the clipboard still works.
-                    setDone(await copy());
-                }
-            } else {
-                setDone(await copy());
-            }
-            setTimeout(() => setDone(null), 2600);
+            await copyLink(made.url);
         } catch (err) {
             report(err.message || 'Could not make a link');
         } finally {
             setBusy(false);
         }
-    }, [busy, card, entry, report]);
+    }, [busy, card, copyLink, entry, report]);
 
     const canCopy = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write;
 
@@ -167,7 +167,7 @@ export function ShareCard({ card, entry, flash }) {
                         )
                     }
                 >
-                    <Copy /> Copy
+                    <Copy /> Copy image
                 </Button>
             )}
             <Button
@@ -196,11 +196,14 @@ export function ShareCard({ card, entry, flash }) {
         {/* Shown rather than only copied: a clipboard write can be refused,
             and a link nobody can read is a link nobody can send. */}
         {link && (
-            <span className="flex flex-wrap items-center justify-end gap-2 text-[11px] text-muted-foreground">
-                <span className="mono max-w-[42ch] truncate rounded-md border border-white/10 bg-black/25 px-2 py-1 text-foreground">
+            <span className="flex flex-wrap items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+                <span className="mono max-w-[38ch] truncate rounded-md border border-white/10 bg-black/25 px-2 py-1 text-foreground">
                     {link.url}
                 </span>
-                expires in {timeLeft(link.expiresAt)}
+                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => copyLink(link.url)}>
+                    <Copy /> Copy
+                </Button>
+                <span>expires in {timeLeft(link.expiresAt)}</span>
             </span>
         )}
         </div>
@@ -209,6 +212,9 @@ export function ShareCard({ card, entry, flash }) {
 
 export function Scoreboard({ entry, flash, aside }) {
     const players = entry.players;
+    // Drawn from the record rather than stored with it, so the picture and the
+    // page can never be two different games.
+    const card = useMemo(() => cardFromEntry(entry), [entry]);
     const winnerIds = useMemo(() => new Set(entry.winnerIds), [entry.winnerIds]);
     const winners = players.filter((p) => winnerIds.has(p.id));
 
@@ -319,7 +325,7 @@ export function Scoreboard({ entry, flash, aside }) {
                 <section className="panel flex flex-col gap-4 p-6">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-xl">Net worth over time</span>
-                        <ShareCard card={entry.card} entry={entry} flash={flash} />
+                        <ShareCard card={card} entry={entry} flash={flash} />
                     </div>
                     <div className="h-[280px] w-full">
                         <ResponsiveContainer width="100%" height="100%">

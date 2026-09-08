@@ -261,42 +261,6 @@ export function drawShareCard(canvas, card) {
 }
 
 /**
- * Build the card off a finished game's state.
- *
- * Kept apart from the drawing so what it needs is written down in one place,
- * and so nothing has to hand a canvas the whole room.
- */
-export function cardFromState(state) {
-    const winners = state.winnerTeam
-        ? state.players.filter((p) => p.teamId === state.winnerTeam && !p.bankrupt)
-        : state.players.filter((p) => p.id === state.winnerId);
-    const ms = (state.stats.endedAt || Date.now()) - (state.stats.startedAt || Date.now());
-    return {
-        host: typeof location === 'undefined' ? 'nopoly' : location.host,
-        // When it finished, so a card made from the history is dated the day
-        // the game was played rather than the day it was exported.
-        endedAt: state.stats.endedAt || Date.now(),
-        teamLabel: state.winnerTeam ? `winning team · ${state.winnerTeam}` : 'winner',
-        winners: winners.map((w) => ({ name: w.name, color: w.color, initials: w.initials })),
-        facts: [
-            `${Math.floor(ms / 60000)} min ${Math.floor((ms % 60000) / 1000)} sec`,
-            `${state.stats.turnCount} turns`,
-            `${state.players.length} players`,
-            `${state.stats.trades} trades`,
-        ],
-        series: state.players.map((p) => ({
-            name: p.name,
-            color: p.color,
-            points: state.stats.netWorth.map((s) => ({ turn: s.turn, value: s.values[p.id] ?? 0 })),
-        })),
-        standings: state.players
-            .slice()
-            .sort((a, b) => Number(a.bankrupt) - Number(b.bankrupt) || b.netWorth - a.netWorth)
-            .map((p) => ({ name: p.name, color: p.color, bankrupt: p.bankrupt, netWorth: p.netWorth })),
-    };
-}
-
-/**
  * The same card, built from a saved or shared game rather than a live room.
  *
  * A link carries the end screen and not the picture: the picture is derived

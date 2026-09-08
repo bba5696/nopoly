@@ -155,7 +155,7 @@ export function PastGames({ onClose }) {
                     className="flex w-full justify-center"
                 >
                     <Scoreboard
-                        entry={{ ...open, card: { ...open.card, title: open.nickname || undefined } }}
+                        entry={open}
                         aside={<NameField entry={open} onRenamed={() => setTick((n) => n + 1)} />}
                     />
                 </motion.div>

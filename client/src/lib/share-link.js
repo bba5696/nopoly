@@ -1,3 +1,5 @@
+import { SHARED_POINTS, thinSeries } from '@/lib/history';
+
 /**
  * A finished game, put somewhere a link can reach — for a few minutes.
  *
@@ -14,10 +16,13 @@
 
 /** Everything the shared page draws. The card is rebuilt on the far side. */
 function payload(entry) {
-    const { card, id, ...rest } = entry;
+    const { card, id, series, ...rest } = entry;
     void card;
     void id;
-    return rest;
+    // Thinner than the copy kept on this device: a link crosses a network and
+    // a proxy with its own opinion about body size, and a hundred and fifty
+    // points is more than the chart can draw distinctly anyway.
+    return { ...rest, series: thinSeries(series, SHARED_POINTS) };
 }
 
 export async function createShareLink(entry) {
@@ -37,7 +42,9 @@ export async function createShareLink(entry) {
         throw new Error(
             res.status === 404
                 ? 'Sharing links needs the server restarted on this deploy'
-                : `The server answered ${res.status} instead of a link`,
+                : res.status === 413
+                  ? 'That game is too long to share as a link — the picture still works'
+                  : `The server answered ${res.status} instead of a link`,
         );
     }
     if (!res.ok) throw new Error(data.error || 'Could not make a link');
