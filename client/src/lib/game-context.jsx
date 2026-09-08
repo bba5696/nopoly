@@ -9,6 +9,10 @@ export function GameProvider({ children }) {
     const [playerId, setPlayerId] = useState(() => loadIdentity().playerId || null);
     const [roomCode, setRoomCode] = useState(null);
     const [state, setState] = useState(null);
+    // Your own cards, in games that have any. Kept apart from `state` because
+    // that is exactly what it is on the wire: the room's truth and yours are
+    // two different payloads.
+    const [hand, setHand] = useState([]);
     const [notice, setNotice] = useState(null);
     const [joining, setJoining] = useState(false);
     /** Server-wide head count, pushed whenever it changes. */
@@ -103,12 +107,19 @@ export function GameProvider({ children }) {
             setRoomCode(null);
             setSpectating(false);
             setState(null);
+            setHand([]);
             flash(text || 'That room was closed.');
         };
+
+        // Your own cards. A second, smaller channel than `state`, because a
+        // hand is true for one person and the state is true for the room —
+        // see broadcast() and pushHands() on the server.
+        const onHand = (payload) => setHand(payload?.hand || []);
 
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
         socket.on('state', onState);
+        socket.on('hand', onHand);
         socket.on('presence', onPresence);
         socket.on('error:game', onError);
         socket.on('room:closed', onClosed);
@@ -120,6 +131,7 @@ export function GameProvider({ children }) {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
             socket.off('state', onState);
+            socket.off('hand', onHand);
             socket.off('presence', onPresence);
             socket.off('error:game', onError);
             socket.off('room:closed', onClosed);
@@ -127,14 +139,14 @@ export function GameProvider({ children }) {
     }, [applyJoin, flash]);
 
     const createRoom = useCallback(
-        (name) =>
+        (name, game) =>
             new Promise((resolve) => {
                 setJoining(true);
                 saveIdentity({ name });
                 // The profile travels with you into a new room rather than
                 // being set up again every game.
                 const { playerId: pid, initials, color } = loadIdentity();
-                socket.emit('room:create', { name, playerId: pid, initials, color }, (res) => {
+                socket.emit('room:create', { name, playerId: pid, initials, color, game }, (res) => {
                     setJoining(false);
                     if (res?.error) flash(res.error);
                     else applyJoin(res);
@@ -193,6 +205,7 @@ export function GameProvider({ children }) {
         setRoomCode(null);
         setSpectating(false);
         setState(null);
+        setHand([]);
     }, []);
 
     const send = useCallback((event, payload) => socket.emit(event, payload), []);
@@ -208,6 +221,10 @@ export function GameProvider({ children }) {
             playerId,
             roomCode,
             state,
+            // Which game this room is playing, so a screen can be chosen
+            // before anything else is read.
+            game: state?.game || 'nopoly',
+            hand,
             // Board meta comes down with the state, so a board swap in the
             // lobby reaches everyone on the next broadcast.
             board: state?.board || null,
@@ -223,7 +240,7 @@ export function GameProvider({ children }) {
             flash,
             send,
         };
-    }, [connected, joining, notice, presence, playerId, roomCode, state, spectating, createRoom, joinRoom, spectate, leaveRoom, flash, send]);
+    }, [connected, joining, notice, presence, playerId, roomCode, state, hand, spectating, createRoom, joinRoom, spectate, leaveRoom, flash, send]);
 
     return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

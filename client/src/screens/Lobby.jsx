@@ -235,6 +235,11 @@ export function Lobby() {
 
     const patch = (key) => (value) => send('room:settings', { [key]: value });
 
+    // A card game has no board to pick and no rules to toggle, so the tabs
+    // that hold them are simply not there. The rest of this screen — the
+    // roster, the kick, the code, the start button — never knew which game
+    // it was setting up.
+    const cards = state.game === 'nouno';
     const teamIds = state.teamIds || [];
     const teamColors = state.teamColors || {};
 
@@ -459,7 +464,7 @@ export function Lobby() {
                     </div>
 
                     <div className="flex w-full min-w-0 flex-col lg:w-[440px]">
-                        <div className="flex shrink-0 gap-1 rounded-xl bg-white/[0.04] p-1">
+                        <div className={cn('flex shrink-0 gap-1 rounded-xl bg-white/[0.04] p-1', cards && 'hidden')}>
                             {TABS.map(({ id, label }) => (
                                 <button
                                     key={id}
@@ -493,7 +498,21 @@ export function Lobby() {
                             switch tabs and a longer rule list scrolls in place
                             rather than growing the panel. */}
                         <div className="scroll-thin h-[356px] overflow-y-auto py-2">
-                            {tab === 'board' && (
+                            {cards && (
+                                <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
+                                    <span className="text-xl">nouno</span>
+                                    <p className="text-[13px] leading-snug text-muted-foreground">
+                                        Seven cards each. Follow the suit or the number, and shed your hand
+                                        before anyone else does. Halt skips the next player, Turn sends play
+                                        back the way it came, and an Any names the suit that carries on.
+                                    </p>
+                                    <p className="text-[12px] leading-snug text-muted-foreground/70">
+                                        Say <span className="text-foreground">last card</span> before you play
+                                        your second-to-last one, or draw two for the silence.
+                                    </p>
+                                </div>
+                            )}
+                            {!cards && tab === 'board' && (
                                 <div className="flex flex-col gap-2">
                                     {(state.boards || []).map((b) => {
                                         const active = settings.board === b.id;
@@ -527,7 +546,7 @@ export function Lobby() {
                                 </div>
                             )}
 
-                            {tab === 'rules' &&
+                            {!cards && tab === 'rules' &&
                                 CORE_RULES.map((rule) => (
                                     <SettingRow key={rule.key} {...rule}>
                                         <Toggle
@@ -539,7 +558,7 @@ export function Lobby() {
                                     </SettingRow>
                                 ))}
 
-                            {tab === 'beta' && (
+                            {!cards && tab === 'beta' && (
                                 <>
                                     <p className="mb-1 rounded-lg border border-[#7c5cff]/25 bg-[#7c5cff]/[0.07] px-3 py-2 text-[12px] leading-snug text-muted-foreground">
                                         Experimental rules, off by default. They change how the game plays and
@@ -562,6 +581,7 @@ export function Lobby() {
                         {/* Below the divider and outside the tabs — these two
                             apply whichever tab you're looking at. */}
                         <div className="shrink-0 border-t border-white/8 pt-1.5">
+                            {!cards && (
                             <SettingRow
                                 icon={Coins}
                                 label="Starting cash"
@@ -576,6 +596,7 @@ export function Lobby() {
                                     onChange={patch('startingCash')}
                                 />
                             </SettingRow>
+                            )}
                             {/* Only while teams are on — off, they are two
                                 numbers about nothing. Changing either re-deals
                                 the sides, which is what the hint warns about. */}

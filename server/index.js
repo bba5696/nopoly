@@ -289,6 +289,7 @@ function cleanShare(body) {
     if (!players.length) return null;
 
     const entry = {
+        game: str(body.game, 16) || 'nopoly',
         nickname: str(body.nickname, 60),
         startedAt: num(body.startedAt) || null,
         endedAt: num(body.endedAt) || Date.now(),
@@ -317,12 +318,17 @@ function cleanShare(body) {
             doubles: num(body.facts?.doubles),
             trades: num(body.facts?.trades),
             chatMessages: num(body.facts?.chatMessages),
+            played: num(body.facts?.played),
+            wilds: num(body.facts?.wilds),
         },
         mostVisited: body.mostVisited
             ? { name: str(body.mostVisited.name, 40), count: num(body.mostVisited.count) }
             : null,
         mostJail: body.mostJail
             ? { name: str(body.mostJail.name, 24), count: num(body.mostJail.count) }
+            : null,
+        mostHeld: body.mostHeld
+            ? { name: str(body.mostHeld.name, 24), count: num(body.mostHeld.count) }
             : null,
     };
     // The card is rebuilt from the rest rather than trusted from the body: it

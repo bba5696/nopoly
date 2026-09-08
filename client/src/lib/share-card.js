@@ -280,7 +280,9 @@ export function cardFromEntry(entry) {
             `${Math.floor(ms / 60000)} min ${Math.floor((ms % 60000) / 1000)} sec`,
             `${entry.facts.turnCount} turns`,
             `${entry.players.length} players`,
-            `${entry.facts.trades} trades`,
+            entry.game === 'nouno'
+                ? `${entry.facts.played || 0} cards played`
+                : `${entry.facts.trades} trades`,
         ],
         series: entry.players.map((p) => ({
             name: p.name,

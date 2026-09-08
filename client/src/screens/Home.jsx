@@ -10,6 +10,12 @@ import { ProfileModal } from '@/components/modals/ProfileModal';
 import { loadIdentity } from '@/lib/socket';
 import { alpha, initials } from '@/lib/color';
 import { historyCount } from '@/lib/history';
+import { cn } from '@/lib/utils';
+
+const GAMES = [
+    { id: 'nopoly', name: 'nopoly', blurb: 'The board. Buy it, build it, charge rent.' },
+    { id: 'nouno', name: 'nouno', blurb: 'The cards. Shed your hand before anyone else.' },
+];
 import { PastGames } from '@/screens/PastGames';
 
 export function Home() {
@@ -26,6 +32,7 @@ export function Home() {
     // written to when a game ends, which cannot happen while this screen is up.
     const [pastOpen, setPastOpen] = useState(false);
     const [pastCount] = useState(() => historyCount());
+    const [game, setGame] = useState('nopoly');
 
     const trimmed = name.trim();
     const ready = trimmed.length > 0 && connected && !joining;
@@ -87,7 +94,28 @@ export function Home() {
                 </div>
 
                 <div className="flex flex-col gap-3.5">
-                    <Button className="h-14 text-lg" disabled={!ready} onClick={() => createRoom(trimmed)}>
+                    {/* Which game the room will be playing. Two of them is a
+                        pair of buttons rather than a dropdown: a dropdown is
+                        for a list, and this is a choice. */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {GAMES.map((g) => (
+                            <button
+                                key={g.id}
+                                type="button"
+                                onClick={() => setGame(g.id)}
+                                className={cn(
+                                    'flex flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors',
+                                    game === g.id
+                                        ? 'border-primary/60 bg-primary/10'
+                                        : 'border-white/8 hover:border-white/20',
+                                )}
+                            >
+                                <span className="text-[15px] leading-tight">{g.name}</span>
+                                <span className="text-[12px] leading-snug text-muted-foreground">{g.blurb}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <Button className="h-14 text-lg" disabled={!ready} onClick={() => createRoom(trimmed, game)}>
                         Create a game
                     </Button>
                     <form

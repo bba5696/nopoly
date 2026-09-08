@@ -2675,8 +2675,13 @@ const rules = {
 
     view: (room) => nopolyView(room),
 
-    /** Nothing here is secret — the board is on the table. */
-    privateFor: () => null,
+    /**
+     * Nothing here is secret — the board is on the table. Null rather than a
+     * function returning null, so broadcast() can skip the walk over every
+     * socket in the room instead of calling this once per person to be told
+     * nothing, on every action anybody takes.
+     */
+    privateFor: null,
 
     /** A debt is theirs to settle; nobody else may decide what to sell. */
     blocksIdle: (room, player) => !!player.debt,

@@ -70,10 +70,16 @@ export function entryFromState(state) {
     const visited = top(state.stats.visits);
     const jailed = top(state.stats.jailVisits);
 
+    // Which game this was. Everything already saved in somebody's browser
+    // predates the card game, so a missing field reads as the board game.
+    const game = state.game || 'nopoly';
+    const cards = game === 'nouno';
+
     return {
         // The room and the moment together: a rematch in the same room is a
         // different game and gets its own row.
         id: `${state.roomCode}-${state.stats.endedAt || Date.now()}`,
+        game,
         roomCode: state.roomCode,
         nickname: '',
         startedAt: state.stats.startedAt || null,
@@ -82,18 +88,29 @@ export function entryFromState(state) {
         winnerTeam: state.winnerTeam || null,
         winnerIds,
         players,
-        // [{ turn, values: { playerId: net } }] — the chart, thinned to what it
-        // can actually draw.
-        series: thinSeries(state.stats.netWorth || [], SAVED_POINTS),
+        // [{ turn, values: { playerId: n } }] — the chart, thinned to what it
+        // can actually draw. Net worth over the game for the board; cards in
+        // hand for the cards, which is the same shape and the same story.
+        series: thinSeries((cards ? state.stats.hands : state.stats.netWorth) || [], SAVED_POINTS),
         facts: {
             turnCount: state.stats.turnCount || 0,
             doubles: state.stats.doubles || 0,
             trades: state.stats.trades || 0,
             chatMessages: state.stats.chatMessages || 0,
+            played: state.stats.played || 0,
+            wilds: state.stats.wilds || 0,
         },
         mostVisited: visited ? { name: state.tiles[visited[0]]?.name || '—', count: visited[1] } : null,
         mostJail: jailed
             ? { name: players.find((p) => p.id === jailed[0])?.name || '—', count: jailed[1] }
+            : null,
+        // The card game's two: who was left holding the most, and what was in
+        // play when it ended.
+        mostHeld: cards
+            ? players
+                  .slice()
+                  .sort((a, b) => (b.netWorth || 0) - (a.netWorth || 0))
+                  .map((p) => ({ name: p.name, count: p.netWorth || 0 }))[0] || null
             : null,
     };
     // The picture is derived from this record wherever it is needed, not kept

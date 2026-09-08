@@ -22,7 +22,7 @@ import { createShareLink, timeLeft } from '@/lib/share-link';
  * of hovering a line this crowded is to find out who was ahead, which reading
  * eight overlapping strokes will not tell you.
  */
-function ChartTooltip({ active, payload, label }) {
+function ChartTooltip({ active, payload, label, cards }) {
     if (!active || !payload?.length) return null;
     const rows = payload.slice().sort((a, b) => b.value - a.value);
     return (
@@ -33,7 +33,7 @@ function ChartTooltip({ active, payload, label }) {
                     <span className="mono w-3 text-[10px] text-muted-foreground">{i + 1}</span>
                     <span className="size-2 rounded-full" style={{ background: p.color }} />
                     <span className="flex-1 truncate">{p.dataKey}</span>
-                    <span className="mono text-muted-foreground">{money(p.value)}</span>
+                    <span className="mono text-muted-foreground">{cards ? `${p.value} cards` : money(p.value)}</span>
                 </span>
             ))}
         </div>
@@ -222,8 +222,14 @@ export function Scoreboard({ entry, flash, aside }) {
         () =>
             players
                 .slice()
-                .sort((a, b) => Number(a.bankrupt) - Number(b.bankrupt) || b.netWorth - a.netWorth),
-        [players],
+                // Fewest points left is the better finish at cards; most money
+                // is the better finish at the board.
+                .sort((a, b) =>
+                    entry.game === 'nouno'
+                        ? (a.netWorth || 0) - (b.netWorth || 0)
+                        : Number(a.bankrupt) - Number(b.bankrupt) || b.netWorth - a.netWorth,
+                ),
+        [players, entry.game],
     );
 
     // Recharts wants a row per turn keyed by name; the record keeps it keyed by
@@ -244,13 +250,25 @@ export function Scoreboard({ entry, flash, aside }) {
         .slice()
         .sort((a, b) => Number(winnerIds.has(a.id)) - Number(winnerIds.has(b.id)));
 
-    const facts = [
-        { k: 'Duration', v: durationOf(entry) },
-        { k: 'Turns', v: String(entry.facts.turnCount) },
-        { k: 'Doubles rolled', v: String(entry.facts.doubles) },
-        { k: 'Trades made', v: String(entry.facts.trades) },
-        { k: 'Chat messages', v: String(entry.facts.chatMessages) },
-    ];
+    // Two games, two sets of numbers worth reporting. Everything else on this
+    // screen — the winner, the standings, the chart, the share row — is the
+    // same either way.
+    const cards = entry.game === 'nouno';
+    const facts = cards
+        ? [
+              { k: 'Duration', v: durationOf(entry) },
+              { k: 'Turns', v: String(entry.facts.turnCount) },
+              { k: 'Cards played', v: String(entry.facts.played || 0) },
+              { k: 'Wilds played', v: String(entry.facts.wilds || 0) },
+              { k: 'Chat messages', v: String(entry.facts.chatMessages) },
+          ]
+        : [
+              { k: 'Duration', v: durationOf(entry) },
+              { k: 'Turns', v: String(entry.facts.turnCount) },
+              { k: 'Doubles rolled', v: String(entry.facts.doubles) },
+              { k: 'Trades made', v: String(entry.facts.trades) },
+              { k: 'Chat messages', v: String(entry.facts.chatMessages) },
+          ];
     const champion = winners[0];
 
     return (
@@ -305,17 +323,29 @@ export function Scoreboard({ entry, flash, aside }) {
 
                 <div className="grid grid-cols-2 gap-4">
                     <section className="panel flex flex-col gap-1 p-4">
-                        <span className="label">Most visited</span>
-                        <span className="text-lg">{entry.mostVisited?.name || '—'}</span>
+                        <span className="label">{cards ? 'Left holding most' : 'Most visited'}</span>
+                        <span className="text-lg">
+                            {(cards ? entry.mostHeld?.name : entry.mostVisited?.name) || '—'}
+                        </span>
                         <span className="mono text-[11px] text-muted-foreground">
-                            {entry.mostVisited ? `${entry.mostVisited.count} landings` : ''}
+                            {cards
+                                ? entry.mostHeld
+                                    ? `${entry.mostHeld.count} points`
+                                    : ''
+                                : entry.mostVisited
+                                  ? `${entry.mostVisited.count} landings`
+                                  : ''}
                         </span>
                     </section>
                     <section className="panel flex flex-col gap-1 p-4">
-                        <span className="label">Most time in jail</span>
-                        <span className="text-lg">{entry.mostJail?.name || '—'}</span>
+                        <span className="label">{cards ? 'Deck' : 'Most time in jail'}</span>
+                        <span className="text-lg">{cards ? 'nouno' : entry.mostJail?.name || '—'}</span>
                         <span className="mono text-[11px] text-muted-foreground">
-                            {entry.mostJail ? `${entry.mostJail.count} visits` : ''}
+                            {cards
+                                ? '108 cards, four suits'
+                                : entry.mostJail
+                                  ? `${entry.mostJail.count} visits`
+                                  : ''}
                         </span>
                     </section>
                 </div>
@@ -324,7 +354,7 @@ export function Scoreboard({ entry, flash, aside }) {
             <div className="flex flex-col gap-5">
                 <section className="panel flex flex-col gap-4 p-6">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xl">Net worth over time</span>
+                        <span className="text-xl">{cards ? 'Cards in hand' : 'Net worth over time'}</span>
                         <ShareCard card={card} entry={entry} flash={flash} />
                     </div>
                     <div className="h-[280px] w-full">
@@ -360,10 +390,14 @@ export function Scoreboard({ entry, flash, aside }) {
                                     tickLine={false}
                                     axisLine={false}
                                     width={54}
-                                    tickFormatter={shortMoney}
+                                    // Cards are a count, not an amount: a
+                                    // dollar sign on a hand of seven is the
+                                    // chart telling a small lie every tick.
+                                    tickFormatter={cards ? (v) => String(v) : shortMoney}
+                                    allowDecimals={false}
                                 />
                                 <Tooltip
-                                    content={<ChartTooltip />}
+                                    content={<ChartTooltip cards={cards} />}
                                     cursor={{ stroke: 'rgba(255,255,255,.22)', strokeDasharray: '3 3' }}
                                 />
                                 {drawOrder.map((p) => {
@@ -399,7 +433,7 @@ export function Scoreboard({ entry, flash, aside }) {
                                 />
                                 <span className={p.bankrupt ? 'text-muted-foreground' : undefined}>{p.name}</span>
                                 <span className="mono text-[11px] text-muted-foreground">
-                                    {p.bankrupt ? 'bankrupt' : money(p.netWorth)}
+                                    {p.bankrupt ? 'bankrupt' : cards ? `${p.netWorth} pts` : money(p.netWorth)}
                                 </span>
                             </span>
                         ))}
@@ -428,7 +462,7 @@ export function Scoreboard({ entry, flash, aside }) {
                                 </span>
                                 <span className="flex-1 truncate text-[16px]">{p.name}</span>
                                 <span className="mono text-[12px] text-muted-foreground">
-                                    {p.bankrupt ? 'bankrupt' : money(p.netWorth)}
+                                    {p.bankrupt ? 'bankrupt' : cards ? `${p.netWorth} pts` : money(p.netWorth)}
                                 </span>
                             </div>
                         ))}

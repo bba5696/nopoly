@@ -9,6 +9,7 @@ import { Home } from '@/screens/Home';
 import { Lobby } from '@/screens/Lobby';
 import { Game } from '@/screens/Game';
 import { GameOver } from '@/screens/GameOver';
+import { Nouno } from '@/screens/Nouno';
 import { SharedGame } from '@/screens/SharedGame';
 import { sharedIdFromPath } from '@/lib/share-link';
 
@@ -35,8 +36,12 @@ function Notice() {
 function Router() {
     const { state } = useGame();
     if (!state) return <Home />;
+    // The lobby and the end screen are shared; only the playing screen forks,
+    // because that is the only one that is about the game rather than about
+    // the room.
     if (state.phase === 'waiting') return <Lobby />;
     if (state.phase === 'ended') return <GameOver />;
+    if (state.game === 'nouno') return <Nouno />;
     return <Game />;
 }
 
