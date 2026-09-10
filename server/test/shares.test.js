@@ -310,6 +310,69 @@ function atExchange(r, player) {
     ok('grand tour three and two', counts('grand').exchange === 3 && counts('grand').landmark === 2);
 }
 
+/* ------------------------------------------------- a share is a tradable thing */
+{
+    const { r, p } = mk();
+    r.shares = [{ groupId: 'italy', holderId: p.Cy.id, paid: 140 }];
+
+    // Cy sells the stake to Bo for cash.
+    const made = e.createTrade(r, p.Cy.id, {
+        toId: p.Bo.id,
+        give: { cash: 0, tiles: [], shares: ['italy'] },
+        get: { cash: 200, tiles: [] },
+    });
+    ok('a share can be offered', !made.error, made.error);
+    ok('and survives being written down', made.trade.give.shares[0] === 'italy');
+
+    const cyBefore = p.Cy.cash;
+    const boBefore = p.Bo.cash;
+    e.respondTrade(r, p.Bo.id, made.trade.id, 'accept');
+    ok('the stake changes hands', e.sharesOf(r, p.Bo.id).some((sh) => sh.groupId === 'italy'));
+    ok('and leaves the seller', !e.sharesOf(r, p.Cy.id).length);
+    ok('the country still has one share out', e.sharesIn(r, 'italy').length === 1);
+    ok('what it cost goes with it', e.sharesIn(r, 'italy')[0].paid === 140);
+    ok('the cash moved', p.Cy.cash - cyBefore === 200 && boBefore - p.Bo.cash === 200);
+
+    // Nobody ends up holding two stakes in one country — the rule at the
+    // exchange, which a trade is not a way around.
+    r.shares.push({ groupId: 'italy', holderId: p.Cy.id, paid: 100 });
+    const clash = e.createTrade(r, p.Bo.id, {
+        toId: p.Cy.id,
+        give: { cash: 0, tiles: [], shares: ['italy'] },
+        get: { cash: 1, tiles: [] },
+    });
+    ok('a second share in one country is refused', /already holds a share/.test(clash.error || ''), clash.error);
+    ok('and it is refused as it is written, not on accepting', !r.trades.length);
+
+    // A share you do not hold is dropped rather than trusted.
+    const { r: r2, p: p2 } = mk();
+    const bogus = e.createTrade(r2, p2.Ada.id, {
+        toId: p2.Bo.id,
+        give: { cash: 0, tiles: [], shares: ['italy'] },
+        get: { cash: 10, tiles: [] },
+    });
+    ok('a share you do not hold does not travel', !bogus.trade.give.shares.length);
+
+    // Sold back to the bank between offer and acceptance: no longer valid.
+    const { r: r3, p: p3 } = mk();
+    r3.shares = [{ groupId: 'italy', holderId: p3.Cy.id, paid: 140 }];
+    const stale = e.createTrade(r3, p3.Cy.id, {
+        toId: p3.Bo.id,
+        give: { cash: 0, tiles: [], shares: ['italy'] },
+        get: { cash: 50, tiles: [] },
+    });
+    e.sellShare(r3, p3.Cy.id, 'italy');
+    const res = e.respondTrade(r3, p3.Bo.id, stale.trade.id, 'accept');
+    ok('a share sold in the meantime voids the offer', /no longer valid/.test(res.error || ''), res.error);
+
+    // An offer written before shares existed still works.
+    const { r: r4, p: p4 } = mk();
+    const old = e.createTrade(r4, p4.Ada.id, { toId: p4.Bo.id, give: { cash: 25, tiles: [] }, get: { cash: 0, tiles: [] } });
+    delete old.trade.give.shares;
+    delete old.trade.get.shares;
+    ok('an old offer with no shares side still settles', !e.respondTrade(r4, p4.Bo.id, old.trade.id, 'accept').error);
+}
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const f of fails) console.log('  FAIL ' + f);
 process.exit(fails.length ? 1 : 0);

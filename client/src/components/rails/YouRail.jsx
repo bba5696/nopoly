@@ -90,8 +90,8 @@ function SendCash({ mate }) {
     );
 }
 
-export function YouRail({ onOpenTile }) {
-    const { state, me, board, send } = useGame();
+export function YouRail({ onOpenTile, onOpenShare }) {
+    const { state, me, board } = useGame();
     // The net figure comes apart on a tap; closed by default, because most of
     // the time the total is all anybody wants.
     const [worthOpen, setWorthOpen] = useState(false);
@@ -231,7 +231,7 @@ export function YouRail({ onOpenTile }) {
                 <section className="panel flex flex-col">
                     <header className="panel-divider flex items-center justify-between px-4 py-3">
                         <span className="label">My shares ({mine.length})</span>
-                        <span className="label opacity-60">tap to sell</span>
+                        <span className="label opacity-60">tap to manage</span>
                     </header>
                     <div className="scroll-thin flex max-h-[148px] flex-col gap-1.5 overflow-y-auto p-3">
                         {mine.map((sh) => {
@@ -240,8 +240,8 @@ export function YouRail({ onOpenTile }) {
                                 <button
                                     key={sh.groupId}
                                     type="button"
-                                    title={`Sell your share in ${group?.name} back for ${money(sh.paid)}`}
-                                    onClick={() => send('share:sell', { groupId: sh.groupId })}
+                                    title={`What your share in ${group?.name} is worth, and what you can do with it`}
+                                    onClick={() => onOpenShare?.(sh.groupId)}
                                     className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors hover:brightness-125"
                                     style={{
                                         borderColor: alpha(group?.color || '#7dd3fc', 0.45),

@@ -32,6 +32,7 @@ import { CardModal } from '@/components/modals/CardModal';
 import { TradeBuilder } from '@/components/modals/TradeBuilder';
 import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
+import { ShareInfoModal } from '@/components/modals/ShareInfoModal';
 import { AuctionModal } from '@/components/modals/AuctionModal';
 import { ExchangeModal } from '@/components/modals/ExchangeModal';
 import { BailoutModal } from '@/components/modals/BailoutModal';
@@ -61,6 +62,7 @@ export function Game() {
     useTableSounds(state, playerId);
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
+    const [shareGroup, setShareGroup] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
     const [viewTradeId, setViewTradeId] = useState(null);
     const [tab, setTab] = useState('players');
@@ -304,7 +306,7 @@ export function Game() {
                     )}
                 >
                     <div className={cn('min-h-0 flex-col gap-3 xl:contents', tab === 'you' ? 'flex' : 'hidden')}>
-                        <YouRail onOpenTile={(t) => setTileId(t.id)} />
+                        <YouRail onOpenTile={(t) => setTileId(t.id)} onOpenShare={setShareGroup} />
                     </div>
                     <div className={cn('min-h-0 flex-1 flex-col xl:contents', tab === 'trades' ? 'flex' : 'hidden')}>
                         <TradeRail
@@ -350,6 +352,7 @@ export function Game() {
             <BailoutModal />
             <VoteKickModal />
             <TileInfoModal tile={tile} onClose={() => setTileId(null)} />
+            <ShareInfoModal groupId={shareGroup} onClose={() => setShareGroup(null)} />
             {viewTradeId && (
                 <TradeViewModal
                     tradeId={viewTradeId}

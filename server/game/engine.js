@@ -2078,7 +2078,15 @@ function normaliseSide(room, player, side) {
     const tiles = (side?.tiles || [])
         .map(Number)
         .filter((id) => room.tiles[id] && room.tiles[id].ownerId === player.id && room.tiles[id].houses === 0);
-    return { cash, tiles: [...new Set(tiles)] };
+    // A share is a stake, and a stake is a thing you own — so it moves the way
+    // a deed does. It goes across at whatever it cost, because `paid` is what
+    // the bank buys it back at and what a buy-back is priced from: the
+    // certificate carries its own history rather than being repriced by
+    // whoever is holding it today.
+    const shares = (side?.shares || []).filter((groupId) =>
+        sharesOf(room, player.id).some((sh) => sh.groupId === groupId),
+    );
+    return { cash, tiles: [...new Set(tiles)], shares: [...new Set(shares)] };
 }
 
 function createTrade(room, fromId, { toId, give, get, counterOf }) {
@@ -2098,8 +2106,22 @@ function createTrade(room, fromId, { toId, give, get, counterOf }) {
 
     const giveSide = normaliseSide(room, from, give);
     const getSide = normaliseSide(room, to, get);
-    if (!giveSide.cash && !getSide.cash && !giveSide.tiles.length && !getSide.tiles.length) {
+    if (
+        !giveSide.cash && !getSide.cash &&
+        !giveSide.tiles.length && !getSide.tiles.length &&
+        !giveSide.shares.length && !getSide.shares.length
+    ) {
         return { error: 'Empty trade' };
+    }
+    // Nobody holds two stakes in one country — that is the rule at the
+    // exchange, and a trade is not the way around it. Checked here so the
+    // offer is refused while it is being written rather than at the moment it
+    // is accepted, when the person refused did nothing wrong.
+    const doubled = (side, receiver) =>
+        side.shares.find((groupId) => sharesOf(room, receiver.id).some((sh) => sh.groupId === groupId));
+    const clash = doubled(giveSide, to) || doubled(getSide, from);
+    if (clash) {
+        return { error: `Somebody already holds a share in ${groupName(room, clash)}` };
     }
     // A counter replaces the offer it answers.
     if (counterOf) dropTrade(room, counterOf);
@@ -2154,9 +2176,16 @@ function respondTrade(room, playerId, tradeId, response) {
         return { error: 'Teammates cannot trade while either of you owes money' };
     }
 
-    // Re-validate: ownership and cash may have changed since the offer.
-    const giveOk = trade.give.tiles.every((id) => room.tiles[id].ownerId === from.id) && from.cash >= trade.give.cash;
-    const getOk = trade.get.tiles.every((id) => room.tiles[id].ownerId === to.id) && to.cash >= trade.get.cash;
+    // Re-validate: ownership and cash may have changed since the offer. A
+    // share can have been sold back, or bought back off them, in the meantime
+    // — and either side may have acquired one in a country the offer moves.
+    const holds = (player, groupId) => sharesOf(room, player.id).some((sh) => sh.groupId === groupId);
+    const sideOk = (side, owner, receiver) =>
+        side.tiles.every((id) => room.tiles[id].ownerId === owner.id) &&
+        owner.cash >= side.cash &&
+        (side.shares || []).every((g) => holds(owner, g) && !holds(receiver, g));
+    const giveOk = sideOk(trade.give, from, to);
+    const getOk = sideOk(trade.get, to, from);
     if (!giveOk || !getOk) {
         dropTrade(room, tradeId);
         return { error: 'That trade is no longer valid' };
@@ -2167,8 +2196,15 @@ function respondTrade(room, playerId, tradeId, response) {
         owner.properties = owner.properties.filter((t) => t !== id);
         receiver.properties.push(id);
     };
+    const moveShare = (groupId, owner, receiver) => {
+        const share = sharesOf(room, owner.id).find((sh) => sh.groupId === groupId);
+        if (share) share.holderId = receiver.id;
+    };
     trade.give.tiles.forEach((id) => moveTile(id, from, to));
     trade.get.tiles.forEach((id) => moveTile(id, to, from));
+    // An offer written before shares could be traded has no shares side.
+    (trade.give.shares || []).forEach((g) => moveShare(g, from, to));
+    (trade.get.shares || []).forEach((g) => moveShare(g, to, from));
     from.cash += trade.get.cash - trade.give.cash;
     to.cash += trade.give.cash - trade.get.cash;
     dropTrade(room, tradeId);

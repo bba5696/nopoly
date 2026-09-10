@@ -42,6 +42,51 @@ function PropertyPicker({ player, tiles, selected, onToggle, groups }) {
     );
 }
 
+/**
+ * The stakes this player holds, if any.
+ *
+ * A share moves the way a deed does, so it is picked the way a deed is — but
+ * it is drawn as the country rather than a tile, because that is what it is a
+ * quarter of. A country the other side already has a stake in is unpickable:
+ * nobody holds two in one place, and finding that out when the offer is
+ * refused would be finding it out too late.
+ */
+function SharePicker({ player, shares, selected, onToggle, groups, cutLabel, blockedIn }) {
+    const held = shares.filter((sh) => sh.holderId === player.id);
+    if (!held.length) return null;
+    return (
+        <div className="flex flex-col gap-1.5">
+            <span className="label opacity-60">Shares</span>
+            {held.map((sh) => {
+                const group = groups?.[sh.groupId];
+                const color = group?.color || '#7dd3fc';
+                const on = selected.includes(sh.groupId);
+                const blocked = blockedIn.includes(sh.groupId);
+                return (
+                    <button
+                        key={sh.groupId}
+                        type="button"
+                        disabled={blocked}
+                        onClick={() => onToggle(sh.groupId)}
+                        title={blocked ? 'They already hold a share in that country' : undefined}
+                        className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors disabled:opacity-40"
+                        style={{
+                            borderColor: on ? alpha(color, 0.7) : 'var(--border)',
+                            background: on ? alpha(color, 0.14) : 'rgba(255,255,255,.015)',
+                        }}
+                    >
+                        <span className="h-5 w-[3px] shrink-0 rounded-full" style={{ background: color }} />
+                        <span className="min-w-0 flex-1 truncate text-[14px]">{group?.name || sh.groupId}</span>
+                        <span className="mono shrink-0 text-[11px] text-[#3ddc97]">{cutLabel}</span>
+                        <span className="mono shrink-0 text-[11px] text-muted-foreground">{money(sh.paid)}</span>
+                        {on && <Check className="size-3.5 shrink-0" style={{ color }} />}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
 function CashSlider({ player, value, max, onChange }) {
     return (
         <div className="flex flex-col gap-2">
@@ -87,6 +132,8 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
     const [getCash, setGetCash] = useState(counterOf?.give.cash ?? 0);
     const [giveTiles, setGiveTiles] = useState(counterOf?.get.tiles ?? []);
     const [getTiles, setGetTiles] = useState(counterOf?.give.tiles ?? []);
+    const [giveShares, setGiveShares] = useState(counterOf?.get.shares ?? []);
+    const [getShares, setGetShares] = useState(counterOf?.give.shares ?? []);
 
     // Let the table see "… is creating a trade" while this is open.
     useEffect(() => {
@@ -100,13 +147,20 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
     const toggle = (setter) => (id) =>
         setter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-    const empty = !giveCash && !getCash && !giveTiles.length && !getTiles.length;
+    const empty =
+        !giveCash && !getCash && !giveTiles.length && !getTiles.length &&
+        !giveShares.length && !getShares.length;
+
+    const shares = state.shares || [];
+    const cutLabel = `${Math.round((state.shareCut ?? 0.25) * 100)}%`;
+    // Countries each side already has a stake in, and so cannot receive one in.
+    const heldBy = (id) => shares.filter((sh) => sh.holderId === id).map((sh) => sh.groupId);
 
     const submit = () => {
         send('trade:create', {
             toId: target.id,
-            give: { cash: giveCash, tiles: giveTiles },
-            get: { cash: getCash, tiles: getTiles },
+            give: { cash: giveCash, tiles: giveTiles, shares: giveShares },
+            get: { cash: getCash, tiles: getTiles, shares: getShares },
             counterOf: counterOf?.id || null,
         });
         onClose();
@@ -168,6 +222,15 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
                             onToggle={toggle(setGiveTiles)}
                             groups={board?.groups}
                         />
+                        <SharePicker
+                            player={me}
+                            shares={shares}
+                            selected={giveShares}
+                            onToggle={toggle(setGiveShares)}
+                            groups={board?.groups}
+                            cutLabel={cutLabel}
+                            blockedIn={heldBy(target.id)}
+                        />
                     </div>
 
                     <div className="flex w-10 items-center justify-center">
@@ -194,14 +257,26 @@ export function TradeBuilder({ onClose, initialTargetId, counterOf }) {
                             onToggle={toggle(setGetTiles)}
                             groups={board?.groups}
                         />
+                        <SharePicker
+                            player={target}
+                            shares={shares}
+                            selected={getShares}
+                            onToggle={toggle(setGetShares)}
+                            groups={board?.groups}
+                            cutLabel={cutLabel}
+                            blockedIn={heldBy(me.id)}
+                        />
                     </div>
                 </div>
             </div>
 
             <footer className="flex items-center justify-between gap-3 border-t border-white/8 px-5 py-4">
                 <span className="label">
-                    {giveTiles.length + getTiles.length} propert{giveTiles.length + getTiles.length === 1 ? 'y' : 'ies'} ·{' '}
-                    {money(giveCash)} ⇄ {money(getCash)}
+                    {giveTiles.length + getTiles.length} propert{giveTiles.length + getTiles.length === 1 ? 'y' : 'ies'}
+                    {giveShares.length + getShares.length
+                        ? ` · ${giveShares.length + getShares.length} share${giveShares.length + getShares.length === 1 ? '' : 's'}`
+                        : ''}{' '}
+                    · {money(giveCash)} ⇄ {money(getCash)}
                 </span>
                 <div className="flex gap-2">
                     <Button variant="ghost" className="h-10 px-4" onClick={onClose}>

@@ -8,8 +8,9 @@ import { alpha, tag } from '@/lib/color';
 import { priceOf } from '@/lib/market';
 import { lopsidedFor } from '@/lib/rent';
 
-/** One side of the offer: who, how much cash, and which properties. */
-function Side({ player, side, tiles, groups }) {
+/** One side of the offer: who, how much cash, which properties, what stakes. */
+function Side({ player, side, tiles, groups, cutLabel }) {
+    const shares = side.shares || [];   // an offer written before shares moved has none
     const max = Math.max(player.cash, side.cash, 1);
     return (
         <div className="flex flex-1 flex-col gap-3.5">
@@ -39,7 +40,9 @@ function Side({ player, side, tiles, groups }) {
             </div>
 
             <div className="flex flex-col gap-1.5">
-                {side.tiles.length === 0 && <span className="text-[13px] text-muted-foreground">No properties</span>}
+                {side.tiles.length === 0 && shares.length === 0 && (
+                    <span className="text-[13px] text-muted-foreground">No properties</span>
+                )}
                 {side.tiles.map((id) => {
                     const tile = tiles[id];
                     const color = groups?.[tile.groupId]?.color || '#9aa0b5';
@@ -55,6 +58,26 @@ function Side({ player, side, tiles, groups }) {
                         </div>
                     );
                 })}
+                {/* A stake reads as the country, since that is what it is a
+                    quarter of — and marked as a share, or it looks like a deed
+                    to a place that is not on the board. */}
+                {shares.map((groupId) => {
+                    const group = groups?.[groupId];
+                    const color = group?.color || '#7dd3fc';
+                    return (
+                        <div
+                            key={`share-${groupId}`}
+                            className="flex items-center gap-2.5 rounded-lg border border-dashed px-2.5 py-2"
+                            style={{ borderColor: alpha(color, 0.6), background: alpha(color, 0.1) }}
+                        >
+                            <span className="h-5 w-[3px] shrink-0 rounded-full" style={{ background: color }} />
+                            <span className="min-w-0 flex-1 truncate text-[14px]">
+                                {group?.name || groupId}
+                            </span>
+                            <span className="mono shrink-0 text-[11px] text-[#3ddc97]">{cutLabel} share</span>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -67,6 +90,7 @@ function Side({ player, side, tiles, groups }) {
  */
 export function TradeViewModal({ tradeId, onClose, onCounter }) {
     const { state, playerId, board, send } = useGame();
+    const cutLabel = `${Math.round((state.shareCut ?? 0.25) * 100)}%`;
     const trade = state.trades.find((t) => t.id === tradeId) || null;
     // Which offer has been warned about, rather than a bare flag. A counter
     // replaces the trade in place, and a flag would carry the confirmation over
@@ -105,13 +129,13 @@ export function TradeViewModal({ tradeId, onClose, onCounter }) {
         <Modal open onClose={onClose} title="View trade" width={620}>
             <div className="flex flex-col gap-6 p-6">
                 <div className="flex items-stretch gap-4">
-                    <Side player={from} side={trade.give} tiles={state.tiles} groups={board?.groups} />
+                    <Side player={from} side={trade.give} tiles={state.tiles} groups={board?.groups} cutLabel={cutLabel} />
                     <div className="flex w-10 items-center justify-center">
                         <div className="flex h-24 w-8 items-center justify-center rounded-full border border-white/10 text-muted-foreground">
                             <ArrowLeftRight className="size-4" />
                         </div>
                     </div>
-                    <Side player={to} side={trade.get} tiles={state.tiles} groups={board?.groups} />
+                    <Side player={to} side={trade.get} tiles={state.tiles} groups={board?.groups} cutLabel={cutLabel} />
                 </div>
 
                 {/* Only shown once you've reached for Accept — flagging every
