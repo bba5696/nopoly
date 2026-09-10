@@ -221,15 +221,40 @@ const num = (suit, value) => card(suit, 'num', value);
     nouno.playCard(r, p.Ada.id, { cardId: p.Ada.hand[0].id });
     ok('and nothing is drawn for it', p.Ada.hand.length === 1, String(p.Ada.hand.length));
 
+    // Going quiet is a debt, not an instant fine: it is collected by the next
+    // thing that happens, which is the window you get to call it in.
     const { r: r2, p: p2 } = started();
     stage(r2, p2.Ada, [num('ember', 5), num('tide', 9)], num('ember', 2));
     nouno.playCard(r2, p2.Ada.id, { cardId: p2.Ada.hand[0].id });
-    ok('saying nothing costs two', p2.Ada.hand.length === 3, String(p2.Ada.hand.length));
-    ok('and the feed says why', r2.log.some((l) => /said nothing on one card/.test(l.text)));
+    ok('going quiet does not cost you on the spot', p2.Ada.hand.length === 1, String(p2.Ada.hand.length));
+    ok('but it is owed', r2.pendingLast === p2.Ada.id);
+    ok('and the feed says they are on one', r2.log.some((l) => /down to one card, and quiet/.test(l.text)));
+    ok('calling it in the window is allowed', !nouno.sayLast(r2, p2.Ada.id).error);
+    ok('and clears the debt', r2.pendingLast === null && p2.Ada.hand.length === 1);
+    ok('the feed says it was close', r2.log.some((l) => /just in time/.test(l.text)));
+
+    // Say nothing, and the next player's move collects it.
+    const { r: r2b, p: p2b } = started();
+    stage(r2b, p2b.Ada, [num('ember', 5), num('tide', 9)], num('ember', 2));
+    nouno.playCard(r2b, p2b.Ada.id, { cardId: p2b.Ada.hand[0].id });
+    nouno.drawCard(r2b, r2b.players[r2b.turnIndex].id);
+    ok('saying nothing costs two', p2b.Ada.hand.length === 3, String(p2b.Ada.hand.length));
+    ok('and the feed says why', r2b.log.some((l) => /never called it — drew two/.test(l.text)));
+    ok('and it is only collected once', r2b.pendingLast === null);
 
     const { r: r3, p: p3 } = started();
     stage(r3, p3.Ada, [num('ember', 5), num('tide', 9), num('fern', 1)], num('ember', 2));
-    ok('you cannot say it on three', !!nouno.sayLast(r3, p3.Ada.id).error);
+    const early = nouno.sayLast(r3, p3.Ada.id);
+    ok('you cannot say it on three', !!early.error);
+    ok('and it says how many you hold', /holding 3/.test(early.error), early.error);
+
+    // The call is about the hand you hold now, not a badge you keep.
+    const { r: r4, p: p4 } = started();
+    stage(r4, p4.Ada, [num('ember', 5), num('tide', 9)], num('ember', 2));
+    nouno.sayLast(r4, p4.Ada.id);
+    p4.Ada.hand.push(num('fern', 3), num('fern', 4));
+    nouno.drawCard(r4, p4.Ada.id);
+    ok('drawing back up takes the call away', !r4.saidLast.includes(p4.Ada.id));
 }
 
 /* ------------------------------------------------------------- winning */

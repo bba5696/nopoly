@@ -53,6 +53,21 @@ function draw(room, n) {
 
 const topOf = (room) => room.pile[room.pile.length - 1] || null;
 
+/**
+ * Put cards in a hand, and take back the last-card call if it no longer
+ * applies.
+ *
+ * The call is about the hand you are holding now, not a badge you keep for the
+ * rest of the game: draw your way back up and you have to call again on the
+ * way down. Every route a card takes into a hand goes through here, because
+ * the one that doesn't is the one that grants somebody permanent immunity.
+ */
+function giveCards(room, player, cards) {
+    player.hand.push(...cards);
+    if (player.hand.length > 2) room.saidLast = room.saidLast.filter((id) => id !== player.id);
+    return cards;
+}
+
 /** The seat `steps` along, in the direction of play, skipping anyone out. */
 function seatAfter(room, steps = 1) {
     const live = inPlay(room);
@@ -104,11 +119,37 @@ function finish(room, winner) {
     log(room, `${winner.name} went out — ${points} points`);
 }
 
-/** The penalty for going quiet about it, applied when their turn ends. */
-function checkLastCard(room, player) {
+/**
+ * Going down to one card without calling it leaves you owing two — but not
+ * yet.
+ *
+ * The penalty used to land inside the same action as the play, which meant
+ * there was no moment in which you could be on one card and quiet. Reach for
+ * the button a half-second after playing and the cards were already in your
+ * hand, and the call came back "Not yet" — the game punishing you for a window
+ * it never opened.
+ *
+ * So the debt is recorded here and collected by the next thing that happens at
+ * the table. That is the window everyone reaches for anyway, it is somebody
+ * else's move rather than a clock, and it is the same rule the card game has
+ * always had: you are safe until you are caught.
+ */
+function oweLastCard(room, player) {
     if ((player.hand || []).length !== 1 || room.saidLast.includes(player.id)) return;
-    player.hand.push(...draw(room, 2));
-    log(room, `${player.name} said nothing on one card — drew two`);
+    room.pendingLast = player.id;
+    log(room, `${player.name} is down to one card, and quiet about it`);
+}
+
+/** Collect it, if it is still owed. Called before anything else happens. */
+function settleLast(room) {
+    const owed = room.pendingLast;
+    if (!owed) return;
+    room.pendingLast = null;
+    const player = findPlayer(room, owed);
+    // Drawn back up, or called in time, and there is nothing to collect.
+    if (!player || (player.hand || []).length !== 1 || room.saidLast.includes(owed)) return;
+    giveCards(room, player, draw(room, 2));
+    log(room, `${player.name} never called it — drew two`);
 }
 
 /** What a played card does to everyone else. */
@@ -130,7 +171,7 @@ function applyEffect(room, player, card) {
         const victim = room.players[seatAfter(room, 1)];
         const n = DRAW_FOR[card.kind];
         if (victim) {
-            victim.hand.push(...draw(room, n));
+            giveCards(room, victim, draw(room, n));
             log(room, `${victim.name} draws ${n} and misses a turn`);
         }
         return advance(room, 2);
@@ -148,6 +189,7 @@ function playCard(room, playerId, { cardId, suit } = {}) {
     if (!isCurrent(room, playerId)) return { error: 'Not your turn' };
     if (room.choosing) return { error: 'Name a suit first' };
 
+    settleLast(room);
     const index = (player.hand || []).findIndex((c) => c.id === cardId);
     if (index < 0) return { error: 'You do not hold that card' };
     const card = player.hand[index];
@@ -172,7 +214,7 @@ function playCard(room, playerId, { cardId, suit } = {}) {
     }
 
     room.active = card.suit;
-    checkLastCard(room, player);
+    oweLastCard(room, player);
     applyEffect(room, player, card);
     return {};
 }
@@ -185,7 +227,7 @@ function chooseSuit(room, playerId, { suit } = {}) {
     room.choosing = null;
     room.active = suit;
     log(room, `${player.name} named ${SUITS[suit].name}`);
-    checkLastCard(room, player);
+    oweLastCard(room, player);
     applyEffect(room, player, card);
     return {};
 }
@@ -203,13 +245,15 @@ function drawCard(room, playerId) {
     if (room.choosing) return { error: 'Name a suit first' };
     if (room.drawnThisTurn) return { error: 'You have already drawn' };
 
+    settleLast(room);
+
     const [card] = draw(room, 1);
     if (!card) {
         log(room, `${player.name} found nothing left to draw`);
         advance(room, 1);
         return {};
     }
-    player.hand.push(card);
+    giveCards(room, player, [card]);
     room.drawnThisTurn = true;
     log(room, `${player.name} drew a card`);
     // Nothing to play means nothing to decide.
@@ -223,19 +267,31 @@ function pass(room, playerId) {
     if (room.choosing) return { error: 'Name a suit first' };
     if (!room.drawnThisTurn) return { error: 'Draw first' };
     const player = findPlayer(room, playerId);
-    checkLastCard(room, player);
+    settleLast(room);
+    oweLastCard(room, player);
     advance(room, 1);
     return {};
 }
 
-/** Say it before your turn ends, or draw two for the silence. */
+/**
+ * Call it — before you play your second-to-last card, or in the window after,
+ * up until somebody else moves.
+ */
 function sayLast(room, playerId) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
-    if ((player.hand || []).length > 2) return { error: 'Not yet' };
+    const held = (player.hand || []).length;
+    const owing = room.pendingLast === playerId;
+    if (held > 2 && !owing)
+        return { error: `Only on your last two cards — you are holding ${held}` };
     if (room.saidLast.includes(playerId)) return {};
     room.saidLast.push(playerId);
-    log(room, `${player.name}: last card!`);
+    if (owing) {
+        room.pendingLast = null;
+        log(room, `${player.name}: last card! — just in time`);
+    } else {
+        log(room, `${player.name}: last card!`);
+    }
     return {};
 }
 
@@ -255,6 +311,7 @@ module.exports = {
         room.direction = 1;
         room.choosing = null;      // { playerId, cardId } while a suit is being named
         room.saidLast = [];        // who has called their last card
+        room.pendingLast = null;   // who went quiet to one card, until someone moves
         room.drawnThisTurn = false;
         room.scores = {};
         Object.assign(room.stats, { played: 0, wilds: 0, hands: [] });
@@ -271,6 +328,7 @@ module.exports = {
         room.pile = [];
         room.direction = 1;
         room.saidLast = [];
+        room.pendingLast = null;
         room.choosing = null;
         room.drawnThisTurn = false;
         const size = room.settings.handSize || HAND_SIZE;
@@ -317,6 +375,7 @@ module.exports = {
             pileCount: room.pile.length,
             choosing: room.choosing,
             saidLast: room.saidLast,
+            pendingLast: room.pendingLast,
             drawnThisTurn: room.drawnThisTurn,
             scores: room.scores,
             suits: SUITS,
@@ -345,6 +404,7 @@ module.exports = {
             chooseSuit(room, player.id, { suit: best });
             return;
         }
+        settleLast(room);
         if (!room.drawnThisTurn) drawCard(room, player.id);
         if (isCurrent(room, player.id)) {
             room.drawnThisTurn = true;
@@ -363,6 +423,7 @@ module.exports = {
         player.hand = [];
         player.out = true;
         room.saidLast = room.saidLast.filter((id) => id !== player.id);
+        if (room.pendingLast === player.id) room.pendingLast = null;
         if (room.choosing?.playerId === player.id) room.choosing = null;
         const left = inPlay(room);
         if (left.length === 1) return finish(room, left[0]);
@@ -391,6 +452,7 @@ module.exports = {
     drawCard,
     pass,
     sayLast,
+    settleLast,
     draw,
     topOf,
     HAND_SIZE,

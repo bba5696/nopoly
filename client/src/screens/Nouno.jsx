@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Eye, Hand as HandIcon, MessageSquare, Users } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
@@ -51,7 +51,7 @@ function SuitChooser({ suits, onPick }) {
 }
 
 export function Nouno() {
-    const { state, me, hand, playerId, isMyTurn, spectating, send, leaveRoom } = useGame();
+    const { state, hand, playerId, isMyTurn, spectating, send, leaveRoom } = useGame();
     const [tab, setTab] = useState('table');
 
     const suits = state.suits;
@@ -66,6 +66,16 @@ export function Nouno() {
     // Drawn and holding something unplayable: the way out is to pass.
     const canPass = isMyTurn && state.drawnThisTurn && !state.choosing;
     const said = new Set(state.saidLast || []);
+    // You went to one card without calling it. Anybody's next move collects
+    // the two, so this is a window with a door closing, not a notification.
+    const owing = state.pendingLast === playerId;
+    const owedBy = state.pendingLast && state.pendingLast !== playerId
+        ? state.players.find((x) => x.id === state.pendingLast)
+        : null;
+    // The last thing that happened, said out loud on the table. The feed in
+    // the rail is the history; this is the one line you cannot miss, and it is
+    // where a table full of effects stops being a mystery.
+    const latest = state.log?.[state.log.length - 1] || null;
 
     return (
         <div className="flex h-svh flex-col overflow-hidden">
@@ -132,6 +142,27 @@ export function Nouno() {
                         <Pile top={state.top} active={state.active} suits={suits} count={state.pileCount} size={19} />
                     </div>
 
+                    {/* What just happened, over the table. Effects land on
+                        people who did not choose them — you are skipped, you
+                        draw four, the suit changes under you — and a line in a
+                        side rail is not where anyone is looking when it does. */}
+                    <AnimatePresence mode="popLayout">
+                        {latest && (
+                            <motion.div
+                                key={latest.id}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -8 }}
+                                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                                className="pointer-events-none absolute inset-x-0 bottom-[19rem] flex justify-center"
+                            >
+                                <span className="rounded-full bg-black/45 px-4 py-1.5 text-[13px] backdrop-blur-sm">
+                                    {latest.text}
+                                </span>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
                     {/* Whose turn, and what you can do about it, on one line
                         between the table and your own cards. The buttons are
                         here rather than under the fan, where a lifted card
@@ -155,10 +186,26 @@ export function Nouno() {
                                 Pass
                             </Button>
                         )}
-                        {seated && hand.length <= 2 && !said.has(playerId) && (
-                            <Button size="sm" onClick={() => send('nouno:last')}>
-                                Last card!
-                            </Button>
+                        {owedBy && (
+                            <span className="text-[13px] text-[#ffb648]">
+                                {owedBy.name} is on one card and hasn't said it
+                            </span>
+                        )}
+                        {seated && (owing || (hand.length <= 2 && !said.has(playerId))) && (
+                            <motion.div
+                                // Urgent once the two are actually owed: this
+                                // is the half-second the rule is decided in.
+                                animate={owing ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+                                transition={owing ? { repeat: Infinity, duration: 0.9 } : undefined}
+                            >
+                                <Button
+                                    size="sm"
+                                    onClick={() => send('nouno:last')}
+                                    className={owing ? 'bg-[#ffb648] text-black hover:bg-[#ffc670]' : ''}
+                                >
+                                    {owing ? 'Say it — before anyone moves!' : 'Last card!'}
+                                </Button>
+                            </motion.div>
                         )}
                     </div>
 

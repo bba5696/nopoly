@@ -10,12 +10,8 @@ import { ProfileModal } from '@/components/modals/ProfileModal';
 import { loadIdentity } from '@/lib/socket';
 import { alpha, initials } from '@/lib/color';
 import { historyCount } from '@/lib/history';
+import { GAMES } from '@/lib/games';
 import { cn } from '@/lib/utils';
-
-const GAMES = [
-    { id: 'nopoly', name: 'nopoly', blurb: 'The board. Buy it, build it, charge rent.' },
-    { id: 'nouno', name: 'nouno', blurb: 'The cards. Shed your hand before anyone else.' },
-];
 import { PastGames } from '@/screens/PastGames';
 
 export function Home() {

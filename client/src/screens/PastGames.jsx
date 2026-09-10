@@ -13,6 +13,7 @@ import {
     titleOf,
     whenOf,
 } from '@/lib/history';
+import { DEFAULT_GAME, GAMES, gameName } from '@/lib/games';
 import { cn } from '@/lib/utils';
 
 /**
@@ -101,7 +102,9 @@ function Row({ entry, onOpen, onRemoved }) {
                     <span className="truncate text-[15px]">{titleOf(entry)}</span>
                     <span className="truncate text-[12px] text-muted-foreground">
                         {entry.players.length} players · {entry.facts.turnCount} turns · {durationOf(entry)}
-                        {entry.boardName ? ` · ${entry.boardName}` : ''}
+                        {/* The board's name says which game it was; the card game has
+                            no board, so it says so itself. */}
+                        {entry.boardName ? ` · ${entry.boardName}` : ` · ${gameName(entry.game)}`}
                     </span>
                 </span>
             </button>
@@ -132,13 +135,64 @@ function Row({ entry, onOpen, onRemoved }) {
     );
 }
 
+/**
+  * The filter across the top.
+  *
+  * Only drawn when there is something to filter — a tab bar offering to hide
+  * the card games from someone who has never played one is a control that can
+  * only ever do nothing.
+  */
+function Tabs({ tabs, active, onPick }) {
+    return (
+        <div className="flex shrink-0 gap-1 px-4 pt-3">
+            {tabs.map((t) => (
+                <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => onPick(t.id)}
+                    className={cn(
+                        'rounded-lg px-3 py-1.5 text-[13px] transition-colors',
+                        active === t.id
+                            ? 'bg-white/10 text-foreground'
+                            : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
+                    )}
+                >
+                    {t.label}
+                    <span className="mono ml-1.5 text-[11px] text-muted-foreground">{t.count}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
 export function PastGames({ onClose }) {
     // Read once per change rather than on every render: storage is the source
     // of truth and `tick` is how this screen says it has been written to.
     const [tick, setTick] = useState(0);
-    const games = useMemo(() => loadHistory(), [tick]);
+    const all = useMemo(() => loadHistory(), [tick]);
+    const [filter, setFilter] = useState('all');
     const [openId, setOpenId] = useState(null);
-    const open = games.find((g) => g.id === openId) || null;
+
+    // Which games are actually in there. Anything saved before the card game
+    // existed has no `game` field and is the board game. Counted on every
+    // render rather than memoised: it is at most 25 rows, and the compiler
+    // handles it better than a hand-written cache does.
+    const counts = {};
+    for (const g of all) counts[g.game || DEFAULT_GAME] = (counts[g.game || DEFAULT_GAME] || 0) + 1;
+    const played = GAMES.filter((g) => counts[g.id]);
+    const tabs =
+        played.length < 2
+            ? []
+            : [
+                  { id: 'all', label: 'All', count: all.length },
+                  ...played.map((g) => ({ id: g.id, label: g.name, count: counts[g.id] })),
+              ];
+
+    // A filter for a game whose last row was just deleted has nothing to show
+    // and no tab to sit on, so it falls back rather than stranding the screen.
+    const active = tabs.some((t) => t.id === filter) ? filter : 'all';
+    const games = active === 'all' ? all : all.filter((g) => (g.game || DEFAULT_GAME) === active);
+    const open = all.find((g) => g.id === openId) || null;
 
     if (open) {
         return (
@@ -182,6 +236,8 @@ export function PastGames({ onClose }) {
                     </Button>
                 </header>
 
+                {tabs.length > 0 && <Tabs tabs={tabs} active={active} onPick={setFilter} />}
+
                 <div className="scroll-thin flex min-h-0 flex-col gap-2 overflow-y-auto p-4">
                     {games.length === 0 && (
                         <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
@@ -206,7 +262,8 @@ export function PastGames({ onClose }) {
                 {games.length > 0 && (
                     <footer className="shrink-0 border-t border-white/8 px-6 py-3">
                         <span className="mono text-[11px] text-muted-foreground">
-                            {games.length} game{games.length === 1 ? '' : 's'} · newest first · the oldest fall off
+                            {games.length} game{games.length === 1 ? '' : 's'}
+                            {active === 'all' ? '' : ` of ${all.length}`} · newest first · the oldest fall off
                             after 25
                         </span>
                     </footer>
