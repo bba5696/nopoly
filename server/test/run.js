@@ -59,6 +59,11 @@ const SERVER_ENV = {
     // Also overrides a real key in a developer's .env, which a test must never
     // be the thing that signs in with.
     NOPOLY_ADMIN_KEY: 'test-admin-key-not-a-real-one',
+    // Every socket suite shares this one server and connects from localhost,
+    // so the per-address room limit counts all of their rooms together — and
+    // the tenth room made across the whole run started refusing whichever
+    // suite came last. `limits` boots its own server to test that limit.
+    NOPOLY_ROOMS_PER_IP: '1000',
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
