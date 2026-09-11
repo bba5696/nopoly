@@ -260,16 +260,32 @@ const SHARE_MS = Number(process.env.NOPOLY_SHARE_MS) || 60 * 60 * 1000;
 const MAX_SHARES = Number(process.env.NOPOLY_MAX_SHARES) || 300;
 const SHARES_PER_IP = Number(process.env.NOPOLY_SHARES_PER_IP) || 20;
 
-/** id -> { entry, expiresAt } */
+/** id -> { entry, expiresAt, print } */
 const shares = new Map();
+/**
+ * print -> id, for the links still live.
+ *
+ * One game, one link. Everyone at a table can share the same game from their
+ * own history, and pressing Share twice used to make two links — so a game
+ * already shared hands back the link it already has rather than a second copy
+ * of the same end screen. "The same game" is the same data, byte for byte, as
+ * it comes out of cleanShare: a different name given to it is a different
+ * thing to send, and gets its own link.
+ */
+const sharesByPrint = new Map();
 /** ip -> { count, until } — the same shape as the room and login limiters. */
 const sharesMade = new Map();
 
 const shareId = () => require('crypto').randomBytes(9).toString('base64url');
+const sharePrint = (entry) => require('crypto').createHash('sha256').update(JSON.stringify(entry)).digest('base64url');
 
 function sweepShares() {
     const now = Date.now();
-    for (const [id, rec] of shares) if (rec.expiresAt <= now) shares.delete(id);
+    for (const [id, rec] of shares) {
+        if (rec.expiresAt > now) continue;
+        shares.delete(id);
+        if (sharesByPrint.get(rec.print) === id) sharesByPrint.delete(rec.print);
+    }
     for (const [ip, rec] of sharesMade) if (rec.until <= now) sharesMade.delete(ip);
 }
 setInterval(sweepShares, 60_000).unref();
@@ -343,6 +359,27 @@ function cleanShare(body) {
 // the chart to about forty kilobytes before sending; this is headroom for a
 // tab that has not reloaded since it learned to, not an invitation.
 app.post('/api/share', express.json({ limit: '256kb' }), (req, res) => {
+    const entry = cleanShare(req.body);
+    if (!entry) return res.status(400).json({ error: 'That does not look like a finished game' });
+
+    // Already shared and still live: the same link, good for a full hour again
+    // from now, since whoever pressed Share is about to send it to somebody.
+    // Checked before the limits — handing back a link that exists costs
+    // nothing, and should never be refused as "too many".
+    const print = sharePrint(entry);
+    const existingId = sharesByPrint.get(print);
+    const existing = existingId && shares.get(existingId);
+    if (existing && existing.expiresAt > Date.now()) {
+        existing.expiresAt = Date.now() + SHARE_MS;
+        return res.json({
+            id: existingId,
+            path: `/s/${existingId}`,
+            expiresAt: existing.expiresAt,
+            ttlMs: SHARE_MS,
+            reused: true,
+        });
+    }
+
     const ip = req.ip || 'unknown';
     const rec = sharesMade.get(ip);
     const live = rec && Date.now() < rec.until ? rec.count : 0;
@@ -352,12 +389,10 @@ app.post('/api/share', express.json({ limit: '256kb' }), (req, res) => {
         if (shares.size >= MAX_SHARES) return res.status(503).json({ error: 'Too many shared games right now' });
     }
 
-    const entry = cleanShare(req.body);
-    if (!entry) return res.status(400).json({ error: 'That does not look like a finished game' });
-
     const id = shareId();
     const expiresAt = Date.now() + SHARE_MS;
-    shares.set(id, { entry, expiresAt });
+    shares.set(id, { entry, expiresAt, print });
+    sharesByPrint.set(print, id);
     sharesMade.set(ip, {
         count: live + 1,
         until: rec && Date.now() < rec.until ? rec.until : Date.now() + 10 * 60 * 1000,
@@ -366,9 +401,11 @@ app.post('/api/share', express.json({ limit: '256kb' }), (req, res) => {
 });
 
 app.get('/api/share/:id', (req, res) => {
-    const rec = shares.get(String(req.params.id || ''));
+    const id = String(req.params.id || '');
+    const rec = shares.get(id);
     if (!rec || rec.expiresAt <= Date.now()) {
-        shares.delete(String(req.params.id || ''));
+        shares.delete(id);
+        if (rec && sharesByPrint.get(rec.print) === id) sharesByPrint.delete(rec.print);
         // 410 rather than 404: the difference between "never existed" and "you
         // are too late" is the whole point of a link that expires.
         return res.status(410).json({ error: 'This link has expired' });

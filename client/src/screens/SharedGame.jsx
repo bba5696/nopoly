@@ -85,7 +85,9 @@ export function SharedGame({ id }) {
                 </div>
             </div>
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex w-full justify-center">
-                <Scoreboard entry={entry} />
+                {/* Share on this page copies this page: the game is already
+                    shared, and this address is the link to it. */}
+                <Scoreboard entry={entry} existingLink={{ url: `${location.origin}/s/${id}`, expiresAt: state.expiresAt }} />
             </motion.div>
         </div>
     );

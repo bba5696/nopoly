@@ -30,7 +30,7 @@ const ENGINE = [
 ];
 const WIRE = [
     'wire', 'nounowire', 'votewire', 'leavewire', 'abandonwire',
-    'spectatewire', 'idlewire', 'rentwire', 'presence', 'polling',
+    'spectatewire', 'idlewire', 'rentwire', 'presence', 'polling', 'sharewire',
     // Last: it spends the admin sign-in attempts on purpose, which locks this
     // address out of signing in for the rest of the server's life.
     'adminwire',

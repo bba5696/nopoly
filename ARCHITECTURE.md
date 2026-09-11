@@ -140,6 +140,15 @@ way in, and only the person who pressed the button has one. An id that is gone
 answers 410 rather than 404, because "you are too late" and "never existed" are
 different things to be told.
 
+One game, one link. Everyone at a table can share the same game from their own
+history, and pressing Share twice used to make a second copy under a second
+address. The server fingerprints what `cleanShare` keeps and, if a live link
+already holds exactly that, hands it back with its hour started again — whoever
+pressed Share is about to send it to somebody. A name given to the game makes it
+different data and so a different link. Handing back an existing link is checked
+before the limits, since it costs nothing and should never be refused. On a
+shared page itself, Share copies that page's address instead of asking at all.
+
 Three limits, for the same reason the room caps exist: a global cap on how many
 are live, a per-IP cap on how many can be made, and a 96kb body — this is the
 one route in the process that a stranger can put bytes into. What is stored is
@@ -592,7 +601,7 @@ told, because a board that silently stops answering reads as a broken server.
 
 ## Testing
 
-`server/test/` holds 30 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 32 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 

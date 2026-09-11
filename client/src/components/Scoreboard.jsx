@@ -49,7 +49,7 @@ function ChartTooltip({ active, payload, label, cards }) {
  * browsers have a clipboard that pastes into Discord, and a download is the one
  * that always works. Whichever is missing is simply not offered.
  */
-export function ShareCard({ card, entry, flash }) {
+export function ShareCard({ card, entry, flash, existingLink = null }) {
     const [done, setDone] = useState(null);
     const [busy, setBusy] = useState(false);
     const [link, setLink] = useState(null);
@@ -128,6 +128,13 @@ export function ShareCard({ card, entry, flash }) {
      */
     const makeLink = useCallback(async () => {
         if (busy || !entry) return;
+        // Already on a shared page: this is the link. Making another would be
+        // a second copy of the same game under a different address.
+        if (existingLink) {
+            setLink(existingLink);
+            await copyLink(existingLink.url);
+            return;
+        }
         setBusy(true);
         setProblem(null);
         try {
@@ -139,7 +146,7 @@ export function ShareCard({ card, entry, flash }) {
         } finally {
             setBusy(false);
         }
-    }, [busy, card, copyLink, entry, report]);
+    }, [busy, card, copyLink, entry, existingLink, report]);
 
     const canCopy = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write;
 
@@ -210,7 +217,7 @@ export function ShareCard({ card, entry, flash }) {
     );
 }
 
-export function Scoreboard({ entry, flash, aside }) {
+export function Scoreboard({ entry, flash, aside, existingLink }) {
     const players = entry.players;
     // Drawn from the record rather than stored with it, so the picture and the
     // page can never be two different games.
@@ -355,7 +362,7 @@ export function Scoreboard({ entry, flash, aside }) {
                 <section className="panel flex flex-col gap-4 p-6">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-xl">{cards ? 'Cards in hand' : 'Net worth over time'}</span>
-                        <ShareCard card={card} entry={entry} flash={flash} />
+                        <ShareCard card={card} entry={entry} flash={flash} existingLink={existingLink} />
                     </div>
                     <div className="h-[280px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
