@@ -917,13 +917,15 @@ io.on('connection', (socket) => {
 
     socket.on('auction:bid', ({ amount } = {}) => nopolyAct(socket, (room, pid) => engine.placeBid(room, pid, amount)));
 
-    // The exchange. Buying is gated on standing on one, which the engine
-    // checks; selling and buying back are not, because both are ways out of a
-    // debt and a debt does not wait for your turn.
+    // The exchange. Buying is gated on standing on one, and buying back on
+    // your own turn, both of which the engine checks. Selling is not, because
+    // it is a way out of a debt and a debt does not wait for your turn.
     socket.on('exchange:buy', ({ groupId } = {}) => nopolyAct(socket, (room, pid) => engine.buyShare(room, pid, groupId)));
     socket.on('exchange:leave', () => nopolyAct(socket, engine.leaveExchange));
     socket.on('share:sell', ({ groupId } = {}) => nopolyAct(socket, (room, pid) => engine.sellShare(room, pid, groupId)));
-    socket.on('share:buyback', ({ groupId } = {}) => nopolyAct(socket, (room, pid) => engine.buyBackShare(room, pid, groupId)));
+    socket.on('share:buyback', ({ groupId, holderId } = {}) =>
+        nopolyAct(socket, (room, pid) => engine.buyBackShare(room, pid, groupId, holderId)),
+    );
 
     // Each game's own actions, registered from the registry rather than listed
     // here twice. The guard is the point: a client that has not reloaded since

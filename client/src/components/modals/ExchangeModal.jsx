@@ -64,8 +64,10 @@ export function ExchangeModal() {
                 </div>
                 <p className="shrink-0 text-[13px] leading-snug text-muted-foreground">
                     A share pays you {cut}% of every rent the country collects, out of the owner's
-                    end — they still hold the deeds, and can buy your share back later at half again
-                    what you paid. {perGroup} to a country.
+                    end. Prices follow what a country earns now, so buying before the owner builds is
+                    the bargain. They can buy your share back on their turn — 1.5× today, 2× after one of
+                    your laps, 3× after two — and after three laps it's yours for good. {perGroup} to a
+                    country.
                 </p>
 
                 <div className="scroll-thin -mx-1 flex min-h-0 flex-col gap-1 overflow-y-auto px-1">

@@ -245,15 +245,35 @@ and no new money enters a game that already inflates through Start. A rent
 half-paid divides what actually arrived, not what was owed — the shortfall is
 the payer's debt, not the shareholder's claim.
 
-The bargain is symmetric on purpose. Whoever holds the deeds can buy a share
-back at half again what it cost, and the shareholder has no say: they wanted
-money out of the country, and they are getting fifty per cent of it today. So
-a shareholder cannot be robbed, only bought out at a profit, and an owner is
-never taxed forever — only expensively. Neither side has to wait on the other's
-decision, which is what a table of twelve cannot afford.
+A share is priced off what the country earns, not what its deeds cost. The
+first version pegged it to a fifth of the deeds, and that was right on turn
+five and meaningless by turn fifty: rent climbs up to a hundredfold with
+building and the price did not move, so a $170 stake in a hotel country paid
+for itself three times over on one landing, and the owner could shake it off
+for $255. Late in a game neither buying a share nor buying one back was a
+decision. The price is now the country's average live rent times the four
+landings a stake should take to pay back — floored at the old fifth, so a bare
+country's share is as cheap as it always was. The consequence worth having is
+that the bargain is buying *before* the owner builds.
+
+Whoever holds the deeds can buy a share back, and the shareholder has no say —
+but the owner is racing a window. The price is a multiple of what the stake is
+worth today (or what was paid, if that is higher, so a shareholder is bought
+out and never robbed), and the multiple climbs with every lap the shareholder
+completes: half again, then double, then triple, and after three laps it
+cannot be taken at all. Laps are the holder's, counted as they pass Start, so
+the table can see the window closing. An owner is taxed forever only if they
+let it happen.
+
+It also costs a turn. A buy-back happens on your own turn, once, and is that
+turn's building — so the owner of a developed country chooses between the next
+hotel and the stake draining it, rather than doing both between rolls. Trades
+are untouched, since they happen off-turn and a share can be bought out of one
+at whatever price the two players agree.
 
 Shares count in net worth and in liquid value, and the bank buys them back at
-what they cost. That is deliberate: a share is money a player can reach, so it
+what they cost — never at what they are worth now, or buying a bare country's
+stake and selling it back after the hotels went up would print money. That is deliberate: a share is money a player can reach, so it
 belongs in the test for whether a debt can be covered rather than only in the
 ranking. A share held in your own country pays you nothing and is still worth
 buying, because it is one of the two.

@@ -54,18 +54,18 @@ export function TileInfoModal({ tile, onClose }) {
     if (!tile) return null;
 
     const owner = state.players.find((p) => p.id === tile.ownerId);
-    // The exchange, from the deed's side: a share out on this country, whose it
-    // is, and what taking it back would cost.
-    const share = (state.shares || []).find((sh) => sh.groupId === tile.groupId);
-    const shareHolder = share && state.players.find((p) => p.id === share.holderId);
+    // The exchange, from the deed's side: every stake out on this country, whose
+    // each is, and what taking it back costs today. The price comes from the
+    // server with the share — it moves with the country's rent and with how
+    // many laps the stake has been held, and working that out twice is how a
+    // button comes to show a number the server then refuses.
+    const countryShares = (state.shares || []).filter((sh) => sh.groupId === tile.groupId);
     const shareCut = Math.round((state.shareCut ?? 0.25) * 100);
-    const buyback = share ? Math.round(share.paid * (state.buybackMult ?? 1.5)) : 0;
-    // Anyone holding a deed in the country can buy it back, since most of them
+    const ladder = state.buybackLadder || [1.5, 2, 3];
+    // Anyone holding a deed in the country can buy one back, since most of them
     // are split on the big board — but not off your own share.
-    const canBuyBack =
-        !!share &&
-        share.holderId !== me?.id &&
-        state.tiles.some((t) => t.groupId === tile.groupId && t.ownerId === me?.id);
+    const holdsDeedHere = state.tiles.some((t) => t.groupId === tile.groupId && t.ownerId === me?.id);
+    const spentTurn = state.boughtBackBy === me?.id;
     const group = board?.groups?.[tile.groupId];
     const color = group?.color || (tile.type === 'airport' ? '#9aa0b5' : tile.type === 'utility' ? '#7dd3fc' : '#5a5a70');
     // Building goes by side, selling by deed: a teammate can develop your set
@@ -75,7 +75,8 @@ export function TileInfoModal({ tile, onClose }) {
     const buildable = tile.type === 'property';
     // Turn-gated, matching the server — an Upgrade button that only ever
     // returns an error is worse than no button.
-    const upgradeOk = ours && isMyTurn && canBuild(state, me, tile);
+    // A buy-back is that turn's building, so the button goes with it.
+    const upgradeOk = ours && isMyTurn && !spentTurn && canBuild(state, me, tile);
     const downgradeOk = mine && canSell(state, me, tile);
     const sellOk = mine && tile.houses === 0;
     const priced = tile.price > 0;
@@ -151,33 +152,73 @@ export function TileInfoModal({ tile, onClose }) {
                             Shown on the deed rather than anywhere else, because
                             here is where you find out about it — and the way
                             out is a button in the same place. */}
-                        {share && (
-                            <div className="flex items-center gap-3 rounded-xl border border-[#3ddc97]/25 bg-[#3ddc97]/[0.06] px-3 py-2.5">
-                                <span className="min-w-0 flex-1 text-[13px] leading-snug text-muted-foreground">
-                                    {share.holderId === me?.id ? (
-                                        <>
-                                            You hold a {shareCut}% share in {group?.name || 'this country'} —
-                                            your own pays you nothing, but nobody else can have it.
-                                        </>
-                                    ) : (
-                                        <>
-                                            {shareHolder?.name || 'Someone'} holds a {shareCut}% share in{' '}
-                                            {group?.name || 'this country'} — its owner keeps {100 - shareCut}% of
-                                            the rent.
-                                        </>
+                        {countryShares.map((share) => {
+                            const holder = state.players.find((p) => p.id === share.holderId);
+                            const yours = share.holderId === me?.id;
+                            const locked = share.buyback === null || share.buyback === undefined;
+                            const lapsLeft = Math.max(0, ladder.length - (share.laps || 0));
+                            // Why the button is not there, said rather than left
+                            // for the player to guess.
+                            const blocked = !isMyTurn
+                                ? 'On your turn'
+                                : spentTurn
+                                  ? 'One a turn'
+                                  : me?.debt
+                                    ? 'Clear your debt first'
+                                    : me && me.cash < share.buyback
+                                      ? `Needs ${money(share.buyback)}`
+                                      : null;
+                            return (
+                                <div
+                                    key={share.holderId}
+                                    className="flex items-center gap-3 rounded-xl border border-[#3ddc97]/25 bg-[#3ddc97]/[0.06] px-3 py-2.5"
+                                >
+                                    <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-[13px] leading-snug text-muted-foreground">
+                                        <span>
+                                            {yours ? (
+                                                <>
+                                                    You hold a {shareCut}% share in {group?.name || 'this country'}
+                                                    {' '}— your own pays you nothing, but nobody else can have it.
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {holder?.name || 'Someone'} holds a {shareCut}% share in{' '}
+                                                    {group?.name || 'this country'}.
+                                                </>
+                                            )}
+                                        </span>
+                                        {/* The window, which is the decision. */}
+                                        <span className={locked ? 'text-[#ff5c7c]' : 'text-[#ffb648]'}>
+                                            {locked
+                                                ? 'Held for good — it can no longer be bought back'
+                                                : `Buy-back ${ladder[share.laps || 0]}× · closes in ${lapsLeft} lap${lapsLeft === 1 ? '' : 's'} of theirs`}
+                                        </span>
+                                    </span>
+                                    {!yours && holdsDeedHere && !locked && (
+                                        <Button
+                                            variant="outline"
+                                            className="h-9 shrink-0"
+                                            disabled={!!blocked}
+                                            onClick={() =>
+                                                send('share:buyback', { groupId: tile.groupId, holderId: share.holderId })
+                                            }
+                                            title={
+                                                blocked ||
+                                                `Take ${holder?.name || 'their'} share back for ${money(share.buyback)} — uses this turn's building`
+                                            }
+                                        >
+                                            {blocked && blocked !== `Needs ${money(share.buyback)}`
+                                                ? blocked
+                                                : `Buy back ${money(share.buyback)}`}
+                                        </Button>
                                     )}
-                                </span>
-                                {canBuyBack && (
-                                    <Button
-                                        variant="outline"
-                                        className="h-9 shrink-0"
-                                        onClick={() => send('share:buyback', { groupId: tile.groupId })}
-                                        title={`Take the share back for ${money(buyback)}`}
-                                    >
-                                        Buy back {money(buyback)}
-                                    </Button>
-                                )}
-                            </div>
+                                </div>
+                            );
+                        })}
+                        {spentTurn && ours && tile.type === 'property' && (
+                            <p className="text-[12px] text-muted-foreground">
+                                You bought a share back this turn — building opens again next turn.
+                            </p>
                         )}
 
                         {(upgradeOk || downgradeOk || sellOk) && (

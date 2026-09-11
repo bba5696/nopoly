@@ -48,10 +48,10 @@ const TEAM_PAIR = 2;
  * The cut comes out of the rent rather than out of the bank, so the payer pays
  * what they always paid and no new money enters a game that already inflates.
  * Two to a country, so an owner can be taken to half their rent and no
- * further, and never permanently: whoever holds the deeds can buy a share back
- * at half again what was paid for it. That is the whole bargain — the
- * shareholder cannot be robbed, only bought out at a profit, and the owner is
- * never taxed forever, only expensively.
+ * further. Priced off what the country earns now (see SHARE_PAYBACK), and
+ * bought back on a closing window (see BUYBACK_LADDER): the shareholder cannot
+ * be robbed, only bought out at a premium, and the owner is taxed forever only
+ * if they wait three of the holder's laps to do something about it.
  */
 /**
  * Landmarks: the one thing on the board money cannot buy.
@@ -68,10 +68,30 @@ const TEAM_PAIR = 2;
  */
 const SHARE_CUT = 0.25;
 const SHARES_PER_GROUP = 2;
-/** A share's price, as a fraction of what the country's deeds cost together. */
+/**
+ * The floor under a share's price, as a fraction of what the country's deeds
+ * cost together — what a stake in a country nobody has built on is worth.
+ */
 const SHARE_PRICE = 0.2;
-/** What the deeds' owner pays to take one back, as a multiple of what it cost. */
-const BUYBACK_MULT = 1.5;
+/**
+ * How many landings a share should take to pay for itself, at any point in the
+ * game. The price follows what the country earns *now*, so this stays true when
+ * the hotels go up — which is the whole fix. A price pegged to the deeds let a
+ * $170 stake in a hotel country pay for itself three times over on one landing,
+ * and let the owner shake it off for $255: late in a game neither buying one
+ * nor buying one back was a decision at all.
+ */
+const SHARE_PAYBACK = 4;
+/**
+ * What a deed holder pays to take a share back, by how many laps it has been
+ * held — and past the end of the ladder, it cannot be taken at all.
+ *
+ * A window that closes rather than a flat price, so buying back is a race the
+ * owner can lose: act while it is cheap, or pay double, or live with the stake
+ * for the rest of the game. For the shareholder it is the reverse — survive
+ * three laps and it is yours for good.
+ */
+const BUYBACK_LADDER = [1.5, 2, 3];
 /** Charged on a transfer made outside your own turn. */
 const OFF_TURN_FEE = 0.1;
 
@@ -421,9 +441,42 @@ const sharesOf = (room, playerId) => (room.shares || []).filter((sh) => sh.holde
  * rather than the market's, so the number on the exchange doesn't drift while
  * you are reading it.
  */
+/** What landing on a tile would cost right now, or nothing if nobody owns it. */
+function liveRent(room, tile) {
+    const owner = tile.ownerId && findPlayer(room, tile.ownerId);
+    if (!owner || owner.bankrupt) return 0;
+    return rentFor(room, tile, owner, [0, 0]);
+}
+
+/**
+ * A share's price: what the country earns, not what it cost.
+ *
+ * The average rent across the country's tiles — an unowned tile pays nobody and
+ * counts as nothing, which is how a half-bought country is discounted — times
+ * how many landings a stake should take to pay back, never below a fifth of the
+ * deeds. A bare country's share is as cheap as it always was; a country with
+ * hotels on it is priced like one.
+ */
 function sharePrice(room, groupId) {
-    const total = groupTiles(room, groupId).reduce((sum, t) => sum + (t.price || 0), 0);
-    return Math.max(10, Math.round((total * SHARE_PRICE) / 10) * 10);
+    const tiles = groupTiles(room, groupId);
+    const deeds = tiles.reduce((sum, t) => sum + (t.price || 0), 0);
+    const earning = tiles.reduce((sum, t) => sum + liveRent(room, t), 0) / Math.max(tiles.length, 1);
+    const value = Math.max(deeds * SHARE_PRICE, earning * SHARE_PAYBACK * SHARE_CUT);
+    return Math.max(10, Math.round(value / 10) * 10);
+}
+
+/**
+ * What taking this share back costs, or null once it is held for good.
+ *
+ * Priced off whichever is higher, what they paid or what it is worth now: a
+ * shareholder is bought out, never robbed, so a country whose houses were sold
+ * off since cannot be used to take a stake back for less than it cost.
+ */
+function buybackPrice(room, share) {
+    const laps = share.laps || 0;
+    if (laps >= BUYBACK_LADDER.length) return null;
+    const base = Math.max(share.paid, sharePrice(room, share.groupId));
+    return Math.round((base * BUYBACK_LADDER[laps]) / 10) * 10;
 }
 
 /** What every country's share costs, for the exchange screen. */
@@ -598,11 +651,14 @@ function nopolyView(room) {
         // The price is derived from the board and never moves, but working it
         // out twice — once here and once in the client — is how the two come
         // to disagree.
-        shares: room.shares || [],
+        // Each with what taking it back costs right now — null once it is held
+        // for good — so the button and the server cannot disagree on a price.
+        shares: (room.shares || []).map((sh) => ({ ...sh, laps: sh.laps || 0, buyback: buybackPrice(room, sh) })),
         sharePrices: sharePrices(room),
         shareCut: SHARE_CUT,
         sharesPerGroup: SHARES_PER_GROUP,
-        buybackMult: BUYBACK_MULT,
+        buybackLadder: BUYBACK_LADDER,
+        boughtBackBy: room.boughtBackBy || null,
         lastMove: room.lastMove,
         auction: room.auction,
         lastPayment: room.lastPayment,
@@ -1323,6 +1379,14 @@ function movePlayerTo(room, player, target, { collectStart = true, direct = fals
         const paid = room.settings.passStartBonus + boonsOf(room, player).startBonus;
         player.cash += paid;
         log(room, `${player.name} passed Start (+$${paid})`);
+        // A lap on every stake they hold: the buy-back window is measured in
+        // the shareholder's laps, and closes for good at the end of the ladder.
+        for (const sh of sharesOf(room, player.id)) {
+            sh.laps = (sh.laps || 0) + 1;
+            if (sh.laps === BUYBACK_LADDER.length) {
+                log(room, `${player.name}'s share in ${groupName(room, sh.groupId)} can no longer be bought back`);
+            }
+        }
     }
     player.position = to;
     room.moveSeq += 1;
@@ -1545,6 +1609,7 @@ function advanceTurn(room) {
     room.doublesCount = 0;
     room.hasRolled = false;
     room.pendingAction = null;
+    room.boughtBackBy = null;
 
     if (livingSides(room).size <= 1) {
         checkWin(room);
@@ -1885,6 +1950,7 @@ function buildHouse(room, playerId, tileId) {
     // other people's turns, and clearing a debt has to be possible when it does.
     if (!isCurrent(room, playerId)) return { error: 'You can only build on your own turn' };
     if (player.debt) return { error: DEBT_BLOCKED };
+    if (room.boughtBackBy === playerId) return { error: 'You bought a share back this turn — build next turn' };
     if (!canBuild(room, player, tile)) return { error: 'Cannot build there' };
     player.cash -= tile.houseCost;
     tile.houses += 1;
@@ -1948,7 +2014,7 @@ function buyShare(room, playerId, groupId) {
     if (player.cash < price) return { error: `A share in ${groupName(room, groupId)} costs $${price}` };
 
     player.cash -= price;
-    room.shares.push({ groupId, holderId: playerId, paid: price });
+    room.shares.push({ groupId, holderId: playerId, paid: price, laps: 0 });
     room.pendingAction = null;
     log(room, `${player.name} bought a ${Math.round(SHARE_CUT * 100)}% share in ${groupName(room, groupId)} for $${price}`);
     return {};
@@ -1984,29 +2050,44 @@ function sellShare(room, playerId, groupId) {
 }
 
 /**
- * Take a share back off whoever holds it, at half again what they paid. Open
- * to anyone holding a deed in the country — not only whoever holds all of
- * them, since on this board most countries are split.
+ * Take a share back off whoever holds it. Open to anyone holding a deed in the
+ * country — not only whoever holds all of them, since most countries are split.
  *
- * Not the shareholder's decision. They are not being robbed: they wanted money
- * out of the country and they are getting fifty per cent of it, today.
+ * Not the shareholder's decision. They are not being robbed: they are bought
+ * out at a premium on what the stake is worth today, and the longer they have
+ * held it the bigger the premium, until it cannot be taken at all.
+ *
+ * And not free in time, either. It is done on your own turn, once, and it is
+ * that turn's building: the owner of a developed country chooses between
+ * adding a hotel and shaking off a stake, rather than doing both between rolls.
  */
-function buyBackShare(room, playerId, groupId) {
+function buyBackShare(room, playerId, groupId, holderId) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
     if (room.paused) return { error: 'Game is paused' };
     if (!groupTiles(room, groupId).some((t) => sameSide(room, t.ownerId, playerId))) {
         return { error: `You hold no deeds in ${groupName(room, groupId)}` };
     }
-    const share = sharesIn(room, groupId).find((sh) => sh.holderId !== playerId);
-    if (!share) return { error: 'Nothing to buy back' };
-    const price = Math.round(share.paid * BUYBACK_MULT);
+    if (!isCurrent(room, playerId)) return { error: 'You can only buy a share back on your own turn' };
+    if (player.debt) return { error: DEBT_BLOCKED };
+    if (room.boughtBackBy === playerId) return { error: 'One buy-back a turn' };
+
+    const theirs = sharesIn(room, groupId).filter(
+        (sh) => sh.holderId !== playerId && (!holderId || sh.holderId === holderId),
+    );
+    if (!theirs.length) return { error: 'Nothing to buy back' };
+    const open = theirs.filter((sh) => buybackPrice(room, sh) !== null);
+    if (!open.length) return { error: `That share in ${groupName(room, groupId)} is held for good` };
+    // Asked for nobody in particular: the cheapest one open.
+    const share = open.sort((a, b) => buybackPrice(room, a) - buybackPrice(room, b))[0];
+    const price = buybackPrice(room, share);
     if (player.cash < price) return { error: `Buying that share back costs $${price}` };
 
     const holder = findPlayer(room, share.holderId);
     player.cash -= price;
     credit(room, holder, price);
     room.shares = room.shares.filter((sh) => sh !== share);
+    room.boughtBackBy = playerId;
     log(room, `${player.name} bought back ${holder ? holder.name + "'s" : 'a'} share in ${groupName(room, groupId)} for $${price}`);
     return {};
 }
@@ -2701,7 +2782,8 @@ const rules = {
         room.doublesCount = 0;
         room.hasRolled = false;
         room.pendingAction = null; // { type: 'buy' | 'exchange', playerId, tileId }
-        room.shares = [];          // [{ groupId, holderId, paid }]
+        room.shares = [];          // [{ groupId, holderId, paid, laps }]
+        room.boughtBackBy = null;  // who has spent this turn's build on a buy-back
         room.pendingCard = null;   // { deck, text, playerId }
         room.lastMove = null;      // { playerId, from, to, passedStart, seq }
         room.moveSeq = 0;
@@ -2856,6 +2938,9 @@ module.exports = {
     leaveExchange,
     sellShare,
     buyBackShare,
+    buybackPrice,
+    movePlayerTo,
+    BUYBACK_LADDER,
     teammate,
     teammates,
     startAuction,

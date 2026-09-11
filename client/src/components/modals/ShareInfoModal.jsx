@@ -27,7 +27,13 @@ export function ShareInfoModal({ groupId, onClose }) {
     const group = board?.groups?.[groupId];
     const color = group?.color || '#7dd3fc';
     const cut = Math.round((state.shareCut ?? 0.25) * 100);
-    const buyback = Math.round(share.paid * (state.buybackMult ?? 1.5));
+    // From the server: it follows the country's rent and the laps held, and
+    // is null once the stake is held for good.
+    const buyback = share.buyback ?? null;
+    const ladder = state.buybackLadder || [1.5, 2, 3];
+    const laps = share.laps || 0;
+    const lapsLeft = Math.max(0, ladder.length - laps);
+    const worth = state.sharePrices?.[groupId] ?? share.paid;
 
     // Who could take it off you, and who is paying you when rent lands.
     const tiles = (state.tiles || []).filter((t) => t.groupId === groupId);
@@ -69,8 +75,24 @@ export function ShareInfoModal({ groupId, onClose }) {
                         <span className="mono">{money(share.paid)}</span>
                     </div>
                     <div className="flex items-center justify-between rounded-md px-2 py-1.5 text-[14px]">
+                        <span className="text-muted-foreground">A new share here costs</span>
+                        <span className="mono">{money(worth)}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md px-2 py-1.5 text-[14px]">
                         <span className="text-muted-foreground">A deed holder can take it for</span>
-                        <span className="mono text-[#ffb648]">{money(buyback)}</span>
+                        {buyback === null ? (
+                            <span className="text-[#3ddc97]">nobody can — it's yours</span>
+                        ) : (
+                            <span className="mono text-[#ffb648]">{money(buyback)}</span>
+                        )}
+                    </div>
+                    <div className="flex items-center justify-between rounded-md px-2 py-1.5 text-[14px]">
+                        <span className="text-muted-foreground">Safe from buy-back</span>
+                        <span>
+                            {buyback === null
+                                ? 'locked in'
+                                : `after ${lapsLeft} more lap${lapsLeft === 1 ? '' : 's'}`}
+                        </span>
                     </div>
                     <div className="flex items-center justify-between rounded-md px-2 py-1.5 text-[14px]">
                         <span className="text-muted-foreground">Paying you</span>
@@ -85,9 +107,8 @@ export function ShareInfoModal({ groupId, onClose }) {
                 <p className="flex items-start gap-2 rounded-lg border border-white/8 px-3 py-2 text-[12px] leading-snug text-muted-foreground">
                     <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-[#ffb648]" />
                     <span>
-                        Selling is final. There are only {state.sharesPerGroup ?? 2} shares in a country, and getting
-                        back in means landing on an exchange again and finding one still going. You can also put it in
-                        a trade instead.
+                        Selling is final, and the bank only gives back what you paid — {money(share.paid)}, even if a
+                        share here now costs {money(worth)}. A trade can get you what it's actually worth.
                     </span>
                 </p>
             </div>

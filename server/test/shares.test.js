@@ -158,6 +158,8 @@ function atExchange(r, player) {
     e.buyShare(r, p.Cy.id, 'italy');
 
     ok('a stranger cannot buy it back', /no deeds/.test(e.buyBackShare(r, p.Bo.id, 'italy').error || ''));
+    ok('not on somebody else s turn', /own turn/.test(e.buyBackShare(r, p.Ada.id, 'italy').error || ''));
+    r.turnIndex = r.players.indexOf(p.Ada);
     const adaBefore = p.Ada.cash;
     const cyBefore = p.Cy.cash;
     const res = e.buyBackShare(r, p.Ada.id, 'italy');
@@ -169,6 +171,9 @@ function atExchange(r, player) {
 
     atExchange(r, p.Cy);
     e.buyShare(r, p.Cy.id, 'italy');
+    r.turnIndex = r.players.indexOf(p.Ada);
+    ok('and only once a turn', /once a turn|One buy-back/.test(e.buyBackShare(r, p.Ada.id, 'italy').error || ''));
+    r.boughtBackBy = null;                       // a new turn
     p.Ada.cash = 10;
     ok('and it has to be affordable', /costs \$210/.test(e.buyBackShare(r, p.Ada.id, 'italy').error || ''));
 }
@@ -221,7 +226,8 @@ function atExchange(r, player) {
     const st = e.publicState(r);
     ok('the state carries the shares', st.shares.length === 1 && st.shares[0].groupId === 'china');
     ok('and what one costs', st.sharePrices.china === e.sharePrice(r, 'china'));
-    ok('and the terms', st.shareCut === 0.25 && st.sharesPerGroup === 2 && st.buybackMult === 1.5);
+    ok('and the terms', st.shareCut === 0.25 && st.sharesPerGroup === 2 && st.buybackLadder.join() === '1.5,2,3');
+    ok('each share says what taking it back costs', st.shares[0].buyback === e.buybackPrice(r, r.shares[0]));
 }
 
 /* -------------------------------------------------- landmarks, which are free */
@@ -308,6 +314,108 @@ function atExchange(r, player) {
     ok('classic stays as it was', !counts('classic').exchange && !counts('classic').landmark);
     ok('worldwide gets one of each', counts('worldwide').exchange === 1 && counts('worldwide').landmark === 1);
     ok('grand tour three and two', counts('grand').exchange === 3 && counts('grand').landmark === 2);
+}
+
+/* ------------------------------------------ a share is priced off what it earns */
+{
+    const { r, p } = mk();
+    const usa = r.tiles.filter((t) => t.groupId === 'usa');
+    ok('a country nobody owns is priced off its deeds', e.sharePrice(r, 'usa') === 170, String(e.sharePrice(r, 'usa')));
+    for (const t of usa) {
+        t.ownerId = p.Ada.id;
+        p.Ada.properties.push(t.id);
+    }
+    ok('and so is one nobody has built on', e.sharePrice(r, 'usa') === 170, String(e.sharePrice(r, 'usa')));
+    for (const t of usa) t.houses = 5;
+    const hotels = e.sharePrice(r, 'usa');
+    ok('hotels make it expensive', hotels === 2130, String(hotels));
+    const avg = usa.reduce((sum, t) => sum + t.rent[5], 0) / usa.length;
+    ok('about four landings to pay back', Math.abs(hotels / (avg * 0.25) - 4) < 0.1, String(hotels / (avg * 0.25)));
+
+    // Bought cheap before the building, and the owner cannot take it back cheap.
+    r.shares = [{ groupId: 'usa', holderId: p.Cy.id, paid: 170, laps: 0 }];
+    ok('buying back is priced off today, not what was paid', e.buybackPrice(r, r.shares[0]) === 3200, String(e.buybackPrice(r, r.shares[0])));
+
+    // And the other way: sell the houses off and it never goes below cost.
+    r.shares = [{ groupId: 'usa', holderId: p.Cy.id, paid: 2130, laps: 0 }];
+    for (const t of usa) t.houses = 0;
+    ok('a shareholder is never bought out below what they paid', e.buybackPrice(r, r.shares[0]) === 3200, String(e.buybackPrice(r, r.shares[0])));
+}
+
+/* ---------------------------------------------------- the window closes by laps */
+{
+    const { r, p } = mk();
+    const rome = tile(r, 'Rome');
+    rome.ownerId = p.Ada.id;
+    p.Ada.properties.push(rome.id);
+    r.shares = [{ groupId: 'italy', holderId: p.Cy.id, paid: 140, laps: 0 }];
+    const share = r.shares[0];
+    const lap = () => {
+        p.Cy.position = r.tiles.length - 1;
+        e.movePlayerTo(r, p.Cy, 1);
+    };
+
+    ok('fresh, it is half again', e.buybackPrice(r, share) === 210, String(e.buybackPrice(r, share)));
+    lap();
+    ok('passing Start counts a lap', share.laps === 1, String(share.laps));
+    ok('a lap in, double', e.buybackPrice(r, share) === 280, String(e.buybackPrice(r, share)));
+    lap();
+    ok('two laps in, triple', e.buybackPrice(r, share) === 420, String(e.buybackPrice(r, share)));
+    lap();
+    ok('three laps and it cannot be taken', e.buybackPrice(r, share) === null);
+    ok('the feed says so', r.log.some((l) => /Cy's share in Italy can no longer be bought back/.test(l.text)));
+    r.turnIndex = r.players.indexOf(p.Ada);
+    ok('and buying it back is refused', /held for good/.test(e.buyBackShare(r, p.Ada.id, 'italy').error || ''));
+    ok('the state says it is locked', e.publicState(r).shares[0].buyback === null);
+
+    // A share moving by any other route than passing Start is not a lap.
+    const { r: r2, p: p2 } = mk();
+    r2.shares = [{ groupId: 'italy', holderId: p2.Cy.id, paid: 140, laps: 0 }];
+    p2.Cy.position = r2.tiles.length - 1;
+    e.movePlayerTo(r2, p2.Cy, 1, { collectStart: false });
+    ok('a move that skips Start does not count', r2.shares[0].laps === 0);
+
+    // Snapshots from before the ladder have no lap count, and start at zero.
+    r2.shares = [{ groupId: 'italy', holderId: p2.Cy.id, paid: 140 }];
+    ok('an old share starts its window fresh', e.buybackPrice(r2, r2.shares[0]) === 210);
+}
+
+/* ------------------------------------------------------ it is that turn's build */
+{
+    const { r, p } = mk();
+    const italy = r.tiles.filter((t) => t.groupId === 'italy');
+    for (const t of italy) {
+        t.ownerId = p.Ada.id;
+        p.Ada.properties.push(t.id);
+    }
+    r.shares = [
+        { groupId: 'italy', holderId: p.Cy.id, paid: 140, laps: 2 },
+        { groupId: 'italy', holderId: p.Bo.id, paid: 140, laps: 0 },
+    ];
+    r.turnIndex = r.players.indexOf(p.Ada);
+    p.Ada.cash = 5000;
+
+    const res = e.buyBackShare(r, p.Ada.id, 'italy');
+    ok('asked for nobody, the cheapest one open goes', !res.error && !e.sharesOf(r, p.Bo.id).length && e.sharesOf(r, p.Cy.id).length === 1, res.error);
+    ok('and it is logged', r.log.some((l) => /Ada bought back Bo's share in Italy/.test(l.text)));
+    ok('building is off for the rest of the turn', /build next turn/.test(e.buildHouse(r, p.Ada.id, italy[0].id).error || ''));
+
+    r.hasRolled = true;                          // a turn cannot end before its roll
+    const ended = e.endTurn(r, p.Ada.id);
+    r.turnIndex = r.players.indexOf(p.Ada);
+    ok('a new turn clears it', !ended.error && r.boughtBackBy === null, ended.error);
+    const picked = e.buyBackShare(r, p.Ada.id, 'italy', p.Cy.id);
+    ok('a particular holder can be named', !picked.error && !e.sharesOf(r, p.Cy.id).length, picked.error);
+
+    // Owing money blocks it like it blocks building.
+    const { r: r2, p: p2 } = mk();
+    const rome = tile(r2, 'Rome');
+    rome.ownerId = p2.Ada.id;
+    p2.Ada.properties.push(rome.id);
+    r2.shares = [{ groupId: 'italy', holderId: p2.Cy.id, paid: 140, laps: 0 }];
+    r2.turnIndex = r2.players.indexOf(p2.Ada);
+    p2.Ada.debt = { amount: 100 };
+    ok('not while you owe money', !!e.buyBackShare(r2, p2.Ada.id, 'italy').error);
 }
 
 /* ------------------------------------------------- a share is a tradable thing */
