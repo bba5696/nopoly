@@ -26,7 +26,7 @@ const fs = require('fs');
 
 const ENGINE = [
     'payment', 'idle', 'spectate', 'build', 'teams', 'vote', 'boards', 'shares', 'worth', 'nouno',
-    'abandon', 'profile', 'leave', 'jail-persist', 'tax',
+    'abandon', 'profile', 'leave', 'jail-persist', 'tax', 'pause',
 ];
 const WIRE = [
     'wire', 'nounowire', 'votewire', 'leavewire', 'abandonwire',
@@ -49,7 +49,6 @@ const SERVER_ENV = {
     // rule is left alone — with the clock at three seconds a wire test can
     // simply wait for one, which is a truer test than switching it off.
     NOPOLY_VOTE_OPEN_MS: '0',
-    NOPOLY_VOTE_OPEN_PER_PLAYER_MS: '0',
     // Never the developer's real snapshot, and never the repo's .state — a test
     // run must not be able to resume, or corrupt, a game someone is playing.
     NOPOLY_STATE: path.join(__dirname, 'state-wire'),

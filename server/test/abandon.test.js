@@ -29,7 +29,7 @@ function mk(names, { start = true } = {}) {
     ok('it is a countdown', r.vote.mode === 'abandon', JSON.stringify(r.vote));
     ok('nobody has voted', r.vote.yes.length === 0 && r.vote.no.length === 0);
     ok('and nothing is needed', r.vote.needed === 0);
-    ok('it runs for five minutes', Math.round((r.vote.endsAt - r.vote.startedAt) / 1000) === 300,
+    ok('it runs for two minutes', Math.round((r.vote.endsAt - r.vote.startedAt) / 1000) === 120,
         String(r.vote.endsAt - r.vote.startedAt));
     ok('votes are refused', !!e.castVote(r, p.Cy.id, true).error);
     ok('the target is still in', !p.Bo.bankrupt);
@@ -126,7 +126,7 @@ function mk(names, { start = true } = {}) {
     r.vote.endsAt = Date.now() + 200;
     for (const q of r.players) q.connected = false;
     e.refreshAbandonDeadline(r);
-    ok('the clock starts over after a restart', r.vote.endsAt - Date.now() > 4 * 60_000,
+    ok('the clock starts over after a restart', r.vote.endsAt - Date.now() > 110_000,
         String(r.vote.endsAt - Date.now()));
     ok('so the restart itself kicks nobody', !p.Bo.bankrupt);
 }

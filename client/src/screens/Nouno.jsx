@@ -14,6 +14,7 @@ import { Seats } from '@/components/cards/Seats';
 import { CardFace } from '@/components/cards/Card';
 import { playableIds } from '@/lib/nouno';
 import { alpha, tag } from '@/lib/color';
+import { pausedLine } from '@/lib/pause';
 import { cn } from '@/lib/utils';
 
 const TABS = [
@@ -168,7 +169,10 @@ export function Nouno() {
                         here rather than under the fan, where a lifted card
                         would cover them. */}
                     <div className="absolute inset-x-0 bottom-[15rem] flex items-center justify-center gap-3 text-[14px]">
-                        {current && (
+                        {/* The card table had no way to say it was paused, so a
+                            paused game looked like one refusing every card. */}
+                        {state.paused && <span className="text-[#ffb648]">{pausedLine(state)}</span>}
+                        {current && !state.paused && (
                             <span className="flex items-center gap-2">
                                 <span
                                     className="mono flex size-6 items-center justify-center rounded-full text-[9px] text-white"

@@ -13,6 +13,7 @@ import {
     ScrollText,
     ShieldCheck,
     SkipForward,
+    Trophy,
     UserCheck,
     UserX,
     Users,
@@ -391,6 +392,16 @@ function RoomCard({ room, now, run }) {
                         last move {ago(room.lastActionAt, now)}
                         {room.spectators ? ` · ${room.spectators} watching` : ''}
                     </span>
+                    {room.paused && room.pausedUntil && (
+                        <span className="text-[12px] text-[#ffb648]">
+                            Paused — kept even if everyone leaves, until{' '}
+                            {new Date(room.pausedUntil).toLocaleString([], {
+                                weekday: 'short',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                            })}
+                        </span>
+                    )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                     <Button size="sm" variant="ghost" onClick={() => setWatching((w) => !w)}>
@@ -424,12 +435,36 @@ function RoomCard({ room, now, run }) {
                             onConfirm={() => run(() => playTurn(code), `Played a turn in ${code}`)}
                         />
                     )}
-                    <ConfirmButton
-                        label="End game"
-                        confirmLabel={`End ${code} for everyone`}
-                        icon={XCircle}
-                        onConfirm={() => run(() => endRoom(code), `${code} was ended`)}
-                    />
+                    {/* Two ways to end a game in progress. With results is the
+                        usual one — whoever is ahead wins, and the end screen is
+                        what saves the game to everyone's history. Without is for
+                        a game not worth keeping. A lobby or a finished game has
+                        no result to show, so it only closes. */}
+                    {live ? (
+                        <>
+                            <ConfirmButton
+                                label="End · show results"
+                                confirmLabel="Whoever's ahead wins"
+                                icon={Trophy}
+                                onConfirm={() =>
+                                    run(() => endRoom(code, true), `${code} ended — everyone is on the end screen`)
+                                }
+                            />
+                            <ConfirmButton
+                                label="End · no results"
+                                confirmLabel="Send everyone home"
+                                icon={XCircle}
+                                onConfirm={() => run(() => endRoom(code, false), `${code} was closed`)}
+                            />
+                        </>
+                    ) : (
+                        <ConfirmButton
+                            label="Close room"
+                            confirmLabel={`Close ${code}`}
+                            icon={XCircle}
+                            onConfirm={() => run(() => endRoom(code, false), `${code} was closed`)}
+                        />
+                    )}
                 </div>
             </header>
 

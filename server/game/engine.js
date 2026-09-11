@@ -159,6 +159,16 @@ const AWAY_MS = Number(process.env.NOPOLY_AWAY_MS) || 5_000;
  */
 const AWAY_GRACE_MS = Number(process.env.NOPOLY_AWAY_GRACE_MS) || 50_000;
 
+/**
+ * How long a paused game is kept with nobody touching it.
+ *
+ * A pause is how a table says "we'll finish this later", so the sweep's usual
+ * endings — everyone gone for half an hour, nothing sent for three — are
+ * exactly what it has to survive. A day is enough for "later tonight" and
+ * "tomorrow", and short enough that a pause somebody forgot about still ends.
+ */
+const PAUSED_ROOM_MS = Number(process.env.NOPOLY_PAUSED_ROOM_MS) || 24 * 60 * 60 * 1000;
+
 /** Bounds every settings value is clamped to before it's stored. */
 const SETTING_LIMITS = {
     startingCash: { min: 500, max: 10000 },
@@ -178,8 +188,6 @@ const DEBT_BLOCKED = 'Settle your debt first — sell buildings or property';
 /* Vote-kick. Long enough that someone mid-turn can still weigh in, short
  * enough that a vote nobody answers doesn't sit on screen all game. */
 const VOTE_MS = 45_000;
-/** A failed vote can't be re-run on the same player straight away. */
-const VOTE_COOLDOWN_MS = 3 * 60_000;
 /** Below this a vote is just one player removing another, so it's refused. */
 const MIN_VOTERS = 3;
 /**
@@ -190,38 +198,18 @@ const MIN_VOTERS = 3;
 const VOTE_CAP = 4;
 /**
  * How long someone who has dropped out gets to come back before a kick called
- * on them goes through on its own. Generous on purpose — a phone changing
- * networks, a laptop closing its lid or a router restarting all cost a couple
- * of minutes, and none of them should cost you the game.
+ * on them goes through on its own. Two minutes: long enough for a phone
+ * changing networks or a refresh that hung, short enough that a table is not
+ * sat looking at an empty seat for the length of a song.
  */
-const ABANDON_MS = 5 * 60_000;
+const ABANDON_MS = 2 * 60_000;
 /**
- * How long after a vote finishes before the person who called it may call
- * another. Per-caller, where VOTE_COOLDOWN_MS is per-target: one protects the
- * victim, and it turns out the thing that actually needed limiting was the
- * caller, who could work down the table one name at a time all game.
+ * How long a game runs before anyone can be voted out: five minutes. Every vote
+ * called inside that window was someone reacting to a bad opening roll.
  */
-const CALLER_COOLDOWN_MS = 5 * 60_000;
-/**
- * How long a game runs before anyone can be voted out at all: a couple of
- * minutes, plus one per player at the table.
- *
- * Scaled by the table because it's really a number of turns — you can't know
- * someone is stalling until you've watched them take a few, and eight people
- * take four times as long to come round as two. Every vote called inside this
- * window was someone reacting to a bad roll.
- */
-// Overridable only so a wire test doesn't have to play six minutes of a game
+// Overridable only so a wire test doesn't have to play five minutes of a game
 // before it can call the vote it is there to test.
-const VOTE_OPEN_MS = Number(process.env.NOPOLY_VOTE_OPEN_MS ?? 2 * 60_000);
-const VOTE_OPEN_PER_PLAYER_MS = Number(process.env.NOPOLY_VOTE_OPEN_PER_PLAYER_MS ?? 60_000);
-/**
- * How long a stalled turn keeps someone eligible to be voted on. Without the
- * expiry, one blip at minute ten leaves you kickable for the rest of the game,
- * which is the whole loophole back: wait for the leader to stall once, then
- * call the vote an hour later when it suits you.
- */
-const STALL_WINDOW_MS = 10 * 60_000;
+const VOTE_OPEN_MS = Number(process.env.NOPOLY_VOTE_OPEN_MS ?? 5 * 60_000);
 
 /**
  * The rules this room is playing by.
@@ -280,8 +268,6 @@ function createRoom(code, opts = {}) {
         vote: null,           // { targetId, byId, yes: [], no: [], endsAt }
         idle: null,           // { playerId, endsAt } — the turn clock
         banned: [],           // player ids a vote removed; they can't come back
-        voteCooldown: {},     // targetId -> when they may be voted on again
-        callerCooldown: {},   // callerId -> when they may start another vote
         winnerId: null,
         winnerTeam: null,
         settings: { ...DEFAULT_SETTINGS },
@@ -592,19 +578,15 @@ function baseState(room) {
         turnIndex: room.turnIndex,
         paused: room.paused,
         pausedBy: room.pausedBy,
+        // When a paused game stops being kept, so the table can be told.
+        pausedUntil: room.paused && room.pausedAt ? room.pausedAt + PAUSED_ROOM_MS : null,
         phase: room.phase,
         vote: room.vote,
         voteMs: VOTE_MS,
-        // When kicking becomes possible, and how long a stalled turn keeps
-        // someone eligible. Sent rather than duplicated in the client, so the
-        // rule the picker greys people out by is the rule the server enforces.
+        // The two rules a ballot has, sent rather than duplicated in the client,
+        // so the picker greys people out by the rule the server enforces.
         voteOpensAt: voteOpensAt(room),
-        stallWindowMs: STALL_WINDOW_MS,
-        // Both cooldowns, so the picker can say why a name is greyed out
-        // instead of letting someone find out by pressing it. Not secret —
-        // every one of them was put there by a vote the whole table watched.
-        voteCooldown: room.voteCooldown,
-        callerCooldown: room.callerCooldown || {},
+        minVoters: MIN_VOTERS,
         idle: room.idle,
         idleMs: IDLE_MS,
         log: room.log,
@@ -1177,9 +1159,10 @@ function shareValue(room, player) {
 /**
  * Bill a player. Anything they can't cover in cash becomes a debt they have to
  * clear themselves, by selling buildings or property — the game does not
- * liquidate the estate on their behalf. Their turn is blocked until it's
- * settled, and bankruptcy only follows when the whole estate provably falls
- * short.
+ * liquidate the estate on their behalf while they are there to choose. Their
+ * turn is blocked until it's settled, and bankruptcy only follows when the
+ * whole estate provably falls short. The exception is a turn the clock plays
+ * for someone who has gone, which sells for them: see sellToCover.
  */
 function charge(room, player, creditor, amount, reason) {
     // Bankruptcy is settled the moment it happens and the estate is already
@@ -1290,6 +1273,59 @@ function respondBailout(room, playerId, accept) {
 }
 
 /**
+ * Raise the money a debt needs, on behalf of somebody who is not there to.
+ *
+ * Only ever for a turn the clock is playing. A debt used to stop the turn clock
+ * dead — "nobody else's decision to make" — which in practice meant a player
+ * who walked away owing money froze the whole table until someone voted them
+ * out. Now the clock sells for them, in the order that costs them least:
+ *
+ *   1. shares, which the bank buys back at exactly what they cost
+ *   2. deeds that are not part of a set, cheapest first — no money lost, and
+ *      no rent a set would have doubled
+ *   3. buildings, evenly, which lose half their cost but keep the sets
+ *   4. whatever deeds are left, cheapest first
+ *
+ * Stops the moment the debt is clear. Each sale writes its own line to the
+ * feed, the same line it would if they had tapped it themselves.
+ */
+function sellToCover(room, player) {
+    if (!player.debt) return;
+    const deeds = () =>
+        player.properties
+            .map((id) => room.tiles[id])
+            .filter(Boolean)
+            .sort((a, b) => market.priceOf(room, a) - market.priceOf(room, b));
+    const inSet = (t) => !!t.groupId && ownsFullGroup(room, player.id, t.groupId);
+
+    // Said once per sale that can happen, not on every tick of a clock that
+    // keeps coming round to somebody with nothing left.
+    if (!player.properties.length && !sharesOf(room, player.id).length) return;
+    log(room, `${player.name} is away and owes $${player.debt.amount} — selling to cover it`);
+
+    for (const sh of sharesOf(room, player.id).slice()) {
+        if (!player.debt) return;
+        sellShare(room, player.id, sh.groupId);
+    }
+    for (const tile of deeds().filter((t) => t.houses === 0 && !inSet(t))) {
+        if (!player.debt) return;
+        sellProperty(room, player.id, tile.id);
+    }
+    // One building at a time off whichever tile has the most, which is always
+    // a sale the even-building rule allows.
+    for (let guard = 0; player.debt && guard < 200; guard++) {
+        const built = deeds()
+            .filter((t) => t.houses > 0)
+            .sort((a, b) => b.houses - a.houses)[0];
+        if (!built || sellHouse(room, player.id, built.id).error) break;
+    }
+    for (const tile of deeds().filter((t) => t.houses === 0)) {
+        if (!player.debt) return;
+        sellProperty(room, player.id, tile.id);
+    }
+}
+
+/**
  * Out of the game. The estate goes back to the bank and the tiles are vacant
  * again — a creditor doesn't inherit it, so nothing can be handed to a friend
  * on the way out and no one wins the game by being owed money. A teammate
@@ -1314,7 +1350,7 @@ function goBankrupt(room, player) {
     log(room, `${player.name} went bankrupt — ${estate.length} properties returned to the bank`);
     dropTradesFor(room, player.id);
     // Nothing left to decide about someone already out — and a countdown left
-    // pointing at them would block every other vote for five minutes.
+    // pointing at them would block every other vote for two minutes.
     dropVoteFor(room, player.id);
     // One fewer voter changes what a majority is, and can settle a running
     // vote outright. Safe from recursion: finishVote clears room.vote before
@@ -1634,7 +1670,8 @@ function advanceTurn(room) {
  */
 function armIdle(room) {
     const player = room.players[room.turnIndex];
-    if (room.phase === 'waiting' || room.phase === 'ended' || !player) {
+    // Paused is stopped: no clock runs until it resumes, and resuming arms one.
+    if (room.phase === 'waiting' || room.phase === 'ended' || !player || room.paused) {
         room.idle = null;
         return;
     }
@@ -1695,6 +1732,9 @@ function expireIdle(room) {
     if (!idle) return { error: 'No turn clock running' };
     const player = findPlayer(room, idle.playerId);
     room.idle = null;
+    // A clock armed just before a pause can still come due during one. Nobody
+    // can move, so nobody stalled — and resuming arms a fresh clock.
+    if (room.paused) return {};
     if (!player || !isCurrent(room, player.id)) {
         armIdle(room);
         return {};
@@ -1707,8 +1747,9 @@ function expireIdle(room) {
     player.stalls = (player.stalls || 0) + 1;
     player.lastStallAt = Date.now();
     const rules = rulesFor(room);
-    // Some states can't be played through on somebody's behalf — an unpaid
-    // debt is nobody else's decision to make.
+    // A game may have states it will not play through on somebody's behalf —
+    // on the board, only a teammate's pending answer to a bailout. (A debt
+    // alone used to be one; it is sold down instead now.)
     if (rules.blocksIdle(room, player)) {
         armIdle(room);
         return {};
@@ -2359,15 +2400,8 @@ const clampVotes = (eligible) => Math.max(2, Math.min(eligible, VOTE_CAP));
  */
 function voteOpensAt(room) {
     if (room.phase === 'waiting' || !room.stats.startedAt) return null;
-    return room.stats.startedAt + VOTE_OPEN_MS + VOTE_OPEN_PER_PLAYER_MS * room.players.length;
+    return room.stats.startedAt + VOTE_OPEN_MS;
 }
-
-/**
- * Whether the turn clock has recently had to play for them — the one thing a
- * vote can be called about. Everything else the table dislikes about a player
- * is a conversation to have with them, not a button.
- */
-const isStalling = (player) => !!player.lastStallAt && Date.now() - player.lastStallAt < STALL_WINDOW_MS;
 
 function startVoteKick(room, byId, targetId) {
     if (room.phase === 'ended') return { error: 'Game is over' };
@@ -2376,6 +2410,8 @@ function startVoteKick(room, byId, targetId) {
     const target = findPlayer(room, targetId);
     if (!by || !target) return { error: 'Unknown player' };
     if (by.id === target.id) return { error: 'You cannot vote yourself out' };
+    // Somebody gone from a paused game is somebody the pause is waiting for.
+    if (room.paused) return { error: 'The game is paused — votes wait until it resumes' };
     if (by.bankrupt) return { error: 'You are out of the game' };
     if (target.bankrupt) return { error: `${target.name} is already out` };
 
@@ -2392,29 +2428,21 @@ function startVoteKick(room, byId, targetId) {
     if (!abandoned && voters(room, targetId).length + 1 < MIN_VOTERS) {
         return { error: `Needs at least ${MIN_VOTERS} players in the game` };
     }
-    // Both of the next two are about a ballot on someone who is sitting right
-    // there. Neither applies to the countdown: that one is the room's only way
-    // of shedding somebody who has gone for good, and making it wait ten
-    // minutes into a game — or wait for a stall from a player who isn't there
-    // to have one — would leave a table stuck with an empty seat.
+    // The one other rule a ballot has: not in the first minutes of a game, when
+    // a vote is usually someone reacting to a bad opening roll. It does not
+    // apply to the countdown, which is the room's only way of shedding somebody
+    // who has gone for good.
+    //
+    // Everything else that used to stand here — a vote only on someone the turn
+    // clock had played for, and cooldowns on voting the same person or calling
+    // twice — is gone. In practice they mostly stopped a table removing
+    // somebody it plainly wanted gone, and the majority a ballot needs is still
+    // the thing that decides.
     if (!abandoned) {
         const opens = voteOpensAt(room);
         if (opens && Date.now() < opens) {
             return { error: `Too early — kicking opens ${Math.ceil((opens - Date.now()) / 60_000)} min into the game` };
         }
-        // The lobby is exempt: nobody has had a turn to be slow about, and an
-        // unwanted stranger in the room is the one thing a vote is for there.
-        if (room.phase !== 'waiting' && !isStalling(target)) {
-            return { error: `${target.name} is taking their turns — you can only vote out someone the clock has had to play for` };
-        }
-    }
-    const until = room.voteCooldown?.[targetId] || 0;
-    if (until > Date.now()) {
-        return { error: `${target.name} was just voted on — try again in ${Math.ceil((until - Date.now()) / 1000)}s` };
-    }
-    const mine = room.callerCooldown?.[byId] || 0;
-    if (mine > Date.now()) {
-        return { error: `You called the last vote — wait ${Math.ceil((mine - Date.now()) / 60_000)} min before starting another` };
     }
 
     room.vote = {
@@ -2433,7 +2461,7 @@ function startVoteKick(room, byId, targetId) {
         room,
         abandoned
             ? `${by.name} started a countdown on ${target.name}, who has dropped out`
-            : `${by.name} started a vote to kick ${target.name} — the clock has played ${target.stalls} of their turns`,
+            : `${by.name} started a vote to kick ${target.name}`,
     );
     return resolveVoteIfDecided(room) || {};
 }
@@ -2529,12 +2557,6 @@ function finishVote(room, passed) {
     const vote = room.vote;
     if (!vote) return { error: 'No vote running' };
     room.vote = null;
-    // Whoever called it waits, win or lose. Losing shouldn't be the only thing
-    // that costs you — a vote that passes is still one the table just spent
-    // five minutes on, and three of them back to back is the same harassment
-    // as three that fail.
-    room.callerCooldown = room.callerCooldown || {};
-    room.callerCooldown[vote.byId] = Date.now() + CALLER_COOLDOWN_MS;
     const target = findPlayer(room, vote.targetId);
     if (!target) return {};
 
@@ -2550,7 +2572,6 @@ function finishVote(room, passed) {
         .join(' · ');
 
     if (!passed) {
-        room.voteCooldown[vote.targetId] = Date.now() + VOTE_COOLDOWN_MS;
         log(
             room,
             abandoned
@@ -2637,10 +2658,44 @@ function banFromRoom(room, target) {
 function adminPause(room, paused) {
     if (room.phase === 'waiting' || room.phase === 'ended') return { error: 'The game is not running' };
     if (!!room.paused === !!paused) return { error: paused ? 'Already paused' : 'Not paused' };
-    room.paused = !!paused;
-    room.pausedBy = null;
+    setPaused(room, !!paused, null);
     log(room, paused ? 'An admin paused the game' : 'An admin resumed the game');
     return {};
+}
+
+/**
+ * Stop the game's clocks, or start them again.
+ *
+ * A pause has to hold for as long as it takes everyone to come back, and a
+ * pause is usually taken because they are leaving. So everything that acts on
+ * a table on its own stops with it: the turn clock, which would otherwise count
+ * a stall against a player who cannot move and fill the feed with turns it did
+ * not play; skipping the turn of whoever disconnected; and a countdown to
+ * remove somebody who has gone, which would throw out the very people the pause
+ * is waiting for.
+ */
+function setPaused(room, paused, byId) {
+    room.paused = paused;
+    room.pausedBy = paused ? byId : null;
+    room.pausedAt = paused ? Date.now() : null;
+    if (paused) {
+        room.idle = null;
+        if (room.vote) {
+            const target = findPlayer(room, room.vote.targetId);
+            room.vote = null;
+            log(room, `The vote on ${target?.name || 'a player'} was called off — the game is paused`);
+        }
+    } else {
+        // A fresh clock for whoever is up. If they are still away, armIdle
+        // gives them the short one, and the game carries on without them.
+        armIdle(room);
+        // And fresh windows for the sweep. Everyone was gone and nothing was
+        // sent for the whole pause, which by now is well past both — so a
+        // resume a minute before the table sits back down would otherwise have
+        // the room closed out from under them on the next sweep.
+        room.emptySince = null;
+        room.lastActionAt = Date.now();
+    }
 }
 
 /**
@@ -2660,7 +2715,7 @@ function adminPlayTurn(room) {
     if (!player) return { error: 'Nobody is up' };
     const rules = rulesFor(room);
     if (rules.blocksIdle(room, player)) {
-        return { error: `${player.name} owes money, which only they can settle — kick them if they are gone` };
+        return { error: `${player.name}'s teammate has been asked to cover their debt — that answer is theirs` };
     }
     log(room, `An admin played ${player.name}'s turn for them`);
     rules.playIdleTurn(room, player);
@@ -2673,6 +2728,30 @@ function adminFinishDeadline(room) {
     if (!timer) return { error: 'Nothing is counting down' };
     log(room, room.auction ? 'An admin closed the auction' : 'An admin ended the countdown');
     timer.resolve(room);
+    return {};
+}
+
+/**
+ * End a game where it stands and give the table its end screen.
+ *
+ * The other way to end one — closing the room — sends everyone home with
+ * nothing, which is right for a game that should never have happened and wrong
+ * for one that just ran out of evening: the end screen is what saves a game to
+ * everyone's history. The winner is whoever the game says was ahead.
+ */
+function adminEndGame(room) {
+    if (room.phase === 'waiting' || room.phase === 'ended') return { error: 'The game is not running' };
+    // Nothing that could act on the table after it has ended.
+    room.paused = false;
+    room.pausedBy = null;
+    room.pausedAt = null;
+    room.vote = null;
+    room.idle = null;
+    const ahead = rulesFor(room).endEarly(room);
+    // A game module that forgot is still an ended game, not a stuck one.
+    room.phase = 'ended';
+    room.stats.endedAt = room.stats.endedAt || Date.now();
+    log(room, `An admin ended the game early — ${ahead}`);
     return {};
 }
 
@@ -2690,8 +2769,7 @@ function adminUnban(room, playerId) {
 function togglePause(room, playerId) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
-    room.paused = !room.paused;
-    room.pausedBy = room.paused ? player.id : null;
+    setPaused(room, !room.paused, player.id);
     log(room, room.paused ? `${player.name} paused the game` : `${player.name} resumed the game`);
     return {};
 }
@@ -2783,6 +2861,9 @@ function skipIfStillGone(room, playerId) {
     const player = findPlayer(room, playerId);
     if (!player || player.connected || room.phase === 'waiting' || room.phase === 'ended') return false;
     if (!isCurrent(room, playerId)) return false;
+    // Leaving a paused game is the point of pausing it. Their turn waits, and
+    // resuming arms the clock that plays it if they are still not back.
+    if (room.paused) return false;
     log(room, `${player.name} is away — turn skipped`);
     rulesFor(room).skipTurn(room, player);
     return true;
@@ -2793,14 +2874,13 @@ function resetForRematch(room) {
     room.phase = 'waiting';
     room.paused = false;
     room.pausedBy = null;
+    room.pausedAt = null;
     room.winnerId = null;
     room.winnerTeam = null;
     room.vote = null;
     room.idle = null;
     // Cooldowns are per-game grudges; the ban list is not — someone voted out
     // stays out of this room rather than reappearing for the next round.
-    room.voteCooldown = {};
-    room.callerCooldown = {};
     room.log = [];
     room.stats = { startedAt: null, endedAt: null, turnCount: 0, chatMessages: 0 };
     room.players = room.players
@@ -2905,9 +2985,34 @@ const rules = {
     privateFor: null,
 
     /** A debt is theirs to settle; nobody else may decide what to sell. */
-    blocksIdle: (room, player) => !!player.debt,
+    /**
+     * A debt no longer blocks it — it is sold down, see sellToCover. The one
+     * thing that still does is a teammate who has been asked to cover the rest:
+     * that answer is theirs, and playing the turn cannot move it along.
+     */
+    blocksIdle: (room, player) => player.debt?.bailout === 'offered',
 
     playIdleTurn(room, player) {
+        if (player.debt) {
+            sellToCover(room, player);
+            if (player.debt) {
+                // A teammate has been asked to cover the rest, and that is
+                // theirs to answer — the clock does not decline it for them.
+                if (player.debt.bailout === 'offered') return;
+                // Everything is gone and it still is not enough. Leaving them
+                // in debt would freeze the table again, which is the thing
+                // this is here to stop.
+                log(room, `${player.name} sold everything and still couldn't cover it`);
+                goBankrupt(room, player);
+                if (room.auction?.bidderId === player.id) {
+                    room.auction.bidderId = null;
+                    room.auction.bid = 0;
+                    room.auction.nextBid = room.auction.opening ?? market.MIN_OPENING_BID;
+                }
+                if (room.phase !== 'ended' && isCurrent(room, player.id)) endTurnAuto(room);
+                return;
+            }
+        }
         if (room.phase === 'rolling' && !room.hasRolled) rollDice(room, player.id);
         // Whatever the roll turned up, take the passive option: don't buy, and
         // get the card off the screen. An auction may open, which everyone else
@@ -2951,16 +3056,49 @@ const rules = {
     timer: (room) =>
         room.auction ? { endsAt: room.auction.endsAt, resolve: (r) => resolveAuction(r) } : null,
 
+    /**
+     * Stop here and call it: the side worth the most wins.
+     *
+     * Net worth rather than cash, because it is the number the end screen
+     * ranks by and the one the table has watched all game — a player sitting on
+     * six hotels and $40 is not losing. By side, so with teams on it is the
+     * team's total that counts, the same way a debt is judged.
+     */
+    endEarly(room) {
+        const alive = activePlayers(room);
+        const totals = new Map();
+        for (const p of alive) {
+            const side = sideKey(room, p.id);
+            totals.set(side, (totals.get(side) || 0) + worthOf(room, p).total);
+        }
+        const best = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+        const winners = alive.filter((p) => sideKey(room, p.id) === best);
+
+        // Nothing half-done survives into the end screen.
+        room.auction = null;
+        room.pendingAction = null;
+        room.pendingCard = null;
+        room.phase = 'ended';
+        room.winnerId = winners[0]?.id || null;
+        room.winnerTeam = room.settings.teams ? winners[0]?.teamId || null : null;
+        room.stats.endedAt = Date.now();
+        snapshotNetWorth(room);
+        const names = winners.map((p) => p.name).join(' and ');
+        return names ? `${names} ${winners.length > 1 ? 'were' : 'was'} ahead` : 'nobody was ahead';
+    },
+
     /** Its actions are wired by name in index.js, not through the registry. */
     actions: {},
 };
 
 module.exports = {
     rules,
+    PAUSED_ROOM_MS,
     adminKick,
     adminPause,
     adminPlayTurn,
     adminFinishDeadline,
+    adminEndGame,
     adminUnban,
     baseState,
     // Every game writes to the same feed, so the way to write to it is part of

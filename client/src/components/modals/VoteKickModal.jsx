@@ -39,13 +39,6 @@ const clock = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60)
 /** Whole minutes, rounded up — any wait at all reads as "1 min", never "0". */
 const mins = (ms) => Math.max(1, Math.ceil(ms / 60_000));
 
-/**
- * Whether the turn clock has recently had to play for them, which mid-game is
- * the only thing a vote can be called about. The same rule as the server's, off
- * the same two numbers, so the picker can't offer a vote that would be refused.
- */
-const stalling = (p, state, now) => !!p.lastStallAt && now - p.lastStallAt < (state.stallWindowMs || 0);
-
 /** Names for a list of player ids, for the places a vote has to name people. */
 const names = (ids, state) =>
     ids
@@ -66,31 +59,28 @@ export function VoteKickPicker({ open, onClose }) {
     // that a name you can't vote on says why rather than failing when pressed.
     const opens = state.voteOpensAt || 0;
     const tooEarly = opens > now;
-    const mine = state.callerCooldown?.[playerId] || 0;
-    const yours = mine > now ? mins(mine - now) : 0;
-    const inLobby = state.phase === 'waiting';
+    // A ballot needs at least three people in the game, the target included —
+    // below that it is one player removing another.
+    const tooFew = state.players.filter((p) => !p.bankrupt).length < (state.minVoters || 3);
 
     /** Why this player can't be voted on, or null if they can. */
     const blocked = (p) => {
         // Someone who has dropped out is never a ballot — it's a countdown,
-        // and none of the rules below apply to it.
+        // and neither rule below applies to it.
         if (!p.connected) return null;
-        if (yours) return `you called the last vote · ${yours} min`;
         if (tooEarly) return `kicking opens in ${mins(opens - now)} min`;
-        const until = state.voteCooldown?.[p.id] || 0;
-        if (until > now) return `just voted on · ${mins(until - now)} min`;
-        if (inLobby) return null;
-        return stalling(p, state, now) ? null : 'taking their turns';
+        if (tooFew) return `needs ${state.minVoters || 3} players in the game`;
+        return null;
     };
 
     return (
         <Modal open={open} onClose={onClose} subtitle="Vote to remove" title="Kick a player" width={420}>
             <div className="flex flex-col gap-4 p-5">
                 <p className="text-[13px] leading-snug text-muted-foreground">
-                    Only for someone the turn clock has had to play for — being ahead isn't grounds. Everyone else
-                    still in the game has to agree, up to four votes, and who voted goes in the log. Mid-game it's
-                    the same as resigning: their property goes back to the bank and they can't rejoin. Someone
-                    who's already dropped out gets five minutes to reconnect instead of a vote.
+                    Everyone else still in the game has to agree, up to four votes, and who voted goes in the log.
+                    Opens five minutes into a game, and needs at least three players. Mid-game it's the same as
+                    resigning: their property goes back to the bank and they can't rejoin. Someone who's already
+                    dropped out gets two minutes to reconnect instead of a vote.
                 </p>
                 <div className="flex flex-col gap-2">
                     {others.length === 0 && (
@@ -122,15 +112,12 @@ export function VoteKickPicker({ open, onClose }) {
                                         sentence you'd otherwise have to guess
                                         at from a button that does nothing. */}
                                     <span className="label truncate text-muted-foreground">
-                                        {why ||
-                                            (p.connected
-                                                ? `clock played ${p.stalls} turn${p.stalls === 1 ? '' : 's'}`
-                                                : 'dropped out')}
+                                        {why || (p.connected ? 'start a vote' : 'dropped out')}
                                     </span>
                                 </span>
                                 {/* Which of the two this turns into, before you
                                     press it rather than after. */}
-                                {!p.connected && <span className="label shrink-0 text-[#ff9db2]">away · 5 min</span>}
+                                {!p.connected && <span className="label shrink-0 text-[#ff9db2]">away · 2 min</span>}
                                 {!p.connected ? (
                                     <WifiOff className="size-4 shrink-0 text-[#ff9db2]" />
                                 ) : why ? (
@@ -205,10 +192,6 @@ export function VoteKickModal() {
                     <span className="text-[13px] leading-snug">
                         <span className="text-muted-foreground">Called by </span>
                         {caller?.name || 'someone'}
-                        <span className="text-muted-foreground">
-                            {' · the clock has played '}
-                            {target.stalls} of {target.name}'s turns
-                        </span>
                     </span>
                     {/* Live, not just in the log afterwards. Everyone can see
                         the tally already; hiding the names behind it only made

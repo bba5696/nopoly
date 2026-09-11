@@ -416,6 +416,7 @@ app.get('/api/admin/rooms', admin.requireAdmin, (req, res) => {
         game: room.game || 'nopoly',
         phase: room.phase,
         paused: !!room.paused,
+        pausedUntil: room.paused && room.pausedAt ? room.pausedAt + engine.PAUSED_ROOM_MS : null,
         board: room.board?.name || null,
         startedAt: room.stats?.startedAt || null,
         lastActionAt: room.lastActionAt || null,
@@ -536,10 +537,24 @@ app.post('/api/admin/rooms/:code/finish-deadline', admin.requireAdmin, (req, res
     });
 });
 
+/**
+ * End a game, one of two ways.
+ *
+ * With results: the game stops where it stands, whoever was ahead wins, and
+ * every tab lands on the end screen — which is what saves a game to people's
+ * history. The room then goes the way any finished room does.
+ *
+ * Without: the room is closed and everyone is sent home with nothing, for a
+ * game not worth keeping. It is also the only option for a lobby or a game
+ * already finished, which have no result to show.
+ */
 app.post('/api/admin/rooms/:code/end', admin.requireAdmin, (req, res) => {
     const room = adminRoom(req);
     if (!room) return res.status(404).json({ error: 'That room is gone' });
-    admin.record(req, 'ended the game', `${room.roomCode} · ${room.players.length} players · ${room.phase}`);
+    if (req.body?.results) {
+        return adminAct(req, res, () => 'ended the game with results', (r) => engine.adminEndGame(r));
+    }
+    admin.record(req, 'closed the room', `${room.roomCode} · ${room.players.length} players · ${room.phase}`);
     closeRoom(room.roomCode, room, 'An admin ended this game.');
     pushPresence();
     res.json({ ok: true });
@@ -888,6 +903,19 @@ function closeRoom(code, room, notice) {
 
 /** Which ending applies, if any. Order matters only in what it reports. */
 function expiredReason(room, now) {
+    // A paused game is one the table means to come back to, which is exactly
+    // the room the two rules below would otherwise close: everyone left, and
+    // nothing has been sent since. It is kept until the pause is a day old.
+    // Only the admin panel can pause, so no player can hold a room open this
+    // way — see engine.setPaused and PAUSED_ROOM_MS.
+    if (room.paused && room.phase !== 'waiting' && room.phase !== 'ended') {
+        // A pause restored from before this was recorded starts counting now.
+        room.pausedAt = room.pausedAt || now;
+        if (now - room.pausedAt > engine.PAUSED_ROOM_MS) {
+            return 'That game was paused for too long without being picked back up, so the room was closed.';
+        }
+        return null;
+    }
     if (room.emptySince && now - room.emptySince > EMPTY_ROOM_MS) {
         return 'Everyone had left, so that room was closed.';
     }

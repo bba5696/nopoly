@@ -161,6 +161,20 @@ const until = async (fn, ms = 3000) => {
     const cardView = await (await get(`/api/admin/rooms/${cardCode}`, token)).json();
     ok('watching a card game shows nobody s hand', !JSON.stringify(cardView).includes('"hand"'));
 
+    /* ------------------------------------------------ ending with the results */
+    let deeClosed = null;
+    dee.on('room:closed', (t) => (deeClosed = t));
+    const withResults = await post(`/api/admin/rooms/${cardCode}/end`, { results: true }, token);
+    ok('a game can be ended with its results', withResults.status === 200, String(withResults.status));
+    ok('the table lands on the end screen', await until(() => dee.state?.phase === 'ended'));
+    ok('nobody is sent home', deeClosed === null, deeClosed);
+    const fewest = Math.min(...dee.state.players.map((p) => p.handCount));
+    const winner = dee.state.players.find((p) => p.id === dee.state.winnerId);
+    ok('whoever held the fewest cards wins', !!winner && winner.handCount === fewest, JSON.stringify(dee.state.players.map((p) => [p.name, p.handCount])));
+    ok('and the feed says it was ended early', dee.state.log.some((l) => /An admin ended the game early — \w+ was ahead on \d+ cards?/.test(l.text)));
+    ok('it is stamped, so history can keep it', !!dee.state.stats?.endedAt);
+    ok('a finished game has no results left to end with', (await post(`/api/admin/rooms/${cardCode}/end`, { results: true }, token)).status === 400);
+
     /* ----------------------------------------------------------------- health */
     const health = await (await get('/api/admin/health', token)).json();
     ok('health says what is running', health.rooms?.total >= 2 && typeof health.version === 'string', JSON.stringify(health.rooms));
@@ -189,6 +203,23 @@ const until = async (fn, ms = 3000) => {
     ok('newest first', audit.entries[0].action === 'cleared the notice', audit.entries[0].action);
     ok('the log needs the token', (await get('/api/admin/log')).status === 401);
     for (const s of [dee, eli, late]) s.close();
+
+    /* ------------------------------------------ ending the board game early */
+    const board = await client();
+    const boardMate = await client();
+    const boardRoom = await ask(board, 'room:create', { name: 'Fay' });
+    const boardCode = boardRoom.roomCode || boardRoom.state?.roomCode;
+    await ask(boardMate, 'room:join', { roomCode: boardCode, name: 'Gus' });
+    board.emit('game:start');
+    await until(() => board.state && board.state.phase !== 'waiting');
+    await post(`/api/admin/rooms/${boardCode}/pause`, { paused: true }, token);
+    const boardEnd = await post(`/api/admin/rooms/${boardCode}/end`, { results: true }, token);
+    ok('a paused board game can be ended with results', boardEnd.status === 200, String(boardEnd.status));
+    ok('and lands on the end screen', await until(() => board.state?.phase === 'ended'));
+    const richest = Math.max(...board.state.players.map((p) => p.netWorth));
+    ok('the side worth the most wins', board.state.players.find((p) => p.id === board.state.winnerId)?.netWorth === richest);
+    ok('and it is no longer paused', board.state.paused === false);
+    for (const s of [board, boardMate]) s.close();
 
     /* ------------------------------------------------------------------- end */
     const ended = await post(`/api/admin/rooms/${code}/end`, {}, token);

@@ -172,6 +172,44 @@ async function until(n, ms = 4000) {
     ok('and then closed', await until(0), `${await roomCount()} left`);
 
     await down(server);
+
+    /* ------------------------------------------------------------ paused */
+    // A game paused to be finished later: restored with nobody connected and
+    // nothing sent, which is both the empty and the stale rule at once. Both
+    // are set to fire almost immediately, and it has to outlive them.
+    const pausedRoom = () => {
+        const room = fixture.rentRoom();
+        room.paused = true;
+        room.pausedAt = Date.now();
+        room.lastActionAt = Date.now() - 60 * 60 * 1000;
+        return room;
+    };
+    const stage = (room) => {
+        fs.rmSync(STATE, { recursive: true, force: true });
+        fs.mkdirSync(STATE, { recursive: true });
+        fs.writeFileSync(path.join(STATE, 'rooms.json'), JSON.stringify({ savedAt: Date.now(), rooms: [room] }));
+    };
+
+    stage(pausedRoom());
+    server = boot({ NOPOLY_EMPTY_ROOM_MS: '300', NOPOLY_STALE_ROOM_MS: '300', NOPOLY_ENDED_ROOM_MS: NEVER });
+    ok('fourth server comes up', await waitUp());
+    ok('the paused game is restored', /resumed 1 room/.test(server.log()), server.log());
+    await sleep(1500);
+    ok('and outlives the empty and quiet windows', (await roomCount()) === 1, `${await roomCount()} left`);
+    await down(server);
+
+    // Kept, but not forever: past its own window it goes like any other.
+    stage(pausedRoom());
+    server = boot({
+        NOPOLY_PAUSED_ROOM_MS: '600',
+        NOPOLY_EMPTY_ROOM_MS: '300',
+        NOPOLY_STALE_ROOM_MS: '300',
+        NOPOLY_ENDED_ROOM_MS: NEVER,
+    });
+    ok('fifth server comes up', await waitUp());
+    ok('a pause older than its window is closed', await until(0), `${await roomCount()} left`);
+
+    await down(server);
     fs.rmSync(STATE, { recursive: true, force: true });
 
     console.log(`\n${pass} passed, ${fails.length} failed`);

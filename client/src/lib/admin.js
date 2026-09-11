@@ -74,7 +74,11 @@ export const unban = (code, playerId) => act(code, 'unban', { playerId });
 export const setPaused = (code, paused) => act(code, 'pause', { paused });
 export const playTurn = (code) => act(code, 'play-turn');
 export const finishDeadline = (code) => act(code, 'finish-deadline');
-export const endRoom = (code) => act(code, 'end');
+/**
+ * `results`: stop the game where it stands and show everyone the end screen,
+ * which saves it to their history. Without: close the room with nothing.
+ */
+export const endRoom = (code, results = false) => act(code, 'end', { results });
 
 export const health = () => call('/api/admin/health');
 export const auditLog = () => call('/api/admin/log');

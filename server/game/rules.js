@@ -69,6 +69,7 @@ const HOOKS = [
     'removeFromPlay',
     'resetForRematch',
     'timer',
+    'endEarly',
     'actions',
 ];
 

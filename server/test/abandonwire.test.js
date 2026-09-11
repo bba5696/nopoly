@@ -60,7 +60,7 @@ const quiet = async (s) => {
     st = await until(a, (s) => !!s.vote);
     ok('the kick became a countdown', st.vote?.mode === 'abandon', JSON.stringify(st.vote));
     ok('it is broadcast to the others', (await until(c, (s) => !!s.vote)).vote?.mode === 'abandon');
-    ok('with minutes on the clock', st.vote.endsAt - Date.now() > 4 * 60_000);
+    ok('with two minutes on the clock', st.vote.endsAt - Date.now() > 110_000, String(st.vote.endsAt - Date.now()));
 
     const errs = [];
     c.on('error:game', (e) => errs.push(e));

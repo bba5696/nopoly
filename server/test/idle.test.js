@@ -103,16 +103,82 @@ function withRoll([d1, d2], fn) {
     ok('no purchase is left pending', r.pendingAction === null, JSON.stringify(r.pendingAction));
     ok('and no card is left on screen', r.pendingCard === null);
 }
+/* ------------------------------------------- a debt is sold down for you */
+
+/** A set of three from the board, and a deed from a different country. */
+function estate(r) {
+    const groups = {};
+    for (const t of r.tiles) if (t.type === 'property') (groups[t.groupId] = groups[t.groupId] || []).push(t);
+    const set = Object.values(groups).find((g) => g.length === 3);
+    const loose = r.tiles.find((t) => t.type === 'property' && t.groupId !== set[0].groupId);
+    return { set, loose };
+}
+const give = (up, t, houses = 0) => {
+    t.ownerId = up.id;
+    t.houses = houses;
+    up.properties.push(t.id);
+};
+
 {
-    // A debt can only be settled by the person who owes it.
+    // Somebody who walked away owing money used to freeze the whole table.
     const { r } = mk(['Ada', 'Bo', 'Cy']);
     const up = upNow(r);
-    up.debt = { amount: 200, toId: null, bailout: null };
+    const { set, loose } = estate(r);
+    give(up, loose);
+    for (const t of set) give(up, t, 1);
+    up.cash = 0;
+    // Less than the loose deed fetches, so nothing else should need to go.
+    const owed = Math.max(1, e.publicState(r).tiles[loose.id].price - 1);
+    up.debt = { amount: owed, toId: null, bailout: null };
+    const before = r.turnIndex;
+
+    withRoll([1, 2], () => e.expireIdle(r));
+    ok('the debt is cleared', !up.debt, JSON.stringify(up.debt));
+    ok('the loose deed went first', loose.ownerId === null);
+    ok('the set kept its buildings when the deed was enough', set.every((t) => t.houses === 1),
+        set.map((t) => t.houses).join('/'));
+    ok('the feed says why', r.log.some((l) => /is away and owes \$\d+ — selling to cover it/.test(l.text)));
+    ok('and the turn was then played', r.turnIndex !== before || r.hasRolled);
+}
+{
+    // Nothing loose to sell: buildings go next, evenly, before the set itself.
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const up = upNow(r);
+    const { set } = estate(r);
+    for (const t of set) give(up, t, 2);
+    up.cash = 0;
+    // Two buildings' worth, so the deeds themselves should survive.
+    up.debt = { amount: Math.floor(set[0].houseCost / 2) * 2, toId: null, bailout: null };
+    withRoll([1, 2], () => e.expireIdle(r));
+    ok('buildings pay it', !up.debt, JSON.stringify(up.debt));
+    ok('the set is still theirs', set.every((t) => t.ownerId === up.id));
+    const houses = set.map((t) => t.houses);
+    ok('sold evenly', Math.max(...houses) - Math.min(...houses) <= 1, houses.join('/'));
+}
+{
+    // Everything sold and still short: out, rather than a frozen table.
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const up = upNow(r);
+    give(up, estate(r).loose);
+    up.cash = 0;
+    up.debt = { amount: 5000, toId: null, bailout: null };
     const before = r.turnIndex;
     e.expireIdle(r);
-    ok('a debt is not played for you', r.turnIndex === before);
-    ok('the debt stands', !!up.debt);
-    ok('but the clock keeps running', !!r.idle, JSON.stringify(r.idle));
+    ok('short even after selling, they are out', up.bankrupt);
+    ok('and the game moves on', r.turnIndex !== before || r.phase === 'ended');
+}
+{
+    // A teammate has been asked to cover it: that answer is theirs.
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const up = upNow(r);
+    up.cash = 0;
+    up.debt = { amount: 500, toId: null, bailout: 'offered' };
+    const before = r.turnIndex;
+    e.expireIdle(r);
+    ok('a pending bailout is left for the teammate', !up.bankrupt && !!up.debt && r.turnIndex === before);
+    const lines = r.log.length;
+    e.expireIdle(r);
+    ok('and a clock coming round again with nothing to sell says nothing', r.log.length === lines);
 }
 
 /* ------------------------------------- an auction opened by the auto-decline */

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useGame } from '@/lib/game-context';
 import { gridFor } from '@/lib/board-layout';
+import { pausedLine } from '@/lib/pause';
 import { Dice } from './Dice';
 import { GameFeed } from './GameFeed';
 import { TurnActions, DebtNotice } from './TurnActions';
@@ -16,7 +17,7 @@ import { TurnActions, DebtNotice } from './TurnActions';
  * sentence.
  */
 function statusLine({ state, current, moving }) {
-    if (state.paused) return 'Game paused';
+    if (state.paused) return pausedLine(state);
     // Ahead of everything else: the table genuinely is waiting on them.
     if (current?.debt) return `${current.name} owes $${current.debt.amount}`;
     if (state.auction) return `${state.tiles[state.auction.tileId].name} is up for auction`;

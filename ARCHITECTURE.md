@@ -334,41 +334,31 @@ takes. It runs even at a table that switched the turn timer off, because that
 setting is a rule about how long a person may take, not a reason for the game to
 stop dead for someone who has left.
 
-## A kick has to be about the clock
+## A kick is a majority, and not much else
 
-Vote-kick was being used for the thing it looks like it's for and isn't: getting
-rid of whoever is winning. Four rules now stand between wanting that and doing
-it, and all four live in `startVoteKick`.
+Vote-kick once carried four rules meant to stop it being used on whoever was
+winning: a ballot only on someone the turn clock had had to play for, an opening
+window that grew with the table, a cooldown on the target, and another on the
+caller. In play they mostly stopped a table removing somebody it plainly wanted
+gone — "sometimes it just doesn't let you" — so three of them went.
 
-**You can only vote out someone the turn clock has had to play for.** Every
-expiry stamps `stalls` and `lastStallAt` on the player, and a ballot is refused
-against anyone without a recent one. Being ahead isn't grounds; being slow is
-the only thing that is. The stamp expires after ten minutes, or one blip at
-minute ten would leave you kickable for the rest of the game — which is the
-whole loophole back in, just with a wait attached.
+What is left, all in `startVoteKick`:
 
-**Nothing can be called in the opening minutes** — two, plus one per player at
-the table. It's really a count of turns: you can't know someone is stalling
-until you've watched them take a few, and eight people take four times as long
-to come round as two. Every vote called inside that window was somebody
-reacting to a bad roll.
+**Nothing can be called in the first five minutes.** Every vote called inside
+that window was somebody reacting to a bad opening roll.
 
-**The caller waits five minutes afterwards, win or lose.** The old cooldown
-protected the target only, which left one person free to work down the table a
-name at a time; and a vote that passes is still five minutes of everyone's game,
-so winning isn't a way round it either.
+**A ballot needs at least three players in the game.** Below that, calling the
+vote *is* the vote, and one person would be removing another.
 
-**Everything is on the record.** The log names who called the vote, how many
-turns the clock had played for the target, and who voted which way. Among
-friends that's the part that actually works — four people could do this
-anonymously before, and the tally on its own made it deniable.
+**It still takes a majority** — everyone else still in the game, to a ceiling
+of four — **and everything is on the record.** The log names who called it and
+who voted which way. Among friends that is the part that actually keeps it
+honest.
 
 None of it applies to a player who has dropped out. That path isn't a ballot at
-all but a countdown they can end by coming back, it's the room's only way of
-shedding an empty seat, and someone who isn't there can't be waited on or
-stalled at. The lobby is exempt from the stall rule for the same reason in
-reverse: nobody has had a turn to be slow about, and a stranger in the room is
-the one thing a vote is genuinely for there.
+all but a two-minute countdown they end by coming back — the room's only way of
+shedding an empty seat. Nor can any vote run while a game is paused: somebody
+gone from a paused game is somebody the pause is waiting for.
 
 ## Building is turn-gated; selling is not
 
@@ -381,9 +371,17 @@ rival landing on it and the rent being calculated.
 
 `charge()` is the single funnel every payment goes through. Anything a player
 cannot cover in cash becomes a debt they must clear themselves by selling; the
-game never liquidates an estate on their behalf. Their turn is blocked until it
-is settled, and bankruptcy follows only when the whole estate provably falls
-short.
+game does not liquidate an estate on behalf of someone who is there to choose.
+Their turn is blocked until it is settled, and bankruptcy follows only when the
+whole estate provably falls short.
+
+The exception is a turn the clock plays for someone who has gone. A debt used to
+stop the clock dead, which meant one player walking away owing money froze the
+table until somebody voted them out. `sellToCover` now sells for them in the
+order that costs least — shares at cost, loose deeds, buildings evenly, then
+the sets — and stops the moment the debt is clear. If even that falls short
+they go bankrupt rather than leaving the table stuck. The one thing the clock
+still waits on is a teammate who has been asked to bail them out.
 
 This is why there are two different valuations. `netWorth()` values buildings at
 cost and is what the rail displays; `liquidValue()` values them at half, which

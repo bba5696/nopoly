@@ -104,10 +104,12 @@ function snapshotHands(room) {
  * is. One round decides it for now; `scores` is kept per player so "first to
  * five hundred" is later a setting rather than a migration.
  */
-function finish(room, winner) {
+function finish(room, winner, { quiet = false } = {}) {
     room.phase = 'ended';
     room.winnerId = winner.id;
     room.stats.endedAt = Date.now();
+    room.choosing = null;
+    room.pendingLast = null;
     let points = 0;
     for (const p of room.players) {
         const held = (p.hand || []).reduce((sum, c) => sum + scoreOf(c), 0);
@@ -116,7 +118,8 @@ function finish(room, winner) {
     }
     room.scores[winner.id] = (room.scores[winner.id] || 0) + points;
     snapshotHands(room);
-    log(room, `${winner.name} went out — ${points} points`);
+    if (!quiet) log(room, `${winner.name} went out — ${points} points`);
+    return points;
 }
 
 /**
@@ -220,6 +223,7 @@ function playCard(room, playerId, { cardId, suit } = {}) {
 }
 
 function chooseSuit(room, playerId, { suit } = {}) {
+    if (room.paused) return { error: 'Game is paused' };
     if (!room.choosing || room.choosing.playerId !== playerId) return { error: 'Nothing to name' };
     if (!SUIT_IDS.includes(suit)) return { error: 'That is not a suit' };
     const player = findPlayer(room, playerId);
@@ -263,6 +267,7 @@ function drawCard(room, playerId) {
 
 /** Give up the turn after drawing, rather than play what came up. */
 function pass(room, playerId) {
+    if (room.paused) return { error: 'Game is paused' };
     if (!isCurrent(room, playerId)) return { error: 'Not your turn' };
     if (room.choosing) return { error: 'Name a suit first' };
     if (!room.drawnThisTurn) return { error: 'Draw first' };
@@ -437,6 +442,28 @@ module.exports = {
 
     /** No clock of its own — the turn clock in engine.js is the only deadline. */
     timer: () => null,
+
+    /**
+     * Stop here and call it: whoever is closest to going out wins.
+     *
+     * Fewest cards, and on a tie the fewer points held — a hand of two wilds
+     * is further from out than a hand of two threes. Scored the way going out
+     * is, so the standings on the end screen mean what they always mean.
+     */
+    endEarly(room) {
+        const held = (p) => (p.hand || []).reduce((sum, c) => sum + scoreOf(c), 0);
+        const leader = inPlay(room)
+            .slice()
+            .sort((a, b) => (a.hand || []).length - (b.hand || []).length || held(a) - held(b))[0];
+        if (!leader) {
+            room.phase = 'ended';
+            room.stats.endedAt = Date.now();
+            return 'nobody was ahead';
+        }
+        const cards = (leader.hand || []).length;
+        finish(room, leader, { quiet: true });
+        return `${leader.name} was ahead on ${cards} card${cards === 1 ? '' : 's'}`;
+    },
 
     actions: {
         'nouno:play': (room, playerId, payload) => playCard(room, playerId, payload || {}),
