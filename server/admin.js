@@ -85,6 +85,32 @@ function requireAdmin(req, res, next) {
     next();
 }
 
+/* ------------------------------------------------------------ the audit log */
+
+// Every sign-in, right or wrong, and everything done with the panel, with the
+// address it came from. The key is the whole lock, so this is how its owner
+// finds out somebody else has it: a kick they did not make, or a sign-in from
+// an address that is not theirs.
+//
+// In memory, the newest 200, and gone on restart — the same lines go to the
+// console, so `journalctl` holds the long history. Written to the log before
+// the action's own line, so a failure halfway through still leaves a record of
+// who tried.
+
+const AUDIT_MAX = 200;
+const audit = [];
+
+function record(req, action, detail = '') {
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    audit.unshift({ at: Date.now(), ip, action, detail: String(detail).slice(0, 200) });
+    if (audit.length > AUDIT_MAX) audit.length = AUDIT_MAX;
+    const line = `Admin: ${action}${detail ? ` — ${detail}` : ''} (${ip})`;
+    if (action === 'wrong key') console.warn(line);
+    else console.log(line);
+}
+
+const auditLog = () => audit.slice();
+
 module.exports = {
     enabled,
     tooShort,
@@ -96,4 +122,6 @@ module.exports = {
     noteFailure,
     clearAttempts,
     requireAdmin,
+    record,
+    auditLog,
 };

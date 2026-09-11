@@ -65,6 +65,18 @@ export async function signIn(key) {
     saveAdminToken(token);
 }
 
+const act = (code, what, body = {}) => call(`/api/admin/rooms/${code}/${what}`, { method: 'POST', body });
+
 export const listRooms = () => call('/api/admin/rooms');
-export const kick = (code, playerId) => call(`/api/admin/rooms/${code}/kick`, { method: 'POST', body: { playerId } });
-export const endRoom = (code) => call(`/api/admin/rooms/${code}/end`, { method: 'POST', body: {} });
+export const watchRoom = (code) => call(`/api/admin/rooms/${code}`);
+export const kick = (code, playerId) => act(code, 'kick', { playerId });
+export const unban = (code, playerId) => act(code, 'unban', { playerId });
+export const setPaused = (code, paused) => act(code, 'pause', { paused });
+export const playTurn = (code) => act(code, 'play-turn');
+export const finishDeadline = (code) => act(code, 'finish-deadline');
+export const endRoom = (code) => act(code, 'end');
+
+export const health = () => call('/api/admin/health');
+export const auditLog = () => call('/api/admin/log');
+/** An empty text clears whatever notice is up. */
+export const sendNotice = (text, minutes) => call('/api/admin/notice', { method: 'POST', body: { text, minutes } });

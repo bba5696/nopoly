@@ -97,6 +97,99 @@ const until = async (fn, ms = 3000) => {
     const gone = await post('/api/admin/rooms/ZZZZZ/kick', { playerId: 'x' }, token);
     ok('a room that is not there is a 404', gone.status === 404);
 
+    /* ----------------------------------------------------------------- watch */
+    ok('watching needs the token too', (await get(`/api/admin/rooms/${code}`)).status === 401);
+    const watched = await (await get(`/api/admin/rooms/${code}`, token)).json();
+    ok('a room can be watched', !!watched.state && watched.state.roomCode === code);
+    ok('with what the game has been doing', watched.state.log.some((l) => /removed by an admin/.test(l.text)));
+    ok('but never its chat', !('chat' in watched.state));
+
+    /* ----------------------------------------------------------------- pause */
+    const paused = await post(`/api/admin/rooms/${code}/pause`, { paused: true }, token);
+    ok('a game can be paused', paused.status === 200);
+    ok('the table sees it', await until(() => ada.state?.paused === true));
+    ok('and is told who did it', await until(() => ada.state?.log.some((l) => /An admin paused the game/.test(l.text))));
+    const whilePaused = await post(`/api/admin/rooms/${code}/play-turn`, {}, token);
+    ok('no playing a turn while paused', whilePaused.status === 400);
+    ok('pausing twice is refused', (await post(`/api/admin/rooms/${code}/pause`, { paused: true }, token)).status === 400);
+    await post(`/api/admin/rooms/${code}/pause`, { paused: false }, token);
+    ok('and it resumes', await until(() => ada.state?.paused === false));
+
+    /* ---------------------------------------------------- playing a stuck turn */
+    const played = await post(`/api/admin/rooms/${code}/play-turn`, {}, token);
+    ok('a stuck turn can be played', played.status === 200, String(played.status));
+    ok('and the feed names whose it was', await until(() => ada.state?.log.some((l) => /An admin played \w+'s turn for them/.test(l.text))));
+    // The played turn takes the passive option, and declining a purchase opens
+    // an auction — so whether there is one to close is up to the dice.
+    const listedNow = await (await get('/api/admin/rooms', token)).json();
+    const auctionOn = listedNow.rooms.find((r) => r.code === code)?.auction;
+    const closed = await post(`/api/admin/rooms/${code}/finish-deadline`, {}, token);
+    if (auctionOn) {
+        ok('an auction the turn opened can be closed', closed.status === 200, String(closed.status));
+        ok('and it is gone', await until(() => !ada.state?.auction));
+    } else {
+        ok('with no auction on, there is nothing to close', closed.status === 400, String(closed.status));
+    }
+
+    /* ----------------------------------------------------------------- unban */
+    const rooms1 = await (await get('/api/admin/rooms', token)).json();
+    const banned = rooms1.rooms.find((r) => r.code === code)?.banned || [];
+    ok('the ban list keeps the name', banned.some((b) => b.id === boJoin.playerId && b.name === 'Bo'), JSON.stringify(banned));
+    const unbanned = await post(`/api/admin/rooms/${code}/unban`, { playerId: boJoin.playerId }, token);
+    ok('a ban can be lifted', unbanned.status === 200);
+    // Kicked mid-game, their estate already went back — so lifting the ban lets
+    // them watch, and does not hand them back a seat in a game they are out of.
+    const again = await ask(back, 'room:join', { roomCode: code, name: 'Bo', playerId: boJoin.playerId });
+    ok('unbanned, they are offered a seat to watch from', again.canSpectate === true && !/banned/i.test(again.error || ''), JSON.stringify(again));
+    const watching = await ask(back, 'room:spectate', { roomCode: code, name: 'Bo', playerId: boJoin.playerId });
+    ok('and can take it', !watching?.error, JSON.stringify(watching));
+    ok('but are not back in the game they were removed from', await until(() => ada.state?.players.find((p) => p.id === boJoin.playerId)?.resigned));
+    ok('unbanning someone not banned is refused', (await post(`/api/admin/rooms/${code}/unban`, { playerId: boJoin.playerId }, token)).status === 400);
+
+    /* --------------------------------------------------------- the card game */
+    const dee = await client();
+    const eli = await client();
+    const cards = await ask(dee, 'room:create', { name: 'Dee', game: 'nouno' });
+    const cardCode = cards.roomCode || cards.state?.roomCode;
+    await ask(eli, 'room:join', { roomCode: cardCode, name: 'Eli' });
+    dee.emit('game:start');
+    await until(() => dee.state?.phase === 'playing');
+    const before = dee.state.turnIndex;
+    const cardTurn = await post(`/api/admin/rooms/${cardCode}/play-turn`, {}, token);
+    ok('a card game s turn can be played too', cardTurn.status === 200, String(cardTurn.status));
+    ok('and it moves on without leaving a suit half-named', await until(() => dee.state?.turnIndex !== before && !dee.state?.choosing));
+    const cardView = await (await get(`/api/admin/rooms/${cardCode}`, token)).json();
+    ok('watching a card game shows nobody s hand', !JSON.stringify(cardView).includes('"hand"'));
+
+    /* ----------------------------------------------------------------- health */
+    const health = await (await get('/api/admin/health', token)).json();
+    ok('health says what is running', health.rooms?.total >= 2 && typeof health.version === 'string', JSON.stringify(health.rooms));
+    ok('and how close it is to the cap', health.rooms?.max > 0 && health.memory?.rssMb > 0);
+    ok('health needs the token', (await get('/api/admin/health')).status === 401);
+
+    /* --------------------------------------------------------------- notices */
+    let heard = null;
+    cy.on('server:notice', (n) => (heard = n));
+    const sent = await post('/api/admin/notice', { text: 'Restarting in 2 minutes', minutes: 2 }, token);
+    ok('a notice can be sent', sent.status === 200);
+    ok('every open tab gets it', await until(() => heard?.text === 'Restarting in 2 minutes'));
+    const late = io(URL, { auth: { token: 'open' }, forceNew: true });
+    let lateHeard = null;
+    late.on('server:notice', (n) => (lateHeard = n));
+    ok('so does a tab that connects afterwards', await until(() => lateHeard?.text === 'Restarting in 2 minutes'));
+    await post('/api/admin/notice', { text: '' }, token);
+    ok('and clearing it tells them', await until(() => heard === null));
+    ok('sending one needs the token', (await post('/api/admin/notice', { text: 'hi' })).status === 401);
+
+    /* ------------------------------------------------------------- audit log */
+    const audit = await (await get('/api/admin/log', token)).json();
+    const actions = audit.entries.map((x) => x.action);
+    ok('the log has the sign-ins', actions.includes('signed in') && actions.includes('wrong key'));
+    ok('and what was done', actions.includes('kicked Bo') && actions.includes('paused') && actions.includes('unbanned Bo'));
+    ok('newest first', audit.entries[0].action === 'cleared the notice', audit.entries[0].action);
+    ok('the log needs the token', (await get('/api/admin/log')).status === 401);
+    for (const s of [dee, eli, late]) s.close();
+
     /* ------------------------------------------------------------------- end */
     const ended = await post(`/api/admin/rooms/${code}/end`, {}, token);
     ok('ending a game goes through', ended.status === 200);

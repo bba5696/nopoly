@@ -14,6 +14,7 @@ export function GameProvider({ children }) {
     // two different payloads.
     const [hand, setHand] = useState([]);
     const [notice, setNotice] = useState(null);
+    const [serverNotice, setServerNotice] = useState(null);
     const [joining, setJoining] = useState(false);
     /** Server-wide head count, pushed whenever it changes. */
     const [presence, setPresence] = useState(null);
@@ -116,7 +117,12 @@ export function GameProvider({ children }) {
         // see broadcast() and pushHands() on the server.
         const onHand = (payload) => setHand(payload?.hand || []);
 
+        // A word from the site's admin to every open tab — "restarting in two
+        // minutes". Null takes it down; `until` takes it down on its own.
+        const onServerNotice = (payload) => setServerNotice(payload?.text ? payload : null);
+
         socket.on('connect', onConnect);
+        socket.on('server:notice', onServerNotice);
         socket.on('disconnect', onDisconnect);
         socket.on('state', onState);
         socket.on('hand', onHand);
@@ -129,6 +135,7 @@ export function GameProvider({ children }) {
         return () => {
             document.removeEventListener('visibilitychange', reportVisibility);
             socket.off('connect', onConnect);
+            socket.off('server:notice', onServerNotice);
             socket.off('disconnect', onDisconnect);
             socket.off('state', onState);
             socket.off('hand', onHand);
@@ -239,8 +246,9 @@ export function GameProvider({ children }) {
             leaveRoom,
             flash,
             send,
+            serverNotice,
         };
-    }, [connected, joining, notice, presence, playerId, roomCode, state, hand, spectating, createRoom, joinRoom, spectate, leaveRoom, flash, send]);
+    }, [connected, joining, notice, serverNotice, presence, playerId, roomCode, state, hand, spectating, createRoom, joinRoom, spectate, leaveRoom, flash, send]);
 
     return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

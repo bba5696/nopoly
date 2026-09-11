@@ -35,6 +35,54 @@ function Notice() {
     );
 }
 
+/**
+ * The admin's word to everyone online — in practice, a restart warning.
+ *
+ * Not the toast above: that is gone in three seconds, and this has to be there
+ * when somebody looks up from their turn. It takes itself down when it runs
+ * out, and anyone can dismiss it sooner, since it sits over the board.
+ */
+function ServerBanner() {
+    const { serverNotice } = useGame();
+    // Which notice has been dismissed or has run out, by its deadline — a new
+    // notice has a new one, so it shows even after an old one was closed.
+    const [gone, setGone] = useState(null);
+
+    useEffect(() => {
+        if (!serverNotice) return undefined;
+        const t = setTimeout(() => setGone(serverNotice.until), Math.max(0, serverNotice.until - Date.now()));
+        return () => clearTimeout(t);
+    }, [serverNotice]);
+
+    const show = serverNotice && gone !== serverNotice.until;
+    return (
+        <AnimatePresence>
+            {show && (
+                <motion.div
+                    key={serverNotice.until}
+                    initial={{ opacity: 0, y: -12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    role="status"
+                    className="panel fixed left-1/2 top-3 z-[61] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 px-4 py-2.5 text-[14px]"
+                    style={{ borderColor: 'rgba(255,182,72,.6)' }}
+                >
+                    <span className="text-[#ffb648]">Heads up</span>
+                    <span className="min-w-0">{serverNotice.text}</span>
+                    <button
+                        type="button"
+                        onClick={() => setGone(serverNotice.until)}
+                        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                        aria-label="Dismiss"
+                    >
+                        ×
+                    </button>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
 function Router() {
     const { state } = useGame();
     if (!state) return <Home />;
@@ -114,6 +162,7 @@ export default function App() {
     return (
         <GameProvider>
             <Notice />
+            <ServerBanner />
             <Router />
         </GameProvider>
     );

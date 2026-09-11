@@ -391,19 +391,23 @@ app.post('/api/admin/login', (req, res) => {
     if (!admin.enabled()) return res.status(404).json({ error: 'The admin panel is not turned on' });
     const ip = clientIp(req);
     if (admin.tooManyAttempts(ip)) {
+        admin.record(req, 'locked out');
         return res.status(429).json({ error: 'Too many attempts — try again later' });
     }
     if (!admin.checkKey(req.body?.key)) {
         admin.noteFailure(ip);
-        // Logged, because one person should ever be trying this — a run of
+        // Recorded, because one person should ever be trying this — a run of
         // these is somebody else, and the log is the only place that shows.
-        console.warn(`Admin: wrong key from ${ip}`);
+        admin.record(req, 'wrong key');
         return res.status(401).json({ error: 'Wrong key' });
     }
     admin.clearAttempts(ip);
-    console.log(`Admin: signed in from ${ip}`);
+    admin.record(req, 'signed in');
     res.json({ token: admin.issueToken() });
 });
+
+const adminRoom = (req) => rooms.get(String(req.params.code || '').toUpperCase());
+const inProgress = (room) => room.phase !== 'waiting' && room.phase !== 'ended';
 
 /** What the panel draws: every room, and who is in it. */
 app.get('/api/admin/rooms', admin.requireAdmin, (req, res) => {
@@ -419,8 +423,11 @@ app.get('/api/admin/rooms', admin.requireAdmin, (req, res) => {
         hostId: room.hostId,
         // Whoever is up. Every phase between the lobby and the end is a game in
         // progress — the board game names several of them, the cards one.
-        currentId:
-            room.phase !== 'waiting' && room.phase !== 'ended' ? room.players[room.turnIndex]?.id || null : null,
+        currentId: inProgress(room) ? room.players[room.turnIndex]?.id || null : null,
+        // Something the game is waiting on a clock for — on the board, an
+        // auction — which the panel can close.
+        deadline: inProgress(room) && !!rulesFor(room).timer(room),
+        auction: !!room.auction,
         players: room.players.map((p) => ({
             id: p.id,
             name: p.name,
@@ -429,10 +436,25 @@ app.get('/api/admin/rooms', admin.requireAdmin, (req, res) => {
             out: !!(p.resigned || p.bankrupt || p.out),
         })),
         spectators: (room.spectators || []).length,
-        banned: (room.banned || []).length,
+        banned: (room.banned || []).map((id) => ({ id, name: room.banNames?.[id] || null })),
     }));
     list.sort((a, b) => (b.lastActionAt || 0) - (a.lastActionAt || 0));
     res.set('Cache-Control', 'no-store').json({ rooms: list, now: Date.now() });
+});
+
+/**
+ * One room, as somebody watching it sees it — so a kick is decided on what is
+ * happening rather than on a name and a green dot.
+ *
+ * The spectator's view, which already carries no hands. Chat is taken out:
+ * the terms say nobody reads it, and the feed of what the game did is what a
+ * decision needs.
+ */
+app.get('/api/admin/rooms/:code', admin.requireAdmin, (req, res) => {
+    const room = adminRoom(req);
+    if (!room) return res.status(404).json({ error: 'That room is gone' });
+    const { chat, ...view } = engine.publicState(room, null);
+    res.set('Cache-Control', 'no-store').json({ state: { ...view, log: (view.log || []).slice(-60) } });
 });
 
 /**
@@ -451,33 +473,136 @@ function showDoor(room, playerId, notice) {
     }
 }
 
-app.post('/api/admin/rooms/:code/kick', admin.requireAdmin, (req, res) => {
-    const room = rooms.get(String(req.params.code || '').toUpperCase());
+/**
+ * An admin action on a room, and everything after it.
+ *
+ * The same aftermath as a player's action — the table told, every clock
+ * re-armed — minus `touch`: the admin is not at the table, and looking in or
+ * fixing something must not keep an abandoned room alive.
+ */
+function adminAct(req, res, what, fn) {
+    const room = adminRoom(req);
     if (!room) return res.status(404).json({ error: 'That room is gone' });
-    const playerId = String(req.body?.playerId || '');
-    const target = room.players.find((p) => p.id === playerId);
-    const result = engine.adminKick(room, playerId);
+    const result = fn(room) || {};
     if (result.error) return res.status(400).json(result);
-    console.log(`Admin: removed ${target?.name || playerId} from ${room.roomCode}`);
-    showDoor(room, playerId, 'An admin removed you from the game.');
-    // Not `touch`: the admin is not at the table, and an admin looking in must
-    // not keep an abandoned room alive.
+    admin.record(req, what(room), room.roomCode);
     broadcast(room);
     scheduleGame(room);
     scheduleVote(room);
     scheduleIdle(room);
     pushPresence();
     res.json({ ok: true });
+}
+
+app.post('/api/admin/rooms/:code/kick', admin.requireAdmin, (req, res) => {
+    const playerId = String(req.body?.playerId || '');
+    let name = playerId;
+    adminAct(req, res, () => `kicked ${name}`, (room) => {
+        name = room.players.find((p) => p.id === playerId)?.name || playerId;
+        const result = engine.adminKick(room, playerId);
+        if (!result.error) showDoor(room, playerId, 'An admin removed you from the game.');
+        return result;
+    });
+});
+
+app.post('/api/admin/rooms/:code/unban', admin.requireAdmin, (req, res) => {
+    const playerId = String(req.body?.playerId || '');
+    let name = playerId;
+    adminAct(req, res, () => `unbanned ${name}`, (room) => {
+        name = room.banNames?.[playerId] || playerId;
+        return engine.adminUnban(room, playerId);
+    });
+});
+
+app.post('/api/admin/rooms/:code/pause', admin.requireAdmin, (req, res) => {
+    const paused = !!req.body?.paused;
+    adminAct(req, res, () => (paused ? 'paused' : 'resumed'), (room) => engine.adminPause(room, paused));
+});
+
+app.post('/api/admin/rooms/:code/play-turn', admin.requireAdmin, (req, res) => {
+    let name = '';
+    adminAct(req, res, () => `played ${name}'s turn`, (room) => {
+        name = room.players[room.turnIndex]?.name || 'someone';
+        return engine.adminPlayTurn(room);
+    });
+});
+
+app.post('/api/admin/rooms/:code/finish-deadline', admin.requireAdmin, (req, res) => {
+    // Named before it runs: afterwards there is no auction left to name.
+    let label = 'ended the countdown';
+    adminAct(req, res, () => label, (room) => {
+        if (room.auction) label = 'closed the auction';
+        return engine.adminFinishDeadline(room);
+    });
 });
 
 app.post('/api/admin/rooms/:code/end', admin.requireAdmin, (req, res) => {
-    const code = String(req.params.code || '').toUpperCase();
-    const room = rooms.get(code);
+    const room = adminRoom(req);
     if (!room) return res.status(404).json({ error: 'That room is gone' });
-    console.log(`Admin: ended ${code} (${room.players.length} players, ${room.phase})`);
-    closeRoom(code, room, 'An admin ended this game.');
+    admin.record(req, 'ended the game', `${room.roomCode} · ${room.players.length} players · ${room.phase}`);
+    closeRoom(room.roomCode, room, 'An admin ended this game.');
     pushPresence();
     res.json({ ok: true });
+});
+
+/** The server itself: is it up, is the deploy live, is it near a limit. */
+app.get('/api/admin/health', admin.requireAdmin, (req, res) => {
+    const mem = process.memoryUsage();
+    const all = [...rooms.values()];
+    res.set('Cache-Control', 'no-store').json({
+        version: currentVersion(),
+        uptimeMs: Math.round(process.uptime() * 1000),
+        node: process.version,
+        memory: { rssMb: Math.round(mem.rss / 1048576), heapMb: Math.round(mem.heapUsed / 1048576) },
+        sockets: io.sockets.sockets.size,
+        ...presence(),
+        rooms: {
+            total: rooms.size,
+            max: MAX_ROOMS,
+            playing: all.filter(inProgress).length,
+            waiting: all.filter((r) => r.phase === 'waiting').length,
+            ended: all.filter((r) => r.phase === 'ended').length,
+        },
+        sharedLinks: shares.size,
+        notice: activeNotice(),
+    });
+});
+
+app.get('/api/admin/log', admin.requireAdmin, (req, res) => {
+    res.set('Cache-Control', 'no-store').json({ entries: admin.auditLog() });
+});
+
+/* ------------------------------------------------------ a word to everyone */
+
+// A banner on every open tab — the lobby, the menu and every table — for a
+// warning worth interrupting people for, which in practice means "restarting
+// in two minutes". Deploys already resume games, but a table mid-turn would
+// rather finish the turn than find out from the "Updating the game" screen.
+//
+// Held until it runs out, so a tab that connects after it was sent still gets
+// it, and cleared the moment it is withdrawn.
+
+const NOTICE_MAX_MINUTES = 60;
+let serverNotice = null; // { text, until }
+
+function activeNotice() {
+    if (serverNotice && serverNotice.until <= Date.now()) serverNotice = null;
+    return serverNotice;
+}
+
+app.post('/api/admin/notice', admin.requireAdmin, (req, res) => {
+    const text = String(req.body?.text || '').trim().slice(0, 160);
+    const minutes = Math.min(Math.max(Number(req.body?.minutes) || 5, 1), NOTICE_MAX_MINUTES);
+    if (!text) {
+        serverNotice = null;
+        admin.record(req, 'cleared the notice');
+        io.emit('server:notice', null);
+        return res.json({ ok: true, notice: null });
+    }
+    serverNotice = { text, until: Date.now() + minutes * 60_000 };
+    admin.record(req, 'sent a notice', `${text} (${minutes} min)`);
+    io.emit('server:notice', serverNotice);
+    res.json({ ok: true, notice: serverNotice });
 });
 
 /* ------------------------------------------------------------------- client */
@@ -804,6 +929,7 @@ setInterval(sweepRooms, SWEEP_MS).unref();
 
 io.on('connection', (socket) => {
     pushPresence();
+    if (activeNotice()) socket.emit('server:notice', serverNotice);
 
     socket.on('room:create', ({ name, playerId, initials, color, game } = {}, cb) => {
         if (rooms.size >= MAX_ROOMS) {

@@ -485,6 +485,22 @@ room, estate returned rather than left with a friend — and says so in the feed
 because a player vanishing mid-game with no explanation looks like a bug to the
 people still at the table.
 
+The rest of the panel is for a game that is stuck rather than a player who is
+the problem: pause, play the current turn, close an auction, lift a ban. Playing
+a turn deliberately reuses the turn clock's idle turn rather than advancing the
+seat — a bare skip can leave a card game halfway through naming a suit or a
+board with a purchase still on screen, and the idle turn is the path already
+written and tested to leave neither. It takes the passive option at every step,
+so an admin can unstick a game without making a decision for anybody.
+
+What it cannot do is as deliberate. It never edits a player's cash or deeds —
+a result the key holder could have changed is a result nobody at the table can
+trust, and "fix a bug mid-game" is exactly the reason someone would reach for
+it. It never reads chat, because the terms say nobody does, and its view of a
+room is the spectator's, so no hand is ever in it. Every action lands in the
+room's feed and in an audit log with its address, so a leaked key shows up as
+things its owner did not do.
+
 ## The password was also the rate limiter
 
 `NOPOLY_PASSWORD` gates the site, but for a long time it was doing a second job

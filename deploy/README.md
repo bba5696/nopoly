@@ -161,9 +161,25 @@ removing them.
 
 ## The admin panel
 
-Off unless you give it a key. With one set, `/admin` lists every room on the
-server and lets you kick a player (banned from that room, with a line in its
-feed) or end a game for everyone in it.
+Off unless you give it a key. With one set, `/admin` shows:
+
+- **Every room**, with a **Watch** view of who has what and the last things
+  the game did (never chat, never anyone's cards).
+- **Kick** (banned from that room) and **Unban**. Someone kicked mid-game who
+  is unbanned comes back to watch, not to play that game again.
+- **Pause / Resume**, **Play turn** (plays the current turn the way the turn
+  clock would, never buying anything) and **Close auction**, for saving a stuck
+  game instead of ending it.
+- **End game** for everyone in the room.
+- **Server health**: build version, uptime, memory, who is online, rooms
+  against the cap. The build is the quick way to check a deploy went live.
+- **A notice to everyone online**, e.g. "Restarting in 2 minutes", shown as a
+  banner on every open tab until it runs out.
+- **An admin log** of every sign-in, right or wrong, and every action, with the
+  address it came from. It resets when the server restarts; `journalctl` keeps
+  the long history.
+
+Every action on a room writes a line in that room's feed.
 
 ```bash
 # Generate a key, and keep it somewhere safe — it is the whole lock

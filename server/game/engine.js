@@ -2579,7 +2579,7 @@ function finishVote(room, passed) {
 function ejectPlayer(room, target, note) {
     // Banned, not merely removed — otherwise they reconnect two seconds later
     // and the removal meant nothing.
-    if (!room.banned.includes(target.id)) room.banned.push(target.id);
+    banFromRoom(room, target);
     log(room, note);
 
     if (room.phase === 'waiting') {
@@ -2609,10 +2609,80 @@ function adminKick(room, playerId) {
     if (target.resigned || target.bankrupt || target.out) {
         // Already out of play; still banned, so they cannot come back to watch
         // and carry on whatever got them removed.
-        if (!room.banned.includes(target.id)) room.banned.push(target.id);
+        banFromRoom(room, target);
         return {};
     }
     return ejectPlayer(room, target, `${target.name} was removed by an admin`);
+}
+
+/**
+ * The ban list, with a name kept beside each id.
+ *
+ * A player kicked from the lobby is gone from `players` entirely, and a list of
+ * bare ids is no use to anyone deciding whom to let back in.
+ */
+function banFromRoom(room, target) {
+    if (!room.banned.includes(target.id)) room.banned.push(target.id);
+    room.banNames = room.banNames || {};
+    room.banNames[target.id] = target.name;
+}
+
+/* ------------------------------------------------- the admin's other tools */
+
+// For a game that is stuck rather than a player who is the problem: each of
+// these saves a room that would otherwise have to be ended. All of them say so
+// in the feed — a game that pauses itself, or a turn that plays without anyone
+// touching it, reads as a bug unless the table is told who did it.
+
+function adminPause(room, paused) {
+    if (room.phase === 'waiting' || room.phase === 'ended') return { error: 'The game is not running' };
+    if (!!room.paused === !!paused) return { error: paused ? 'Already paused' : 'Not paused' };
+    room.paused = !!paused;
+    room.pausedBy = null;
+    log(room, paused ? 'An admin paused the game' : 'An admin resumed the game');
+    return {};
+}
+
+/**
+ * Play the current turn the way the turn clock would — the passive option at
+ * every step, and never a decision made on somebody's behalf.
+ *
+ * Deliberately not a bare skip. Advancing the seat by hand can leave a card
+ * game halfway through naming a suit, or a board with a purchase still on
+ * screen; the idle turn is the path already written and tested to leave
+ * neither.
+ */
+function adminPlayTurn(room) {
+    if (room.phase === 'waiting' || room.phase === 'ended') return { error: 'The game is not running' };
+    if (room.paused) return { error: 'Resume the game first' };
+    if (room.auction) return { error: 'An auction is running — finish it first' };
+    const player = room.players[room.turnIndex];
+    if (!player) return { error: 'Nobody is up' };
+    const rules = rulesFor(room);
+    if (rules.blocksIdle(room, player)) {
+        return { error: `${player.name} owes money, which only they can settle — kick them if they are gone` };
+    }
+    log(room, `An admin played ${player.name}'s turn for them`);
+    rules.playIdleTurn(room, player);
+    return {};
+}
+
+/** End whatever the game is counting down to — on the board, an auction. */
+function adminFinishDeadline(room) {
+    const timer = rulesFor(room).timer(room);
+    if (!timer) return { error: 'Nothing is counting down' };
+    log(room, room.auction ? 'An admin closed the auction' : 'An admin ended the countdown');
+    timer.resolve(room);
+    return {};
+}
+
+function adminUnban(room, playerId) {
+    if (!room.banned.includes(playerId)) return { error: 'They are not banned here' };
+    room.banned = room.banned.filter((id) => id !== playerId);
+    const name = room.banNames?.[playerId] || 'A removed player';
+    if (room.banNames) delete room.banNames[playerId];
+    log(room, `An admin let ${name} back into the room`);
+    return {};
 }
 
 /* ------------------------------------------------------------ misc actions */
@@ -2888,6 +2958,10 @@ const rules = {
 module.exports = {
     rules,
     adminKick,
+    adminPause,
+    adminPlayTurn,
+    adminFinishDeadline,
+    adminUnban,
     baseState,
     // Every game writes to the same feed, so the way to write to it is part of
     // what a rules module is handed.
