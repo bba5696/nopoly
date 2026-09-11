@@ -434,6 +434,37 @@ of them stop working the moment the password changes. The server refuses to
 start in production without a password rather than logging a warning nobody
 reads.
 
+## The admin panel is a key, not a device
+
+Room codes are the only access control a game has once the password is off, so
+anything that lists them is a list of every open door on the server. For a long
+time the answer was that nothing did: to see what was running you read the
+snapshot over SSH. The panel at `/admin` changes that on purpose — kicking a
+player from a phone is worth having — so it is built as the most guarded thing
+on the server rather than a convenience.
+
+It was asked for as "only my hardware ID", and that is the part a web page
+cannot do. A browser exposes no hardware identity, and the browser id the client
+does send (`pid`) is a value it reports about itself — anybody can put any
+string there. So "only my device" is a secret only your device has: a key set as
+`NOPOLY_ADMIN_KEY`, entered once, kept in that browser as a week-long token.
+
+Built like the password gate and sharing none of it. Tokens are HMACs keyed by
+the admin key, so a player's token is never an admin's and changing the key
+signs everyone out. Unset means *closed*, where an unset password means open —
+a panel nobody configured must not be the one reachable by default. Keys under
+sixteen characters are refused, five wrong guesses lock an address out for
+fifteen minutes, and every attempt is logged, because exactly one person should
+ever be making one.
+
+The API lives under `/api/admin` so the page at `/admin` stays the client's, and
+is plain HTTP polling rather than a socket: it is a tab opened now and then, and
+must never count as a presence in a room or keep an abandoned one alive. A kick
+goes through `ejectPlayer`, the same exit a passed vote takes — banned from the
+room, estate returned rather than left with a friend — and says so in the feed,
+because a player vanishing mid-game with no explanation looks like a bug to the
+people still at the table.
+
 ## The password was also the rate limiter
 
 `NOPOLY_PASSWORD` gates the site, but for a long time it was doing a second job
@@ -527,7 +558,7 @@ told, because a board that silently stops answering reads as a broken server.
 
 ## Testing
 
-`server/test/` holds 29 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 30 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 

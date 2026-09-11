@@ -2479,26 +2479,59 @@ function finishVote(room, passed) {
         return {};
     }
 
-    // Banned, not merely removed — otherwise they reconnect two seconds later
-    // and the vote meant nothing.
-    if (!room.banned.includes(target.id)) room.banned.push(target.id);
-    log(
+    return ejectPlayer(
         room,
+        target,
         abandoned
             ? `${target.name} never came back and is out`
             : `${target.name} was voted out (${vote.yes.length}/${vote.needed}) — ${tally}`,
     );
+}
+
+/**
+ * Out, and staying out — in whatever phase the room is in.
+ *
+ * The one exit for everyone removed against their will: a vote that passed, and
+ * the site's admin. Two paths would be two chances for one of them to forget
+ * the ban, or to leave a kicked player's estate with a friend.
+ */
+function ejectPlayer(room, target, note) {
+    // Banned, not merely removed — otherwise they reconnect two seconds later
+    // and the removal meant nothing.
+    if (!room.banned.includes(target.id)) room.banned.push(target.id);
+    log(room, note);
 
     if (room.phase === 'waiting') {
-        removePlayer(room, target.id);
+        removePlayer(room, target.id, { note: null, quiet: true });
         return {};
     }
     // Mid-game it's the same exit as resigning: whatever they were holding
     // goes back where it came from, so being kicked can't become a way to hand
     // a friend your property.
     target.resigned = true;
+    dropVoteFor(room, target.id);
     rulesFor(room).removeFromPlay(room, target);
     return {};
+}
+
+/**
+ * The site's admin removing someone, from outside the room.
+ *
+ * No host check, no phase check and no vote: this is for the case the in-game
+ * tools cannot reach — somebody harassing a table, or a room nobody left can
+ * finish. It says so in the feed, because a player vanishing mid-game with no
+ * explanation looks like a bug to everyone still sitting there.
+ */
+function adminKick(room, playerId) {
+    const target = findPlayer(room, playerId);
+    if (!target) return { error: 'Unknown player' };
+    if (target.resigned || target.bankrupt || target.out) {
+        // Already out of play; still banned, so they cannot come back to watch
+        // and carry on whatever got them removed.
+        if (!room.banned.includes(target.id)) room.banned.push(target.id);
+        return {};
+    }
+    return ejectPlayer(room, target, `${target.name} was removed by an admin`);
 }
 
 /* ------------------------------------------------------------ misc actions */
@@ -2546,7 +2579,7 @@ function setActivity(room, playerId, activity = {}) {
  * they were the host — took the ability to change any setting or start the
  * game with them.
  */
-function removePlayer(room, playerId, { note } = {}) {
+function removePlayer(room, playerId, { note, quiet = false } = {}) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
     if (room.phase !== 'waiting') {
@@ -2556,7 +2589,7 @@ function removePlayer(room, playerId, { note } = {}) {
 
     room.players = room.players.filter((p) => p.id !== playerId);
     dropVoteFor(room, playerId);
-    log(room, note || `${player.name} left`);
+    if (!quiet) log(room, note || `${player.name} left`);
     // The room outlives its host — otherwise the rules are frozen for everyone
     // left behind and nobody can start.
     if (room.hostId === playerId) {
@@ -2772,6 +2805,7 @@ const rules = {
 
 module.exports = {
     rules,
+    adminKick,
     baseState,
     // Every game writes to the same feed, so the way to write to it is part of
     // what a rules module is handed.

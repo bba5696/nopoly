@@ -31,6 +31,9 @@ const ENGINE = [
 const WIRE = [
     'wire', 'nounowire', 'votewire', 'leavewire', 'abandonwire',
     'spectatewire', 'idlewire', 'rentwire', 'presence', 'polling',
+    // Last: it spends the admin sign-in attempts on purpose, which locks this
+    // address out of signing in for the rest of the server's life.
+    'adminwire',
 ];
 const SOLO = ['redeploy', 'limits', 'cleanup'];
 /** ESM, so it can import the client's copy of the rent maths directly. */
@@ -53,6 +56,10 @@ const SERVER_ENV = {
     // A .env with a password set would otherwise make every handshake fail.
     // dotenv does not override what is already in the environment.
     NOPOLY_PASSWORD: '',
+    // A throwaway, so the admin routes are on for the suite that tests them.
+    // Also overrides a real key in a developer's .env, which a test must never
+    // be the thing that signs in with.
+    NOPOLY_ADMIN_KEY: 'test-admin-key-not-a-real-one',
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -122,7 +129,7 @@ async function main() {
         try {
             for (const file of wire) {
                 console.log(`\n\x1b[1m── ${file}\x1b[0m`);
-                results.push([file, await runFile(file)]);
+                results.push([file, await runFile(file, { NOPOLY_ADMIN_KEY: SERVER_ENV.NOPOLY_ADMIN_KEY })]);
             }
         } finally {
             server.kill();

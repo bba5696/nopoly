@@ -159,6 +159,33 @@ well above normal use:
 If a real game is ever turned away, these are too low — raise them rather than
 removing them.
 
+## The admin panel
+
+Off unless you give it a key. With one set, `/admin` lists every room on the
+server and lets you kick a player (banned from that room, with a line in its
+feed) or end a game for everyone in it.
+
+```bash
+# Generate a key, and keep it somewhere safe — it is the whole lock
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+
+# Add it alongside the password (append, don't overwrite)
+echo 'NOPOLY_ADMIN_KEY=paste-the-key-here' | sudo tee -a /etc/nopoly.env > /dev/null
+sudo systemctl restart nopoly
+journalctl -u nopoly -n 10 | grep Admin:    # "panel on at /admin"
+```
+
+Sign in once at `https://your-site/admin` and that browser stays signed in
+for a week. It is a key rather than a device lock because a web page cannot
+read a hardware ID — so treat it like a password: anyone with the key sees
+every room code, which is the only thing keeping strangers out of a game.
+
+- Keys under 16 characters are refused, and the log says so.
+- Five wrong keys from one address locks that address out for 15 minutes, and
+  every wrong key is logged: `journalctl -u nopoly | grep "Admin: wrong key"`.
+- Changing the key signs out every browser that was signed in.
+- To turn the panel off, remove the line and restart.
+
 Rooms also end on their own, which is what keeps the ceiling from being reached
 by accumulation rather than by abuse. Three windows, all tunable, none of which
 normally needs touching:

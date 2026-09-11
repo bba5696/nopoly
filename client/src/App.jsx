@@ -12,6 +12,8 @@ import { GameOver } from '@/screens/GameOver';
 import { Nouno } from '@/screens/Nouno';
 import { SharedGame } from '@/screens/SharedGame';
 import { sharedIdFromPath } from '@/lib/share-link';
+import { Admin } from '@/screens/Admin';
+import { isAdminPath } from '@/lib/admin';
 
 function Notice() {
     const { notice } = useGame();
@@ -55,6 +57,8 @@ export default function App() {
     // A shared end screen is its own page: no socket, no room, and no gate.
     // Read once, because nothing in the app navigates to or away from it.
     const [sharedId] = useState(() => sharedIdFromPath());
+    // The admin panel likewise: its own key, its own requests, and no seat.
+    const [adminPage] = useState(() => isAdminPath());
 
     const open = useCallback(() => {
         setUnlocked(true);
@@ -65,7 +69,7 @@ export default function App() {
         // A shared page never opens a socket: it has nothing to say to the
         // server beyond the one fetch, and a connection would put a spectator
         // nobody invited into the presence count.
-        if (sharedId) return undefined;
+        if (sharedId || adminPage) return undefined;
         let live = true;
         (async () => {
             const required = await authRequired();
@@ -76,7 +80,7 @@ export default function App() {
         return () => {
             live = false;
         };
-    }, [open, sharedId]);
+    }, [open, sharedId, adminPage]);
 
     // A stale or revoked token is rejected at the handshake — drop it and put
     // the gate back rather than retrying forever.
@@ -100,6 +104,9 @@ export default function App() {
     // asking them for the room password to look at a scoreboard would be
     // theatre. Nothing on this page can join, chat or play.
     if (sharedId) return <SharedGame id={sharedId} />;
+    // Before the room password too. It is not a player's page, and the server
+    // demands the admin token on every request it makes regardless.
+    if (adminPage) return <Admin />;
 
     if (unlocked === null) return null;
     if (!unlocked) return <Gate onUnlocked={open} />;

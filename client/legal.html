@@ -182,7 +182,9 @@
                 private and joined with a 5-character code you have to be given, the host can remove
                 someone before the game starts, and once it has started a table can
                 vote out someone the turn clock has had to keep playing for, or who has left.
-                Who called that vote and how everyone voted is written into the room's history feed. Beyond that, we may remove content, end a game, or block access
+                Who called that vote and how everyone voted is written into the room's history feed.
+                The site's operator can also remove a player from any room or end a game — when they
+                remove someone, the room's feed says so. Beyond that, we may remove content, end a game, or block access
                 at our discretion and without notice — but we are under no obligation to monitor
                 anything, and we don't.
             </p>
@@ -358,6 +360,7 @@
                 <li><strong>The crash snapshot</strong> — every 15 seconds, and on shutdown, active games are written to a file on the server so a restart doesn't end everyone's evening. It contains player names, chat, and the state of the game in progress — which,
                     for a card game, means the cards in each player's hand. It is deleted the moment it is restored, and ignored and discarded if it is more than <strong>6 hours</strong> old.</li>
                 <li><strong>Failed password attempts</strong> — an IP address is held in memory for up to <strong>10 minutes</strong> after a wrong password, purely to apply the cooldown, then dropped.</li>
+                <li><strong>Admin sign-ins</strong> — the address a sign-in to the site's admin page came from, right or wrong, is written to the server's log, so attempts by anyone but the operator can be seen. Rotated away with the rest of the logs.</li>
                 <li><strong>Web server access logs</strong> — standard request logs, kept short-term for security and debugging, then rotated away.</li>
             </ul>
             <p>Nothing is archived. There is no long-term store, so there is nothing to accumulate.</p>

@@ -11,6 +11,7 @@ const cors = require('cors');
 const engine = require('./game/engine');
 const { GAMES, GAME_LIST, rulesFor } = require('./game/rules');
 const auth = require('./auth');
+const admin = require('./admin');
 const persist = require('./persist');
 
 const app = express();
@@ -373,6 +374,110 @@ app.get('/api/share/:id', (req, res) => {
         return res.status(410).json({ error: 'This link has expired' });
     }
     res.set('Cache-Control', 'no-store').json({ entry: rec.entry, expiresAt: rec.expiresAt });
+});
+
+/* -------------------------------------------------------------------- admin */
+
+// The site admin, from outside any room. Everything below lists or acts on
+// rooms by code, so every route but the sign-in demands the admin token — and
+// with no NOPOLY_ADMIN_KEY set, nothing can mint one and every route is a 401.
+// See admin.js for why this is a key and not a hardware id.
+//
+// Under /api rather than /admin so the page at /admin stays the client's, and
+// ahead of the single-page fallback, which would otherwise answer every one of
+// these with index.html.
+
+app.post('/api/admin/login', (req, res) => {
+    if (!admin.enabled()) return res.status(404).json({ error: 'The admin panel is not turned on' });
+    const ip = clientIp(req);
+    if (admin.tooManyAttempts(ip)) {
+        return res.status(429).json({ error: 'Too many attempts — try again later' });
+    }
+    if (!admin.checkKey(req.body?.key)) {
+        admin.noteFailure(ip);
+        // Logged, because one person should ever be trying this — a run of
+        // these is somebody else, and the log is the only place that shows.
+        console.warn(`Admin: wrong key from ${ip}`);
+        return res.status(401).json({ error: 'Wrong key' });
+    }
+    admin.clearAttempts(ip);
+    console.log(`Admin: signed in from ${ip}`);
+    res.json({ token: admin.issueToken() });
+});
+
+/** What the panel draws: every room, and who is in it. */
+app.get('/api/admin/rooms', admin.requireAdmin, (req, res) => {
+    const list = [...rooms.values()].map((room) => ({
+        code: room.roomCode,
+        game: room.game || 'nopoly',
+        phase: room.phase,
+        paused: !!room.paused,
+        board: room.board?.name || null,
+        startedAt: room.stats?.startedAt || null,
+        lastActionAt: room.lastActionAt || null,
+        turnCount: room.stats?.turnCount || 0,
+        hostId: room.hostId,
+        // Whoever is up. Every phase between the lobby and the end is a game in
+        // progress — the board game names several of them, the cards one.
+        currentId:
+            room.phase !== 'waiting' && room.phase !== 'ended' ? room.players[room.turnIndex]?.id || null : null,
+        players: room.players.map((p) => ({
+            id: p.id,
+            name: p.name,
+            color: p.color,
+            connected: !!p.connected,
+            out: !!(p.resigned || p.bankrupt || p.out),
+        })),
+        spectators: (room.spectators || []).length,
+        banned: (room.banned || []).length,
+    }));
+    list.sort((a, b) => (b.lastActionAt || 0) - (a.lastActionAt || 0));
+    res.set('Cache-Control', 'no-store').json({ rooms: list, now: Date.now() });
+});
+
+/**
+ * Put somebody out of a room, and show their tabs the door.
+ *
+ * The same thing the lobby kick does to the person on the receiving end — and
+ * the same ban a passed vote hands out, since both go through ejectPlayer.
+ */
+function showDoor(room, playerId, notice) {
+    for (const s of io.sockets.sockets.values()) {
+        if (s.data.roomCode !== room.roomCode || s.data.playerId !== playerId) continue;
+        s.leave(room.roomCode);
+        s.data.roomCode = null;
+        s.data.spectating = false;
+        s.emit('room:closed', notice);
+    }
+}
+
+app.post('/api/admin/rooms/:code/kick', admin.requireAdmin, (req, res) => {
+    const room = rooms.get(String(req.params.code || '').toUpperCase());
+    if (!room) return res.status(404).json({ error: 'That room is gone' });
+    const playerId = String(req.body?.playerId || '');
+    const target = room.players.find((p) => p.id === playerId);
+    const result = engine.adminKick(room, playerId);
+    if (result.error) return res.status(400).json(result);
+    console.log(`Admin: removed ${target?.name || playerId} from ${room.roomCode}`);
+    showDoor(room, playerId, 'An admin removed you from the game.');
+    // Not `touch`: the admin is not at the table, and an admin looking in must
+    // not keep an abandoned room alive.
+    broadcast(room);
+    scheduleGame(room);
+    scheduleVote(room);
+    scheduleIdle(room);
+    pushPresence();
+    res.json({ ok: true });
+});
+
+app.post('/api/admin/rooms/:code/end', admin.requireAdmin, (req, res) => {
+    const code = String(req.params.code || '').toUpperCase();
+    const room = rooms.get(code);
+    if (!room) return res.status(404).json({ error: 'That room is gone' });
+    console.log(`Admin: ended ${code} (${room.players.length} players, ${room.phase})`);
+    closeRoom(code, room, 'An admin ended this game.');
+    pushPresence();
+    res.json({ ok: true });
 });
 
 /* ------------------------------------------------------------------- client */
@@ -802,15 +907,9 @@ io.on('connection', (socket) => {
         if (!room) return socket.emit('error:game', 'Room not found');
         const res = engine.kickPlayer(room, socket.data.playerId, playerId);
         if (res.error) return socket.emit('error:game', res.error);
-        for (const s of io.sockets.sockets.values()) {
-            if (s.data.roomCode !== room.roomCode || s.data.playerId !== playerId) continue;
-            s.leave(room.roomCode);
-            s.data.roomCode = null;
-            s.data.spectating = false;
-            // The same event a closed room sends: from where they are standing
-            // it is the same thing — the room is gone, with a line saying why.
-            s.emit('room:closed', 'The host removed you from the room.');
-        }
+        // The same event a closed room sends: from where they are standing it
+        // is the same thing — the room is gone, with a line saying why.
+        showDoor(room, playerId, 'The host removed you from the room.');
         touch(room);
         broadcast(room);
         pushPresence();
@@ -1055,6 +1154,11 @@ server.listen(PORT, () => {
         console.log(`Access: OPEN by NOPOLY_OPEN — anyone with the URL can play (max ${MAX_ROOMS} rooms)`);
     } else {
         console.warn('Access: OPEN — set NOPOLY_PASSWORD to require a password');
+    }
+    if (admin.tooShort()) {
+        console.warn(`Admin: OFF — NOPOLY_ADMIN_KEY is set but shorter than ${admin.MIN_KEY_LENGTH} characters`);
+    } else {
+        console.log(admin.enabled() ? 'Admin: panel on at /admin' : 'Admin: off (set NOPOLY_ADMIN_KEY to turn it on)');
     }
 });
 
