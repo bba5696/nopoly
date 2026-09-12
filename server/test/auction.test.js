@@ -71,6 +71,24 @@ const upNow = (r) => r.players[r.turnIndex];
     ok('a teammate cannot bid on what your side passed on', !!e.placeBid(r, mate.id, r.auction.nextBid).error);
     ok('the other side can', !e.placeBid(r, rival.id, r.auction.nextBid).error);
 }
+/* ------------------------------------------ and the table can switch it off */
+{
+    const r = e.createRoom('AUCT2');
+    const ada = e.addPlayer(r, { name: 'Ada', playerId: 'pid-Ada2' }).player;
+    e.addPlayer(r, { name: 'Bo', playerId: 'pid-Bo2' });
+    e.updateSettings(r, ada.id, { passNoBid: false });
+    e.startGame(r, ada.id);
+
+    const up = upNow(r);
+    up.cash = 5000;
+    const tile = r.tiles.find((t) => t.type === 'property' && t.ownerId === null);
+    r.pendingAction = { type: 'buy', playerId: up.id, tileId: tile.id };
+    e.declinePurchase(r, up.id);
+    ok('with the rule off nobody is barred', r.auction.barredId === null);
+    ok('and the player who passed may bid', !e.placeBid(r, up.id, r.auction.nextBid).error);
+    ok('with no line about passing in the feed', !r.log.some((l) => /cannot bid/.test(l.text)));
+}
+
 
 console.log(`
 ${pass} passed, ${fails.length} failed`);

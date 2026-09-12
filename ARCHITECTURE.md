@@ -130,13 +130,16 @@ in its own slot; and the moment the leader's next bid would complete the set, th
 country is lit in *their* colour rather than the country's. `lib/auction.js`
 decides that, and the panel says the same thing in words underneath.
 
-Turning a tile down bars you from bidding on it. Declining and then winning the
-same tile for less than the asking price was the cheapest way to buy anything on
-the board, and it made the number printed on the deed a suggestion. The bar
-covers your whole side, or with teams on it would be one player passing and
-their partner buying it cheap. The auction that happens because somebody landed
-on a tile they *cannot afford* bars nobody: nothing was chosen there, and if the
-money turns up mid-clock the bid stands.
+Turning a tile down bars you from bidding on it — `passNoBid`, a house rule the
+host can switch off, on by default. Declining and then winning the same tile for
+less than the asking price was the cheapest way to buy anything on the board,
+and it made the number printed on the deed a suggestion. The bar covers your
+whole side, or with teams on it would be one player passing and their partner
+buying it cheap. The auction that happens because somebody landed on a tile they
+*cannot afford* bars nobody: nothing was chosen there, and if the money turns up
+mid-clock the bid stands. With the rule off, `barredId` is simply never set,
+which is the same state as nobody having passed — the client needs no branch for
+it.
 
 Anyone can fold the panel away to a chip — the lot, the price and the countdown,
 one press from being back. Somebody who is not bidding still has a game to watch

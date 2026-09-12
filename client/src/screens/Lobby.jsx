@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, Hand, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -93,6 +93,12 @@ const RULES = [
         icon: Gavel,
         label: 'Auction',
         hint: 'If someone skips purchasing the property landed on, it will be sold to the highest bidder',
+    },
+    {
+        key: 'passNoBid',
+        icon: Hand,
+        label: 'No bidding on what you passed on',
+        hint: 'Send a property to auction yourself and you cannot bid on it — with teams, neither can your side. An auction you never chose, because you could not afford what you landed on, is still yours to bid in',
     },
     {
         key: 'noRentInPrison',

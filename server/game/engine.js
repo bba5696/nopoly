@@ -118,6 +118,11 @@ const DEFAULT_SETTINGS = {
     doubleRent: true,
     vacationCash: false,
     auction: true,
+    // Whoever sends a tile to auction is out of that auction. On by default:
+    // without it, declining and winning it cheaper is the best way to buy
+    // anything, and the price on the deed stops meaning much. A table that
+    // would rather bid on everything turns it off.
+    passNoBid: true,
     noRentInPrison: false,
     evenBuild: true,
     dynamicValues: false,
@@ -1880,13 +1885,15 @@ function startAuction(room, tileId, declinedBy = null) {
         bidderId: null,
         opening,
         nextBid: opening,
-        // Whoever turned it down, if anyone did. Sent to the client as part of
-        // the auction so the panel can say why the buttons are missing rather
-        // than refusing the bid after it is pressed.
-        barredId: declinedBy,
+        // Whoever turned it down, if anyone did and the table plays that rule.
+        // Sent to the client as part of the auction so the panel can say why
+        // the buttons are missing rather than refusing the bid after it is
+        // pressed — and left null when the rule is off, which is the same thing
+        // as nobody having passed.
+        barredId: room.settings.passNoBid ? declinedBy : null,
         endsAt: Date.now() + AUCTION_MS,
     };
-    const decliner = declinedBy && findPlayer(room, declinedBy);
+    const decliner = declinedBy && room.settings.passNoBid && findPlayer(room, declinedBy);
     log(
         room,
         decliner
