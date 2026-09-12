@@ -102,7 +102,12 @@ const MAX_JAIL_TURNS = 3;
 
 // Short on purpose: an auction is a reflex, not a negotiation, and every bid
 // puts the full clock back so a contested tile still gets its back-and-forth.
-const AUCTION_MS = 6000;
+//
+// Six seconds was right while an auction was a modal over a blacked-out screen,
+// with nothing to look at but the bid. Now it runs in the middle of the board
+// with the country lit up around it, and the whole point is that people read
+// the board before they bid — which takes longer than a reflex.
+const AUCTION_MS = 10_000;
 /** Raise amounts offered in the auction UI. */
 const BID_STEPS = [2, 10, 100];
 
@@ -646,6 +651,10 @@ function nopolyView(room) {
         lastPayment: room.lastPayment,
         vacationPot: room.vacationPot,
         bidSteps: BID_STEPS,
+        // How long a fresh auction clock runs, so the countdown is drawn
+        // against the length the server is actually keeping rather than a
+        // second copy of the number that can fall out of step with it.
+        auctionMs: AUCTION_MS,
         trades: room.trades,
         offTurnFee: OFF_TURN_FEE,
         // Board meta rides along with the state rather than being handed out

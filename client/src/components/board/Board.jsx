@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { useElementSize } from '@/lib/use-element-size';
 import { useNameSize } from '@/lib/use-name-size';
 import { gridFor } from '@/lib/board-layout';
+import { lotGroup, lotStakes } from '@/lib/auction';
 import { Tile } from './Tile';
 import { TokenLayer } from './TokenLayer';
 import { BoardCenter } from './BoardCenter';
@@ -58,6 +59,39 @@ export function Board({ display, moving, spotlight, onSelectTile, sizePx }) {
         return map;
     }, [state.players]);
 
+    // Which tiles the board is drawing attention to, and in what colour.
+    //
+    // Two things ask for it. Hovering somebody in the roster lights what they
+    // own; an auction lights the country being sold, and wins, because an
+    // auction holds up the whole table. The auction lights it in the leader's
+    // colour the moment they would complete the set — so "Bo is about to finish
+    // Egypt" is something you see on the board rather than something you work
+    // out from it.
+    const focus = useMemo(() => {
+        const auction = state.auction;
+        if (auction) {
+            const lot = state.tiles[auction.tileId];
+            const group = lotGroup(state, lot);
+            const leader = auction.bidderId ? ownerOf[auction.bidderId] : null;
+            const completes = leader && lotStakes(state, lot, leader.id).completes;
+            return {
+                ids: new Set(group.map((t) => t.id)),
+                lotId: lot.id,
+                color: (completes && leader.color) || board?.groups?.[lot.groupId]?.color || '#7dd3fc',
+                // The middle is the auction panel now, so it is the last thing
+                // that should be dropped back.
+                dimCenter: false,
+            };
+        }
+        if (!spotlight) return null;
+        return {
+            ids: new Set(state.tiles.filter((t) => t.ownerId === spotlight).map((t) => t.id)),
+            lotId: null,
+            color: ownerOf[spotlight]?.color,
+            dimCenter: true,
+        };
+    }, [state, spotlight, ownerOf, board]);
+
     const track = `${geom.depth}px repeat(${GRID - 2}, minmax(0, 1fr)) ${geom.depth}px`;
 
     return (
@@ -101,12 +135,13 @@ export function Board({ display, moving, spotlight, onSelectTile, sizePx }) {
                         owner={tile.ownerId ? ownerOf[tile.ownerId] : null}
                         setOwned={!!tile.groupId && state.completedGroups[tile.groupId] === tile.side}
                         onSelect={onSelectTile}
-                        dim={!!spotlight && tile.ownerId !== spotlight}
-                        lit={!!spotlight && tile.ownerId === spotlight}
-                        litColor={ownerOf[spotlight]?.color}
+                        dim={!!focus && !focus.ids.has(tile.id)}
+                        lit={!!focus && focus.ids.has(tile.id)}
+                        litColor={focus?.color}
+                        lot={focus?.lotId === tile.id}
                     />
                 ))}
-                <BoardCenter moving={moving} dim={!!spotlight} />
+                <BoardCenter moving={moving} dim={!!focus?.dimCenter} />
             </div>
             <TokenLayer
                 players={state.players}

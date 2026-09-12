@@ -56,7 +56,7 @@ function Houses({ houses }) {
     );
 }
 
-export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOwned, onSelect, dim, lit, litColor }) {
+export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOwned, onSelect, dim, lit, litColor, lot }) {
     const { side, row, col } = tilePlacement(tile.id, boardSize);
     const corner = isCorner(tile.id, boardSize);
     const jail = tile.id === jailIndex(boardSize);
@@ -88,6 +88,10 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                 'transition-[filter,opacity] duration-200',
                 dim && 'opacity-[0.22] saturate-[0.4]',
                 lit && 'z-10',
+                // The tile actually being auctioned, pulsing in its slot. The
+                // backdrop a modal used to put up is what made an auction
+                // impossible to miss; this and the panel replace it.
+                lot && 'auction-lot z-20',
             )}
             style={{
                 gridRow: row,
@@ -95,6 +99,7 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                 fontSize,
                 '--set-color-soft': owner ? alpha(owner.color, 0.5) : 'transparent',
                 ...(lit && litColor ? { filter: `drop-shadow(0 0 0.5em ${alpha(litColor, 0.75)})` } : null),
+                ...(lot && litColor ? { '--lot-color': alpha(litColor, 0.85) } : null),
             }}
             surface={{
                 animate: {

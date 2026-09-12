@@ -108,6 +108,40 @@ rather than a CSS transform, so the text is rendered at the size it is read
 at. On a laptop, and for Classic on a phone, the board already clears the
 floor and none of this shows up.
 
+## An auction happens on the board, not over it
+
+An auction used to be a modal: a dialog in the middle of a blacked-out screen,
+which is the obvious way to make something impossible to ignore. It also covered
+the board — and the question a table actually argues about while the clock runs
+is whether the player in front is about to finish a country, which is a question
+about the board.
+
+So it runs in the hole in the middle of the ring instead. `BoardCenter` already
+switches what it shows by state; during an auction it hands the whole middle to
+`AuctionPanel` and puts the dice, the status line and the feed away, none of
+which have anything to say mid-auction. Every tile stays visible and stays
+clickable.
+
+The board answers the set question itself. `Board` works out one `focus` — which
+tiles to light and in what colour — from the auction if there is one and from the
+roster hover otherwise, and the auction wins, because an auction holds up the
+whole table. The country is lit and everything else dropped back; the lot pulses
+in its own slot; and the moment the leader's next bid would complete the set, the
+country is lit in *their* colour rather than the country's. `lib/auction.js`
+decides that, and the panel says the same thing in words underneath.
+
+What the backdrop was really doing was making an auction unmissable, so that is
+paid for elsewhere: the panel arrives hard and breathes in the country's colour,
+the last three seconds of the clock go red, a gavel sounds for everybody, and
+anything you had open is held until it is over. The clock itself went from six
+seconds to ten — six was right when there was nothing to look at but the bid.
+
+Bidding lives in `AuctionBids`, which the panel renders inside the ring at `xl`
+and the screen renders in the bar under the board below it. That is the same call
+the turn's own controls make, and for the same reason: on a phone the ring's
+middle is a couple of hundred pixels across, and a button you cannot reach with a
+thumb is not a button.
+
 ## Past games live on the device, not on the server
 
 A room is reclaimed within the hour and there is no database behind any of
@@ -601,7 +635,7 @@ told, because a board that silently stops answering reads as a broken server.
 
 ## Testing
 
-`server/test/` holds 32 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 33 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 

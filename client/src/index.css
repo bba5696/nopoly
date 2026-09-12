@@ -173,6 +173,25 @@
     border-radius: 0.55em;
     animation: nop-set-pulse 3.6s ease-in-out infinite;
   }
+  /* The lot under the hammer. Sized in em like the set pulse, so it reads the
+     same at every board size, and a little faster than the ambient pulses —
+     this one is a clock running, not a state of affairs. */
+  @keyframes nop-lot-pulse {
+    0%, 100% { box-shadow: 0 0 0.25em -0.1em var(--lot-color); }
+    50% { box-shadow: 0 0 1.4em 0.1em var(--lot-color); }
+  }
+  .auction-lot {
+    border-radius: 0.55em;
+    animation: nop-lot-pulse 1.5s ease-in-out infinite;
+  }
+  /* The panel in the middle, breathing in the country's colour. */
+  @keyframes nop-auction-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--auction-color); }
+    60% { box-shadow: 0 0 0 10px transparent; }
+  }
+  .auction-panel {
+    animation: nop-auction-pulse 2.4s ease-out infinite;
+  }
   @keyframes nop-turn-pulse {
     0%, 100% { box-shadow: 0 0 0 0 var(--turn-color); }
     60% { box-shadow: 0 0 0 7px transparent; }

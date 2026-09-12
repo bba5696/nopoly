@@ -394,6 +394,25 @@ export function playRoll(distant = false) {
     if (!distant) buzz(35);
 }
 
+/**
+ * An auction opening — a gavel on a block.
+ *
+ * The only sound in the game that exists to interrupt. An auction used to
+ * announce itself by blacking out everyone's screen; it now runs inside the
+ * board, so the one thing that used to be impossible to miss has to be carried
+ * by this and by what the board does. Two knocks, wood rather than bell: a
+ * short low burst with a click on top of it, and the second one harder.
+ */
+export function playAuction() {
+    playNoise([
+        [0, 0.07, { from: 420, to: 140, peak: 0.2, q: 0.7 }],
+        [0, 0.035, { from: 2400, to: 900, peak: 0.13, q: 1.4 }],
+        [0.16, 0.09, { from: 460, to: 130, peak: 0.26, q: 0.7 }],
+        [0.16, 0.04, { from: 2600, to: 950, peak: 0.16, q: 1.4 }],
+    ]);
+    buzz([18, 60, 26]);
+}
+
 /** Someone else bought something — the purchase sparkle, held back. */
 export function playRivalBuy() {
     play([

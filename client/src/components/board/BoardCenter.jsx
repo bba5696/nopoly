@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useGame } from '@/lib/game-context';
 import { gridFor } from '@/lib/board-layout';
 import { pausedLine } from '@/lib/pause';
+import { AuctionPanel } from './AuctionPanel';
 import { Dice } from './Dice';
 import { GameFeed } from './GameFeed';
 import { TurnActions, DebtNotice } from './TurnActions';
@@ -58,6 +59,13 @@ function statusLine({ state, current, moving }) {
 export function BoardCenter({ moving, dim }) {
     const { state, current } = useGame();
     const status = statusLine({ state, current, moving });
+    // An auction takes the whole middle. Nothing it displaces has anything to
+    // say while one runs — the dice are not being rolled, the status line would
+    // only repeat the panel's own first two lines, and the feed is the last
+    // thing anyone needs while a clock is running. What it buys is the board
+    // staying visible, which is the only place you can see whether the person
+    // in front is about to finish a country.
+    const auction = !!state.auction;
     // Fill everything inside the ring — which is two tracks wider on the
     // 48-tile board than on the 40-tile one.
     const grid = gridFor(state.tiles.length);
@@ -71,26 +79,33 @@ export function BoardCenter({ moving, dim }) {
         >
             <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(60%_60%_at_50%_40%,rgba(124,92,255,.10),transparent_70%)]" />
 
-            <Dice dice={state.diceRoll} rolling={moving} />
+            {auction ? (
+                <AuctionPanel />
+            ) : (
+                <>
+                    <Dice dice={state.diceRoll} rolling={moving} />
 
-            {/* Remounted on every change so the new line fades in; no exit
-                animation, which keeps the slot from ever going blank. */}
-            <motion.span
-                key={status}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="min-h-0 text-center text-[13px] leading-tight font-medium text-balance sm:text-base xl:min-h-8 xl:text-2xl"
-            >
-                {status}
-            </motion.span>
+                    {/* Remounted on every change so the new line fades in; no
+                        exit animation, which keeps the slot from ever going
+                        blank. */}
+                    <motion.span
+                        key={status}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="min-h-0 text-center text-[13px] leading-tight font-medium text-balance sm:text-base xl:min-h-8 xl:text-2xl"
+                    >
+                        {status}
+                    </motion.span>
 
-            {/* Below xl these two are in the bar under the board instead. */}
-            <div className="hidden flex-col items-center gap-5 xl:flex">
-                <DebtNotice />
-                <TurnActions moving={moving} />
-            </div>
+                    {/* Below xl these two are in the bar under the board. */}
+                    <div className="hidden flex-col items-center gap-5 xl:flex">
+                        <DebtNotice />
+                        <TurnActions moving={moving} />
+                    </div>
 
-            <GameFeed />
+                    <GameFeed />
+                </>
+            )}
         </div>
     );
 }

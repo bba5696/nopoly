@@ -21,6 +21,7 @@ import { useTokenPositions } from '@/lib/use-token-positions';
 import { useTableSounds } from '@/lib/use-table-sounds';
 import { useIdlePing } from '@/lib/use-idle-ping';
 import { BoardViewport } from '@/components/board/BoardViewport';
+import { AuctionBids } from '@/components/board/AuctionPanel';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
 import { useTurn } from '@/lib/use-turn';
 import { PlayerRail } from '@/components/rails/PlayerRail';
@@ -33,7 +34,6 @@ import { TradeBuilder } from '@/components/modals/TradeBuilder';
 import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { ShareInfoModal } from '@/components/modals/ShareInfoModal';
-import { AuctionModal } from '@/components/modals/AuctionModal';
 import { ExchangeModal } from '@/components/modals/ExchangeModal';
 import { BailoutModal } from '@/components/modals/BailoutModal';
 import { VoteKickModal, VoteKickPicker, VoteStatusChip } from '@/components/modals/VoteKickModal';
@@ -74,7 +74,13 @@ export function Game() {
     const [pinned, setPinned] = useState(null);
     const [kickOpen, setKickOpen] = useState(false);
     const spotlight = pinned ?? hovered;
-    const tile = tileId === null ? null : state.tiles[tileId];
+    // An auction runs in the middle of the board rather than over the top of
+    // everything, which is what lets people read the board while it runs — and
+    // also means anything already open would sit on top of it. So for as long as
+    // one runs, whatever you had open is held rather than closed: a trade you
+    // were reading can wait ten seconds, and it comes back where you left it.
+    const auctionOn = !!state.auction;
+    const tile = tileId === null || auctionOn ? null : state.tiles[tileId];
 
     // A phone player can't see the trade rail while another tab is up, so an
     // offer would otherwise arrive silently.
@@ -269,10 +275,19 @@ export function Game() {
                     board's middle to hold them. Outside the tabbed panel on
                     purpose: rolling is the one thing you must be able to do
                     without first remembering which tab you left open. */}
-                {(turn.any || turn.debt) && (
+                {(turn.any || turn.debt) && !auctionOn && (
                     <div className="flex shrink-0 flex-col items-center gap-2 xl:hidden">
                         <DebtNotice compact />
                         <TurnActions moving={moving} wide />
+                    </div>
+                )}
+
+                {/* Bidding, on every screen whose board middle is too small to
+                    hold the buttons — the same call, and the same bar, as the
+                    turn's own controls. */}
+                {auctionOn && (
+                    <div className="flex shrink-0 flex-col items-center gap-2 xl:hidden">
+                        <AuctionBids wide />
                     </div>
                 )}
 
@@ -344,7 +359,6 @@ export function Game() {
 
             <BuyModal open={buyOpen} />
             <CardModal open={cardOpen} />
-            <AuctionModal />
             <ExchangeModal />
             <VoteKickPicker open={kickOpen} onClose={() => setKickOpen(false)} />
             {/* Last, so they sit over anything else already open — both freeze
@@ -352,15 +366,15 @@ export function Game() {
             <BailoutModal />
             <VoteKickModal />
             <TileInfoModal tile={tile} onClose={() => setTileId(null)} />
-            <ShareInfoModal groupId={shareGroup} onClose={() => setShareGroup(null)} />
-            {viewTradeId && (
+            <ShareInfoModal groupId={auctionOn ? null : shareGroup} onClose={() => setShareGroup(null)} />
+            {viewTradeId && !auctionOn && (
                 <TradeViewModal
                     tradeId={viewTradeId}
                     onClose={() => setViewTradeId(null)}
                     onCounter={(t) => openTrade({ counterOf: t })}
                 />
             )}
-            {trade && (
+            {trade && !auctionOn && (
                 <TradeBuilder
                     key={trade.key}
                     onClose={() => setTrade(null)}

@@ -92,7 +92,7 @@ of quietly publishing the site.
 ## Tests
 
 ```bash
-cd server && npm test        # 32 suites
+cd server && npm test        # 33 suites
 npm test idle                # only suites matching "idle"
 ```
 

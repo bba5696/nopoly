@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react';
 
-import { playBankrupt, playCashIn, playCashOut, playJail, playRivalBuy, playRivalSet, playRoll, playSet } from './sound';
+import {
+    playAuction,
+    playBankrupt,
+    playCashIn,
+    playCashOut,
+    playJail,
+    playRivalBuy,
+    playRivalSet,
+    playRoll,
+    playSet,
+} from './sound';
 
 /**
  * Everything the rest of the table does, made audible.
@@ -30,6 +40,10 @@ export function useTableSounds(state, playerId) {
             sets: state.completedGroups || {},
             jailed: state.players.filter((p) => p.inJail).map((p) => p.id),
             out: state.players.filter((p) => p.bankrupt).map((p) => p.id),
+            // The tile under the hammer, not merely whether one is: a declined
+            // purchase straight after an auction opens the next one, and the
+            // gavel should sound for that too.
+            lot: state.auction ? state.auction.tileId : null,
         };
         const was = seen.current;
         seen.current = now;
@@ -49,6 +63,11 @@ export function useTableSounds(state, playerId) {
             if (pay.fromId === playerId) playCashOut();
             else if (pay.toId === playerId) playCashIn();
         }
+
+        // An auction opening. Everyone hears it, the bidders included: this is
+        // the one sound in the game whose job is to interrupt, and it replaces a
+        // modal that used to black out the screen to do the same job.
+        if (now.lot !== was.lot && now.lot !== null) playAuction();
 
         // A deed changed hands. Counting owned tiles catches a purchase and an
         // auction alike, and misses a trade — which is right, a trade already

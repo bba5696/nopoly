@@ -36,8 +36,8 @@ const WIRE = [
     'adminwire',
 ];
 const SOLO = ['redeploy', 'limits', 'cleanup'];
-/** ESM, so it can import the client's copy of the rent maths directly. */
-const ESM = ['lopsided.mjs'];
+/** ESM, so they can import the client's copy of the rent maths directly. */
+const ESM = ['lopsided.mjs', 'auction.mjs'];
 
 /** Shortened so `presence` and `idlewire` don't sit out a real 3-minute window. */
 const SERVER_ENV = {
