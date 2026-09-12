@@ -130,6 +130,20 @@ in its own slot; and the moment the leader's next bid would complete the set, th
 country is lit in *their* colour rather than the country's. `lib/auction.js`
 decides that, and the panel says the same thing in words underneath.
 
+Turning a tile down bars you from bidding on it. Declining and then winning the
+same tile for less than the asking price was the cheapest way to buy anything on
+the board, and it made the number printed on the deed a suggestion. The bar
+covers your whole side, or with teams on it would be one player passing and
+their partner buying it cheap. The auction that happens because somebody landed
+on a tile they *cannot afford* bars nobody: nothing was chosen there, and if the
+money turns up mid-clock the bid stands.
+
+Anyone can fold the panel away to a chip — the lot, the price and the countdown,
+one press from being back. Somebody who is not bidding still has a game to watch
+and the panel is sitting on their board while they wait. It is per-auction
+rather than a preference: the next lot arrives open however the last one was
+left.
+
 What the backdrop was really doing was making an auction unmissable, so that is
 paid for elsewhere: the panel arrives hard and breathes in the country's colour,
 the last three seconds of the clock go red, a gavel sounds for everybody, and
@@ -660,7 +674,7 @@ told, because a board that silently stops answering reads as a broken server.
 
 ## Testing
 
-`server/test/` holds 33 suites, run with `npm test` from `server/`. They are
+`server/test/` holds 34 suites, run with `npm test` from `server/`. They are
 plain scripts rather than a framework: each counts its own assertions and exits
 non-zero.
 

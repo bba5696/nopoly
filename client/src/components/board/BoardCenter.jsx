@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useGame } from '@/lib/game-context';
 import { gridFor } from '@/lib/board-layout';
 import { pausedLine } from '@/lib/pause';
-import { AuctionPanel } from './AuctionPanel';
+import { AuctionChip, AuctionPanel } from './AuctionPanel';
 import { Dice } from './Dice';
 import { GameFeed } from './GameFeed';
 import { TurnActions, DebtNotice } from './TurnActions';
@@ -56,7 +56,7 @@ function statusLine({ state, current, moving }) {
  * the board, where a thumb can reach it. Losing the buttons and the debt notice
  * is what buys the rest of it room.
  */
-export function BoardCenter({ moving, dim }) {
+export function BoardCenter({ moving, dim, auctionMin, onAuctionMin }) {
     const { state, current } = useGame();
     const status = statusLine({ state, current, moving });
     // An auction takes the whole middle. Nothing it displaces has anything to
@@ -65,7 +65,10 @@ export function BoardCenter({ moving, dim }) {
     // thing anyone needs while a clock is running. What it buys is the board
     // staying visible, which is the only place you can see whether the person
     // in front is about to finish a country.
-    const auction = !!state.auction;
+    // Folded away, the middle goes back to what it was: somebody who is not
+    // bidding still has a game to watch, and the chip keeps the clock in front
+    // of them in case they change their mind.
+    const auction = !!state.auction && !auctionMin;
     // Fill everything inside the ring — which is two tracks wider on the
     // 48-tile board than on the 40-tile one.
     const grid = gridFor(state.tiles.length);
@@ -79,8 +82,10 @@ export function BoardCenter({ moving, dim }) {
         >
             <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(60%_60%_at_50%_40%,rgba(124,92,255,.10),transparent_70%)]" />
 
+            {!!state.auction && auctionMin && <AuctionChip onOpen={() => onAuctionMin(false)} />}
+
             {auction ? (
-                <AuctionPanel />
+                <AuctionPanel onMinimise={() => onAuctionMin(true)} />
             ) : (
                 <>
                     <Dice dice={state.diceRoll} rolling={moving} />

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Gavel } from 'lucide-react';
+import { ChevronDown, Gavel, Hand } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { money } from '@/lib/board-layout';
 import { alpha } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { flagFor } from '@/lib/emblems';
-import { lotGroup, lotGroupName, lotRent, lotStakes } from '@/lib/auction';
+import { barredFrom, lotGroup, lotGroupName, lotRent, lotStakes } from '@/lib/auction';
 import { TileIcon } from './TileIcon';
 
 /**
@@ -37,8 +37,9 @@ function useCountdown(endsAt, length) {
 }
 
 /** Who the panel is talking about: whoever is winning, or you if nobody is. */
-function subjectOf(state, auction, me) {
+function subjectOf(state, auction, me, barred) {
     if (auction.bidderId) return state.players.find((p) => p.id === auction.bidderId) || null;
+    if (barred) return null;
     return me && !me.bankrupt ? me : null;
 }
 
@@ -127,6 +128,14 @@ export function AuctionBids({ wide = false }) {
     const auction = state.auction;
     if (!auction || !me) return null;
     if (me.bankrupt) return <span className="label">you're out of the game</span>;
+    if (barredFrom(state, me.id)) {
+        return (
+            <span className="flex items-center justify-center gap-1.5 text-center text-[12px] text-muted-foreground">
+                <Hand className="size-3.5 shrink-0" />
+                {auction.barredId === me.id ? 'You passed on this — no bidding' : 'Your side passed on this'}
+            </span>
+        );
+    }
 
     return (
         <div className={cn('flex w-full flex-col gap-1', wide && 'px-1')}>
@@ -157,7 +166,38 @@ export function AuctionBids({ wide = false }) {
     );
 }
 
-export function AuctionPanel() {
+/**
+ * The auction, folded away.
+ *
+ * Somebody who is not bidding still has to sit through the clock, and the panel
+ * is over the middle of their board while they do. So it folds down to this: the
+ * lot, the bid and the countdown, one press from being back.
+ */
+export function AuctionChip({ onOpen }) {
+    const { state, board } = useGame();
+    const auction = state.auction;
+    const { seconds } = useCountdown(auction?.endsAt ?? 0, state.auctionMs || 10000);
+    if (!auction) return null;
+    const tile = state.tiles[auction.tileId];
+    const color = board?.groups?.[tile.groupId]?.color || '#7dd3fc';
+
+    return (
+        <button
+            type="button"
+            onClick={onOpen}
+            title="Back to the auction"
+            className="auction-panel absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] whitespace-nowrap xl:text-[12px]"
+            style={{ borderColor: alpha(color, 0.55), background: 'rgba(10,10,16,.9)', '--auction-color': alpha(color, 0.5) }}
+        >
+            <Gavel className="size-3" style={{ color }} />
+            <span className="max-w-[90px] truncate">{tile.name}</span>
+            <span className="mono">{money(auction.bid)}</span>
+            <span className={cn('mono', seconds <= 3 && 'text-[#ff5c7c]')}>{seconds}s</span>
+        </button>
+    );
+}
+
+export function AuctionPanel({ onMinimise }) {
     const { state, me, board } = useGame();
     const auction = state.auction;
     const { seconds, fraction } = useCountdown(auction?.endsAt ?? 0, state.auctionMs || 10000);
@@ -168,24 +208,42 @@ export function AuctionPanel() {
     const color = group?.color || (tile.type === 'airport' ? '#9aa0b5' : '#7dd3fc');
     const flag = flagFor(tile);
     const leader = auction.bidderId ? state.players.find((p) => p.id === auction.bidderId) : null;
-    const subject = subjectOf(state, auction, me);
+    const barred = !!me && barredFrom(state, me.id);
+    const subject = subjectOf(state, auction, me, barred);
     // The last breath of the clock, where a raise is still worth trying.
     const urgent = seconds <= 3;
 
+    // The panel is `relative` so the hide button pins to it: without that the
+    // nearest positioned ancestor is the board's middle, and the button lands
+    // outside the panel, sitting on its border.
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-            className="auction-panel flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl border px-2 py-1.5 xl:gap-3 xl:px-5 xl:py-4"
+            className="auction-panel relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl border px-2 py-1.5 xl:gap-3 xl:px-5 xl:py-4"
             style={{
                 borderColor: alpha(color, 0.55),
                 background: `radial-gradient(70% 70% at 50% 0%, ${alpha(color, 0.16)}, transparent 75%), rgba(10,10,16,.72)`,
                 '--auction-color': alpha(color, 0.5),
             }}
         >
-            <span className="label flex items-center gap-1.5" style={{ color }}>
-                <Gavel className="size-3" /> Auction
+            <span className="flex w-full items-center justify-center">
+                <span className="label flex items-center gap-1.5" style={{ color }}>
+                    <Gavel className="size-3" /> Auction
+                </span>
+                {/* Out of the way, not gone: the chip it folds into keeps the
+                    clock and the price in front of everyone. Labelled and
+                    outlined rather than a bare chevron in the corner — nobody
+                    hunts for a way out of a panel they did not ask for. */}
+                <button
+                    type="button"
+                    onClick={onMinimise}
+                    title="Fold this away — the clock keeps running"
+                    className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-full border border-white/20 bg-black/50 px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-white/40 hover:text-foreground xl:top-2.5 xl:right-2.5 xl:text-[11px]"
+                >
+                    <ChevronDown className="size-3" /> hide
+                </button>
             </span>
 
             <div className="flex min-w-0 items-center gap-2">

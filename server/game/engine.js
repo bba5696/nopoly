@@ -1848,14 +1848,27 @@ function declinePurchase(room, playerId) {
     if (!action || action.playerId !== playerId) return { error: 'Nothing to decline' };
     const tileId = action.tileId;
     room.pendingAction = null;
-    if (room.settings.auction) startAuction(room, tileId);
+    if (room.settings.auction) startAuction(room, tileId, playerId);
     return {};
 }
 
 /* ---------------------------------------------------------------- auctions */
 
-/** Anyone still in the game with cash to spare can bid. */
-function startAuction(room, tileId) {
+/**
+ * Anyone still in the game with cash to spare can bid — except, sometimes, the
+ * player who put it up.
+ *
+ * `declinedBy` is the player who chose not to buy it. Turning a tile down and
+ * then winning it at auction for less than the asking price was the cheapest
+ * way to buy anything on the board, and it made the price on the deed a
+ * suggestion. So a tile you declined is a tile you have declined: you can watch
+ * somebody else take it.
+ *
+ * Landing on something you cannot afford is not that. Nobody chose anything
+ * there, and the auction happens whether you like it or not — so if the money
+ * turns up, from rent or a sale while the clock runs, that bid is allowed.
+ */
+function startAuction(room, tileId, declinedBy = null) {
     const tile = room.tiles[tileId];
     if (!tile || tile.ownerId !== null || room.auction) return;
     // A reserve price is what stops a table quietly agreeing to let everything
@@ -1867,9 +1880,19 @@ function startAuction(room, tileId) {
         bidderId: null,
         opening,
         nextBid: opening,
+        // Whoever turned it down, if anyone did. Sent to the client as part of
+        // the auction so the panel can say why the buttons are missing rather
+        // than refusing the bid after it is pressed.
+        barredId: declinedBy,
         endsAt: Date.now() + AUCTION_MS,
     };
-    log(room, `${tile.name} goes to auction (from $${opening})`);
+    const decliner = declinedBy && findPlayer(room, declinedBy);
+    log(
+        room,
+        decliner
+            ? `${tile.name} goes to auction (from $${opening}) — ${decliner.name} passed and cannot bid`
+            : `${tile.name} goes to auction (from $${opening})`,
+    );
 }
 
 function placeBid(room, playerId, amount) {
@@ -1879,6 +1902,17 @@ function placeBid(room, playerId, amount) {
     const player = findPlayer(room, playerId);
     if (!player || player.bankrupt) return { error: 'You are out of the game' };
     if (player.debt) return { error: DEBT_BLOCKED };
+    // You turned it down. The bar covers the whole side, or with teams on it
+    // would be one player declining and their partner buying it cheap, which is
+    // the same trick with an extra step.
+    if (auction.barredId && sameSide(room, auction.barredId, playerId)) {
+        return {
+            error:
+                auction.barredId === playerId
+                    ? 'You sent this to auction — you cannot bid on it'
+                    : 'Your side sent this to auction',
+        };
+    }
 
     // Bidding your own teammate up is only ever burning team money.
     if (auction.bidderId && auction.bidderId !== playerId && sameSide(room, auction.bidderId, playerId)) {

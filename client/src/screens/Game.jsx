@@ -66,6 +66,10 @@ export function Game() {
     const [tileId, setTileId] = useState(null);
     const [shareGroup, setShareGroup] = useState(null);
     const [setsGroup, setSetsGroup] = useState(null);
+    // Which lot the auction has been folded away for. Held as the tile rather
+    // than a flag, so the next auction arrives open however the last one was
+    // left — folding one away is about that one, not a preference.
+    const [foldedLot, setFoldedLot] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
     const [viewTradeId, setViewTradeId] = useState(null);
     const [tab, setTab] = useState('players');
@@ -83,6 +87,7 @@ export function Game() {
     // one runs, whatever you had open is held rather than closed: a trade you
     // were reading can wait ten seconds, and it comes back where you left it.
     const auctionOn = !!state.auction;
+    const auctionMin = auctionOn && foldedLot === state.auction.tileId;
     const tile = tileId === null || auctionOn ? null : state.tiles[tileId];
 
     /**
@@ -284,6 +289,8 @@ export function Game() {
                             display={display}
                             moving={moving}
                             spotlight={spotlight}
+                            auctionMin={auctionMin}
+                            onAuctionMin={(min) => setFoldedLot(min ? state.auction?.tileId ?? null : null)}
                             onSelectTile={openTile}
                         />
                     </div>
@@ -293,7 +300,7 @@ export function Game() {
                     board's middle to hold them. Outside the tabbed panel on
                     purpose: rolling is the one thing you must be able to do
                     without first remembering which tab you left open. */}
-                {(turn.any || turn.debt) && !auctionOn && (
+                {(turn.any || turn.debt) && (!auctionOn || auctionMin) && (
                     <div className="flex shrink-0 flex-col items-center gap-2 xl:hidden">
                         <DebtNotice compact />
                         <TurnActions moving={moving} wide />
@@ -303,7 +310,7 @@ export function Game() {
                 {/* Bidding, on every screen whose board middle is too small to
                     hold the buttons — the same call, and the same bar, as the
                     turn's own controls. */}
-                {auctionOn && (
+                {auctionOn && !auctionMin && (
                     <div className="flex shrink-0 flex-col items-center gap-2 xl:hidden">
                         <AuctionBids wide />
                     </div>

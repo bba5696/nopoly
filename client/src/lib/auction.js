@@ -17,6 +17,19 @@
 import { sameSide } from './rent.js';
 
 /**
+ * Whether this player turned the lot down, and so cannot bid on it.
+ *
+ * The server decides it — `barredId` rides along on the auction — and this only
+ * reads it, because a button that is merely hidden is a button somebody finds
+ * anyway. Counted by side: with teams on, one player declining and their
+ * partner buying it cheap is the same trick with an extra step.
+ */
+export function barredFrom(state, playerId) {
+    const barred = state.auction?.barredId;
+    return !!barred && sameSide(state, barred, playerId);
+}
+
+/**
  * Everything the auctioned tile belongs with: its country, or — for airports
  * and utilities, which have no country — every tile of the same kind.
  *

@@ -26,7 +26,7 @@ const fs = require('fs');
 
 const ENGINE = [
     'payment', 'idle', 'spectate', 'build', 'teams', 'vote', 'boards', 'shares', 'worth', 'nouno',
-    'abandon', 'profile', 'leave', 'jail-persist', 'tax', 'pause',
+    'abandon', 'profile', 'leave', 'jail-persist', 'tax', 'pause', 'auction',
 ];
 const WIRE = [
     'wire', 'nounowire', 'votewire', 'leavewire', 'abandonwire',
