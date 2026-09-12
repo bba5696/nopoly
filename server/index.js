@@ -1170,6 +1170,15 @@ io.on('connection', (socket) => {
 
     socket.on('game:build', ({ tileId } = {}) => nopolyAct(socket, (room, pid) => engine.buildHouse(room, pid, tileId)));
     socket.on('game:sell', ({ tileId } = {}) => nopolyAct(socket, (room, pid) => engine.sellHouse(room, pid, tileId)));
+    // A whole country at once, which is what people mean when they build. One
+    // call rather than a burst of the two above: fifteen events would be
+    // fifteen broadcasts of the same set going up one house at a time.
+    socket.on('game:buildTo', ({ groupId, level } = {}) =>
+        nopolyAct(socket, (room, pid) => engine.buildSetTo(room, pid, groupId, level)),
+    );
+    socket.on('game:sellTo', ({ groupId, level } = {}) =>
+        nopolyAct(socket, (room, pid) => engine.sellSetTo(room, pid, groupId, level)),
+    );
     socket.on('game:sellProperty', ({ tileId } = {}) =>
         nopolyAct(socket, (room, pid) => engine.sellProperty(room, pid, tileId)),
     );

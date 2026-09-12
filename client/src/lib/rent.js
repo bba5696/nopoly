@@ -35,6 +35,21 @@ export function ownsFullGroup(state, ownerId, groupId) {
 }
 
 /**
+ * Every country this player's side has completed, in board order.
+ *
+ * What "completed" means is ownsFullGroup's business — with teams on, a set can
+ * be split between two people and still be a set.
+ */
+export function completedSets(state, playerId) {
+    const found = [];
+    for (const tile of state.tiles) {
+        if (tile.type !== 'property' || !tile.groupId || found.includes(tile.groupId)) continue;
+        if (ownsFullGroup(state, playerId, tile.groupId)) found.push(tile.groupId);
+    }
+    return found;
+}
+
+/**
  * What a player's estate would raise if it were all sold right now — buildings
  * come back at half. Mirrors engine.liquidValue, and unlike net worth it's the
  * number that decides whether a debt can actually be covered.

@@ -150,6 +150,109 @@ const upNow = (r) => r.players[r.turnIndex];
 
     ok('and otherwise it goes through', !e.buildHouse(r, up.id, set[0].id).error);
 }
+/* --------------------------------------------- a whole country in one action */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    const set = aSet(r);
+    const up = upNow(r);
+    give(r, up, set);
+    const g = set[0].groupId;
+    const cost = set[0].houseCost;
+
+    up.cash = 100000;
+    ok('a country goes up in one call', !e.buildSetTo(r, up.id, g, 3).error);
+    ok('and every tile in it reaches the level', set.every((t) => t.houses === 3), set.map((t) => t.houses).join());
+    ok('paying for each house', up.cash === 100000 - set.length * 3 * cost, String(up.cash));
+
+    ok('asking for what it already has is refused', !!e.buildSetTo(r, up.id, g, 2).error);
+    ok('and changes nothing', set.every((t) => t.houses === 3));
+
+    ok('hotels are the top', !e.buildSetTo(r, up.id, g, 9).error);
+    ok('and every tile gets one', set.every((t) => t.houses === 5));
+    ok('with nothing left to build', !!e.buildSetTo(r, up.id, g, 5).error);
+}
+
+/* ------------------------------------------- it stops where the money stops */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    const set = aSet(r);
+    const up = upNow(r);
+    give(r, up, set);
+    const cost = set[0].houseCost;
+
+    // Enough for one house each and a little over.
+    up.cash = set.length * cost + Math.floor(cost / 2);
+    ok('a short purse still builds what it can', !e.buildSetTo(r, up.id, set[0].groupId, 5).error);
+    ok('one house each, evenly', set.every((t) => t.houses === 1), set.map((t) => t.houses).join());
+    ok('and it spent what it had', up.cash === Math.floor(cost / 2), String(up.cash));
+    ok('a purse that cannot afford one house is told so', !!e.buildSetTo(r, up.id, set[0].groupId, 5).error);
+}
+
+/* ------------------------------------------------------ the same guards hold */
+{
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const set = aSet(r);
+    const up = upNow(r);
+    const idle = r.players.find((q) => q.id !== up.id);
+    give(r, up, set);
+    up.cash = 100000;
+    idle.cash = 100000;
+    const g = set[0].groupId;
+
+    ok('off-turn is refused', !!e.buildSetTo(r, idle.id, g, 3).error);
+    ok('a country you do not hold is refused', !!e.buildSetTo(r, idle.id, 'nowhere', 3).error);
+
+    up.debt = { amount: 50, toId: null, bailout: null };
+    ok('a debt blocks it', !!e.buildSetTo(r, up.id, g, 3).error);
+    up.debt = null;
+
+    r.paused = true;
+    ok('a paused game blocks it', !!e.buildSetTo(r, up.id, g, 3).error);
+    r.paused = false;
+
+    r.boughtBackBy = up.id;
+    ok('a share bought back this turn blocks it', !!e.buildSetTo(r, up.id, g, 3).error);
+    r.boughtBackBy = null;
+
+    ok('and otherwise it goes through', !e.buildSetTo(r, up.id, g, 2).error);
+    ok('leaving the set even', set.every((t) => t.houses === 2));
+}
+
+/* ------------------------------------------------------------ selling it back */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    const set = aSet(r);
+    const up = upNow(r);
+    const idle = r.players.find((q) => q.id !== up.id);
+    give(r, up, set);
+    const g = set[0].groupId;
+    const cost = set[0].houseCost;
+    up.cash = 100000;
+    e.buildSetTo(r, up.id, g, 4);
+
+    up.cash = 0;
+    ok('a country sells down to a level', !e.sellSetTo(r, up.id, g, 2).error);
+    ok('evenly', set.every((t) => t.houses === 2), set.map((t) => t.houses).join());
+    ok('at half what they cost', up.cash === set.length * 2 * Math.floor(cost / 2), String(up.cash));
+
+    // Selling is the one half that is not turn-gated: rent lands on you during
+    // somebody else's turn, and this is how it gets paid.
+    r.turnIndex = r.players.findIndex((q) => q.id === idle.id);
+    ok('selling off-turn is allowed', !e.sellSetTo(r, up.id, g, 1).error);
+    ok(
+        'and a debt does not block it',
+        (() => {
+            up.debt = { amount: 10, toId: null, bailout: null };
+            const res = e.sellSetTo(r, up.id, g, 0);
+            up.debt = null;
+            return !res.error;
+        })(),
+    );
+    ok('selling everything clears the set', set.every((t) => t.houses === 0));
+    ok('with nothing left to sell', !!e.sellSetTo(r, up.id, g, 0).error);
+    ok('and a stranger cannot sell yours', !!e.sellSetTo(r, idle.id, g, 0).error);
+}
+
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const f of fails) console.log('  FAIL ' + f);

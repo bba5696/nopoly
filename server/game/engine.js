@@ -2008,6 +2008,114 @@ function buildHouse(room, playerId, tileId) {
     return {};
 }
 
+/** "3 houses" / "a hotel", for the one line these leave in the feed. */
+function levelWords(level) {
+    if (level >= 5) return 'a hotel each';
+    if (level === 1) return 'a house each';
+    return `${level} houses each`;
+}
+
+/**
+ * Take a whole country to a level in one action.
+ *
+ * Building was one house, on one tile, through that tile's own card: a set of
+ * three to hotels is fifteen trips through a modal, in an order even building
+ * dictates anyway, and fifteen lines in the feed. The table can see what it
+ * costs; making them click it out house by house was never the interesting
+ * part.
+ *
+ * So the same rules run in a loop here instead. It always builds on the tile
+ * with the fewest, which is exactly what even building demands, and stops the
+ * moment `canBuild` says no — out of cash, at the level asked for, or at a
+ * hotel. Stopping short is a result, not an error: taking a country as far as
+ * the money goes is a thing people mean to do.
+ */
+function buildSetTo(room, playerId, groupId, level) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (room.paused) return { error: 'Game is paused' };
+    if (!isCurrent(room, playerId)) return { error: 'You can only build on your own turn' };
+    if (player.debt) return { error: DEBT_BLOCKED };
+    if (room.boughtBackBy === playerId) return { error: 'You bought a share back this turn — build next turn' };
+    if (!ownsFullGroup(room, playerId, groupId)) return { error: 'You do not hold that country' };
+
+    const want = Math.max(1, Math.min(Math.round(Number(level) || 0), 5));
+    const tiles = groupTiles(room, groupId);
+    let built = 0;
+    // A bound rather than a `while (true)`: five levels across the set is every
+    // house there could be to add, so a rule that stopped saying no could never
+    // spin here.
+    for (let i = 0; i < tiles.length * 5; i++) {
+        const next = tiles
+            .filter((t) => t.houses < want)
+            .sort((a, b) => a.houses - b.houses || a.id - b.id)[0];
+        if (!next || !canBuild(room, player, next)) break;
+        player.cash -= next.houseCost;
+        next.houses += 1;
+        built++;
+    }
+    if (!built) {
+        const already = tiles.every((t) => t.houses >= want);
+        return { error: already ? 'Already built that far' : 'Not enough cash to build there' };
+    }
+
+    // One line for the lot. Where it actually got to, not where it was aimed:
+    // "up to 3 houses each" when the money ran out at two would be a lie in the
+    // one place the table trusts.
+    const reached = Math.min(...tiles.map((t) => t.houses));
+    const even = tiles.every((t) => t.houses === reached);
+    const name = room.board?.groups?.[groupId]?.name || 'their set';
+    log(
+        room,
+        even
+            ? `${player.name} built ${name} up to ${levelWords(reached)}`
+            : `${player.name} built ${built} house${built > 1 ? 's' : ''} in ${name}`,
+    );
+    return {};
+}
+
+/**
+ * The way back down: sell a country to a level.
+ *
+ * Not turn-gated, and allowed while in debt, for the same reason selling one
+ * building isn't — rent lands on you during somebody else's turn, and this is
+ * how it gets paid. Only the owner's own deeds are sold, so a teammate cannot
+ * strip a set to raise their own cash.
+ */
+function sellSetTo(room, playerId, groupId, level) {
+    const player = findPlayer(room, playerId);
+    if (!player) return { error: 'Unknown player' };
+    if (room.paused) return { error: 'Game is paused' };
+    const want = Math.max(0, Math.min(Math.round(Number(level) || 0), 5));
+    const tiles = groupTiles(room, groupId).filter((t) => t.ownerId === playerId);
+    if (!tiles.length) return { error: 'Nothing of yours there' };
+
+    let sold = 0;
+    let raised = 0;
+    for (let i = 0; i < tiles.length * 5; i++) {
+        // Off the most-built first, which is what even selling demands.
+        const next = tiles
+            .filter((t) => t.houses > want)
+            .sort((a, b) => b.houses - a.houses || a.id - b.id)[0];
+        if (!next) break;
+        if (room.settings.evenBuild) {
+            const max = Math.max(...groupTiles(room, groupId).map((t) => t.houses));
+            if (next.houses !== max) break;
+        }
+        next.houses -= 1;
+        raised += Math.floor(next.houseCost / 2);
+        sold++;
+    }
+    if (!sold) return { error: 'Nothing to sell there' };
+
+    player.cash += raised;
+    const name = room.board?.groups?.[groupId]?.name || 'their set';
+    log(room, `${player.name} sold ${sold} building${sold > 1 ? 's' : ''} in ${name} for $${raised}`);
+    // Last, so a debt cleared by the sale is settled with the money in hand.
+    payDownDebt(room, player);
+    return {};
+}
+
 function sellHouse(room, playerId, tileId) {
     const player = findPlayer(room, playerId);
     const tile = room.tiles[tileId];
@@ -3181,7 +3289,9 @@ module.exports = {
     payJailFine,
     useJailCard,
     buildHouse,
+    buildSetTo,
     sellHouse,
+    sellSetTo,
     sellProperty,
     declareBankruptcy,
     canBuild,

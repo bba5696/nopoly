@@ -24,6 +24,7 @@ import { BoardViewport } from '@/components/board/BoardViewport';
 import { AuctionBids } from '@/components/board/AuctionPanel';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
 import { useTurn } from '@/lib/use-turn';
+import { completedSets } from '@/lib/rent';
 import { PlayerRail } from '@/components/rails/PlayerRail';
 import { ChatLog } from '@/components/rails/ChatLog';
 import { YouRail } from '@/components/rails/YouRail';
@@ -34,6 +35,7 @@ import { TradeBuilder } from '@/components/modals/TradeBuilder';
 import { TradeViewModal } from '@/components/modals/TradeViewModal';
 import { TileInfoModal } from '@/components/modals/TileInfoModal';
 import { ShareInfoModal } from '@/components/modals/ShareInfoModal';
+import { SetsModal } from '@/components/modals/SetsModal';
 import { ExchangeModal } from '@/components/modals/ExchangeModal';
 import { BailoutModal } from '@/components/modals/BailoutModal';
 import { VoteKickModal, VoteKickPicker, VoteStatusChip } from '@/components/modals/VoteKickModal';
@@ -63,6 +65,7 @@ export function Game() {
     // Held by id so the popover always reflects the latest server state.
     const [tileId, setTileId] = useState(null);
     const [shareGroup, setShareGroup] = useState(null);
+    const [setsGroup, setSetsGroup] = useState(null);
     const [trade, setTrade] = useState(null); // { key, counterOf?, targetId? } | null
     const [viewTradeId, setViewTradeId] = useState(null);
     const [tab, setTab] = useState('players');
@@ -81,6 +84,21 @@ export function Game() {
     // were reading can wait ten seconds, and it comes back where you left it.
     const auctionOn = !!state.auction;
     const tile = tileId === null || auctionOn ? null : state.tiles[tileId];
+
+    /**
+     * What a tap on a tile opens.
+     *
+     * Its own card, unless it belongs to a country you have completed and you
+     * have completed more than one — then it is the sets panel, because with
+     * two sets in hand the thing you came to do is build, and building one
+     * house at a time through one card each was the whole complaint. With a
+     * single set there is nothing to switch between, so the card stays.
+     */
+    const openTile = (t) => {
+        const sets = me ? completedSets(state, me.id) : [];
+        if (t.groupId && sets.length > 1 && sets.includes(t.groupId)) setSetsGroup(t.groupId);
+        else setTileId(t.id);
+    };
 
     // A phone player can't see the trade rail while another tab is up, so an
     // offer would otherwise arrive silently.
@@ -266,7 +284,7 @@ export function Game() {
                             display={display}
                             moving={moving}
                             spotlight={spotlight}
-                            onSelectTile={(t) => setTileId(t.id)}
+                            onSelectTile={openTile}
                         />
                     </div>
                 </main>
@@ -321,7 +339,7 @@ export function Game() {
                     )}
                 >
                     <div className={cn('min-h-0 flex-col gap-3 xl:contents', tab === 'you' ? 'flex' : 'hidden')}>
-                        <YouRail onOpenTile={(t) => setTileId(t.id)} onOpenShare={setShareGroup} />
+                        <YouRail onOpenTile={openTile} onOpenShare={setShareGroup} />
                     </div>
                     <div className={cn('min-h-0 flex-1 flex-col xl:contents', tab === 'trades' ? 'flex' : 'hidden')}>
                         <TradeRail
@@ -366,6 +384,14 @@ export function Game() {
             <BailoutModal />
             <VoteKickModal />
             <TileInfoModal tile={tile} onClose={() => setTileId(null)} />
+            <SetsModal
+                groupId={auctionOn ? null : setsGroup}
+                onClose={() => setSetsGroup(null)}
+                onOpenTile={(id) => {
+                    setSetsGroup(null);
+                    setTileId(id);
+                }}
+            />
             <ShareInfoModal groupId={auctionOn ? null : shareGroup} onClose={() => setShareGroup(null)} />
             {viewTradeId && !auctionOn && (
                 <TradeViewModal

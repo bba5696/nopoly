@@ -410,6 +410,31 @@ must be able to sell to clear a debt whenever it happens. Building on someone
 else's turn was a real exploit — a set could be developed in the gap between a
 rival landing on it and the rent being calculated.
 
+## A country is built in one action, not fifteen
+
+`buildHouse` puts up one house on one tile, which is the rule; it was also the
+only way to spend money on a set, through that tile's own card. Taking three
+tiles to hotels was fifteen trips through a modal, in the order even building
+dictates anyway, and fifteen lines in the feed.
+
+`buildSetTo(room, playerId, groupId, level)` runs the same rule in a loop:
+always on the tile with the fewest houses, stopping the moment `canBuild` says
+no. Running out of cash halfway is a result rather than an error — taking a
+country as far as the money goes is a thing people mean to do — so it reports
+what it actually reached, and the feed gets one line saying so. `sellSetTo` is
+the mirror, off the most-built first, and like `sellHouse` it is neither
+turn-gated nor blocked by debt: rent lands on you during other people's turns,
+and this is how it gets paid.
+
+The client side of it is `SetsModal`, which opens on a tap on a country you
+hold — but only once you hold two or more. With a single set there is nothing
+to switch between and the deed's own card is still the better screen, so
+nothing changes for the player who has just completed their first country. The
+panel shows every completed set with what each tile charges now and what it
+would charge at the level being considered, since the second number is the
+reason anybody builds. Selling asks twice, because it is the one button there
+that turns buildings into half their money.
+
 ## Debt is a state, not an immediate bankruptcy
 
 `charge()` is the single funnel every payment goes through. Anything a player
