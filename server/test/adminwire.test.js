@@ -219,6 +219,12 @@ const until = async (fn, ms = 3000) => {
     const richest = Math.max(...board.state.players.map((p) => p.netWorth));
     ok('the side worth the most wins', board.state.players.find((p) => p.id === board.state.winnerId)?.netWorth === richest);
     ok('and it is no longer paused', board.state.paused === false);
+    // The panel's Results button draws the end screen from the watched room,
+    // so the watched room has to carry what the end screen is drawn from.
+    const finished = (await (await get(`/api/admin/rooms/${boardCode}`, token)).json()).state;
+    ok('the admin can open the end screen', finished.phase === 'ended' && finished.winnerId === board.state.winnerId);
+    ok('with its stamp and its chart', !!finished.stats?.endedAt && Array.isArray(finished.stats.netWorth) && finished.stats.netWorth.length > 0, JSON.stringify(finished.stats));
+    ok('and the board it was played on', !!finished.board?.name && Array.isArray(finished.tiles));
     for (const s of [board, boardMate]) s.close();
 
     /* ------------------------------------------------------------------- end */

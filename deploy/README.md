@@ -164,7 +164,8 @@ removing them.
 Off unless you give it a key. With one set, `/admin` shows:
 
 - **Every room**, with a **Watch** view of who has what and the last things
-  the game did (never chat, never anyone's cards).
+  the game did (never chat, never anyone's cards). A finished room also has
+  **Results**, which opens the same end screen the table is looking at.
 - **Kick** (banned from that room) and **Unban**. Someone kicked mid-game who
   is unbanned comes back to watch, not to play that game again.
 - **Pause / Resume**, **Play turn** (plays the current turn the way the turn

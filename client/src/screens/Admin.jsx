@@ -17,9 +17,12 @@ import {
     UserCheck,
     UserX,
     Users,
+    X,
     XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Scoreboard } from '@/components/Scoreboard';
+import { entryFromState, stampOf } from '@/lib/history';
 import { alpha, tag } from '@/lib/color';
 import { gameName } from '@/lib/games';
 import { money } from '@/lib/board-layout';
@@ -362,10 +365,72 @@ function WatchPanel({ code, game }) {
     );
 }
 
+/* ------------------------------------------------------------------ results */
+
+/**
+ * A finished room's end screen, exactly as the table sees it — built from the
+ * room the same way GameOver builds it, so the two cannot disagree.
+ *
+ * Read once rather than polled: a finished game does not change, and a rematch
+ * would swap the end screen out from under whoever is reading it. Nothing is
+ * saved to this browser's history — the admin did not play it.
+ */
+function ResultsView({ code, onClose }) {
+    const [entry, setEntry] = useState(null);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        let live = true;
+        watchRoom(code)
+            .then(({ state }) => {
+                if (!live) return;
+                if (state.phase !== 'ended') setError('This game is not finished any more — a rematch may have started');
+                else setEntry(entryFromState(state));
+            })
+            .catch((err) => live && setError(err.message));
+        return () => {
+            live = false;
+        };
+    }, [code]);
+
+    useEffect(() => {
+        const onKey = (e) => e.key === 'Escape' && onClose();
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <div className="flex min-h-full flex-col items-center gap-4 px-4 py-6" onClick={(e) => e.stopPropagation()}>
+                <div className="flex w-full max-w-[1120px] items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                        <Trophy className="size-3.5" />
+                        <span className="mono tracking-widest text-foreground">{code}</span>
+                        {entry && <span>· ended {stampOf(entry.endedAt)}</span>}
+                    </span>
+                    <Button size="sm" variant="outline" onClick={onClose}>
+                        <X /> Close
+                    </Button>
+                </div>
+                {error && <p className="text-[14px] text-[#ff5c7c]">{error}</p>}
+                {!entry && !error && <p className="text-[14px] text-muted-foreground">Loading…</p>}
+                {entry && <Scoreboard entry={entry} />}
+            </div>
+        </motion.div>
+    );
+}
+
 /* -------------------------------------------------------------------- rooms */
 
 function RoomCard({ room, now, run }) {
     const [watching, setWatching] = useState(false);
+    const [results, setResults] = useState(false);
+    const closeResults = useCallback(() => setResults(false), []);
     const live = room.phase !== 'waiting' && room.phase !== 'ended';
     const code = room.code;
 
@@ -407,6 +472,11 @@ function RoomCard({ room, now, run }) {
                     <Button size="sm" variant="ghost" onClick={() => setWatching((w) => !w)}>
                         {watching ? <EyeOff /> : <Eye />} {watching ? 'Stop watching' : 'Watch'}
                     </Button>
+                    {room.phase === 'ended' && (
+                        <Button size="sm" variant="outline" onClick={() => setResults(true)}>
+                            <Trophy /> Results
+                        </Button>
+                    )}
                     {live && (
                         <Button
                             size="sm"
@@ -532,6 +602,7 @@ function RoomCard({ room, now, run }) {
             </div>
 
             {watching && <WatchPanel code={code} game={room.game} />}
+            {results && <ResultsView code={code} onClose={closeResults} />}
         </div>
     );
 }
