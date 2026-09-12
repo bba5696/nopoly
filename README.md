@@ -21,7 +21,7 @@ games and share links. Which game a room is playing is picked when it is made.
 - **Three boards**, swappable in the lobby, and adding another is adding one file
 - **The full game** — buy, rent, colour sets, houses and hotels, jail, cards,
   auctions, trades, bankruptcy
-- **Teams (beta)** — up to eight sides of any size, set in the lobby, sharing
+- **Teams** — up to eight sides of any size, set in the lobby, sharing
   property and monopolies but keeping separate balances, with interleaved turns
   and a prompt to bail out a teammate who can't cover a debt
 - **Reconnect into your seat** after a refresh or a dropped connection, with a

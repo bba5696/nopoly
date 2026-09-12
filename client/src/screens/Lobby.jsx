@@ -123,7 +123,6 @@ const RULES = [
         icon: UsersRound,
         label: 'Teams',
         hint: 'Teammates share properties, monopolies and a colour, but keep separate balances. Sides can be any size and don’t have to match. Rent goes to whoever holds the deed, and a teammate can bail you out of a debt you can’t cover',
-        beta: true,
     },
     {
         key: 'dynamicValues',
