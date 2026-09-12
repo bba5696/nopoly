@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, UserMinus, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -9,6 +9,7 @@ import { ProfileModal } from '@/components/modals/ProfileModal';
 import { alpha, tag } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { playJoin, playPlayerJoined } from '@/lib/sound';
+import { BETA_WARNING } from '@/lib/games';
 
 /**
  * The settings column is tabbed rather than one long list — the whole lobby
@@ -500,7 +501,10 @@ export function Lobby() {
                         <div className="scroll-thin h-[356px] overflow-y-auto py-2">
                             {cards && (
                                 <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
-                                    <span className="text-xl">nouno</span>
+                                    <span className="flex items-baseline gap-1.5">
+                                        <span className="text-xl">nouno</span>
+                                        <span className="label text-[#ffb648]">beta</span>
+                                    </span>
                                     <p className="text-[13px] leading-snug text-muted-foreground">
                                         Seven cards each. Follow the suit or the number, and shed your hand
                                         before anyone else does. Halt skips the next player, Turn sends play
@@ -509,6 +513,13 @@ export function Lobby() {
                                     <p className="text-[12px] leading-snug text-muted-foreground/70">
                                         Say <span className="text-foreground">last card</span> before you play
                                         your second-to-last one, or draw two for the silence.
+                                    </p>
+                                    {/* Whoever made the room was warned on the
+                                        way in; everybody else arrived with a
+                                        code and has seen nothing. */}
+                                    <p className="mt-1 flex gap-2 rounded-lg border border-[#ffb648]/30 bg-[#ffb648]/5 px-3 py-2 text-left text-[12px] leading-snug text-[#ffb648]">
+                                        <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                                        <span>{BETA_WARNING}</span>
                                     </p>
                                 </div>
                             )}

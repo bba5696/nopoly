@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, History, Pencil, Scale, Volume2 } from 'lucide-react';
+import { Eye, History, Pencil, Scale, TriangleAlert, Volume2 } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -10,7 +10,7 @@ import { ProfileModal } from '@/components/modals/ProfileModal';
 import { loadIdentity } from '@/lib/socket';
 import { alpha, initials } from '@/lib/color';
 import { historyCount } from '@/lib/history';
-import { GAMES } from '@/lib/games';
+import { BETA_WARNING, GAMES } from '@/lib/games';
 import { cn } from '@/lib/utils';
 import { PastGames } from '@/screens/PastGames';
 
@@ -29,6 +29,18 @@ export function Home() {
     const [pastOpen, setPastOpen] = useState(false);
     const [pastCount] = useState(() => historyCount());
     const [game, setGame] = useState('nopoly');
+    // Which game's warning is up. Shown on the way in rather than on the way
+    // out: being told a game is rough after you have gathered four people and
+    // pressed Create is being told too late.
+    const [warnAbout, setWarnAbout] = useState(null);
+
+    const pickGame = (g) => {
+        // Only on the way to it, and only the first time — a warning that fires
+        // again on every press of a button you have already answered for is
+        // something people learn to click past without reading.
+        if (g.beta && game !== g.id) setWarnAbout(g);
+        setGame(g.id);
+    };
 
     const trimmed = name.trim();
     const ready = trimmed.length > 0 && connected && !joining;
@@ -98,7 +110,7 @@ export function Home() {
                             <button
                                 key={g.id}
                                 type="button"
-                                onClick={() => setGame(g.id)}
+                                onClick={() => pickGame(g)}
                                 className={cn(
                                     'flex flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors',
                                     game === g.id
@@ -106,7 +118,10 @@ export function Home() {
                                         : 'border-white/8 hover:border-white/20',
                                 )}
                             >
-                                <span className="text-[15px] leading-tight">{g.name}</span>
+                                <span className="flex items-baseline gap-1.5">
+                                    <span className="text-[15px] leading-tight">{g.name}</span>
+                                    {g.beta && <span className="label text-[#ffb648]">beta</span>}
+                                </span>
                                 <span className="text-[12px] leading-snug text-muted-foreground">{g.blurb}</span>
                             </button>
                         ))}
@@ -223,6 +238,40 @@ export function Home() {
                             }}
                         >
                             <Eye /> Watch
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* The warning on a game that is still being written. It does not
+                stand in the way of playing it — the answer people want is
+                "fine, I know" — but it is not a toast either: a line that fades
+                out is a line half the table never read. */}
+            <Modal
+                open={!!warnAbout}
+                onClose={() => setWarnAbout(null)}
+                subtitle="Still in development"
+                title={`${warnAbout?.name || ''} is a beta`}
+                width={400}
+            >
+                <div className="flex flex-col gap-5 p-5">
+                    <p className="flex gap-3 text-[14px] leading-relaxed text-muted-foreground">
+                        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[#ffb648]" />
+                        <span>{BETA_WARNING}</span>
+                    </p>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            className="h-11 flex-1"
+                            onClick={() => {
+                                setGame('nopoly');
+                                setWarnAbout(null);
+                            }}
+                        >
+                            Play nopoly
+                        </Button>
+                        <Button className="h-11 flex-1" onClick={() => setWarnAbout(null)}>
+                            Play anyway
                         </Button>
                     </div>
                 </div>
