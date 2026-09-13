@@ -174,6 +174,57 @@ function mk(names, { start = true, open = true } = {}) {
     ok('with no rent charged', lander.cash === 1000, String(lander.cash));
 }
 
+/* -------------------------------- it keeps charging what it charged — hotels too */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    // Bo holds a whole country with a hotel on one tile...
+    const first = r.tiles.find((t) => t.type === 'property');
+    const country = r.tiles.filter((t) => t.groupId === first.groupId);
+    for (const t of country) {
+        t.ownerId = p.Bo.id;
+        p.Bo.properties.push(t.id);
+    }
+    first.houses = 5;
+    const plain = country.find((t) => t.id !== first.id);
+
+    // ...and every utility, which charges by the dice.
+    const utilities = r.tiles.filter((t) => t.type === 'utility');
+    for (const t of utilities) {
+        t.ownerId = p.Bo.id;
+        p.Bo.properties.push(t.id);
+    }
+    const table = r.board.utilityMultiplier;
+    const perDie = table[Math.min(utilities.length, table.length) - 1];
+
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    e.castVote(r, p.Cy.id, true);
+    e.castVote(r, p.Di.id, true);
+    ok('the hotel goes with the estate', first.houses === 0 && first.ownerId === null);
+    ok('but the lock remembers hotel rent', first.lockedRent === first.rent[5], `${first.lockedRent} vs ${first.rent[5]}`);
+    ok('and a doubled set', plain.lockedRent === plain.rent[0] * 2, `${plain.lockedRent} vs ${plain.rent[0] * 2}`);
+    ok('and what it was built to', first.lockedHouses === 5);
+
+    const lander = p.Cy;
+    lander.cash = 5000;
+    lander.position = first.id;
+    e.resolveLanding(r, lander, [3, 4]);
+    ok('landing on it costs the hotel rent', lander.cash === 5000 - first.rent[5], String(lander.cash));
+    ok('paid to the bank', r.lastPayment?.toId === null, JSON.stringify(r.lastPayment));
+
+    lander.cash = 5000;
+    lander.position = utilities[0].id;
+    e.resolveLanding(r, lander, [3, 4]);
+    ok('a utility charges the rate it had, times the roll', lander.cash === 5000 - perDie * 7, `${lander.cash} vs ${5000 - perDie * 7}`);
+
+    // A room restored from its snapshot charges exactly the same.
+    const restored = JSON.parse(JSON.stringify(r));
+    const again = restored.players.find((q) => q.id === lander.id);
+    again.cash = 5000;
+    again.position = first.id;
+    e.resolveLanding(restored, again, [3, 4]);
+    ok('and so does a room restored from a snapshot', again.cash === 5000 - first.rent[5], String(again.cash));
+}
+
 /* ------------------------------------- a dropout and an admin kick lock nothing */
 {
     const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);

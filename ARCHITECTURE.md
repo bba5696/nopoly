@@ -425,8 +425,10 @@ player's estate goes back to the bank like any resignation's — and that used t
 put the leader's whole estate straight back on sale to the people who had just
 removed them. So a passed ballot locks those tiles for five rounds of the table
 (`lockTiles`): nobody can buy them or take them at auction, and landing on one
-still charges its book rent, to the bank, so a locked country is no free
-corridor either. Counted in turns, so a pause cannot run it down. A dropout's
+still charges what it was charging at the moment of the kick — hotels, a doubled
+set, a run of airports — to the bank, so a locked country is no free corridor
+either. The rent is worked out before the estate is cleared and kept on the
+tile, so a redeploy restores it and charges the same. Counted in turns, so a pause cannot run it down. A dropout's
 countdown and the admin's kick lock nothing — neither is a table choosing to
 remove somebody.
 

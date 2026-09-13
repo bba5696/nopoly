@@ -1501,25 +1501,44 @@ function rentFor(room, tile, owner, dice) {
         return Math.round(base * market.rentMult(room, tile, complete));
     }
     if (tile.type === 'utility') {
-        const table = room.board.utilityMultiplier;
-        const { owned, complete } = holdingOf(room, owner, 'utility', table.length);
-        const mult = table[Math.min(Math.max(owned - 1, 0), table.length - 1)];
-        return Math.round(mult * (dice[0] + dice[1] || 7) * market.rentMult(room, tile, complete));
+        return Math.round(utilityRate(room, tile, owner) * (dice[0] + dice[1] || 7));
     }
     return 0;
 }
 
 /**
+ * What a utility multiplies the dice by for this owner, market included. Its
+ * own function because a locked utility has to remember it: the dice are not
+ * rolled until somebody lands there.
+ */
+function utilityRate(room, tile, owner) {
+    const table = room.board.utilityMultiplier;
+    const { owned, complete } = holdingOf(room, owner, 'utility', table.length);
+    const mult = table[Math.min(Math.max(owned - 1, 0), table.length - 1)];
+    return mult * market.rentMult(room, tile, complete);
+}
+
+/** A tile's rent as its owner was charging it, for a lock to keep charging. */
+function rentSnapshot(room, tile, owner) {
+    if (tile.type === 'utility') return { id: tile.id, houses: 0, perDie: utilityRate(room, tile, owner) };
+    return { id: tile.id, houses: tile.houses, rent: rentFor(room, tile, owner, [0, 0]) };
+}
+
+/**
  * Landing on a tile locked after a vote-kick: nothing to buy and no auction,
- * but the rent still falls due — to the bank, since nobody holds it. The book
- * rate for one tile on its own, as though a stranger held just that one: a
- * locked country is not anybody's set.
+ * but the rent still falls due — to the bank, since nobody holds it — and at
+ * the rate it was charging when its owner was voted out. Hotels, a doubled set
+ * and a run of airports all keep charging what they did, which is the point:
+ * removing the player who built them does not make them cheap to pass.
  */
 function payLockedRent(room, player, tile, dice) {
+    const roll = dice[0] + dice[1] || 7;
     let base = 0;
-    if (tile.type === 'property') base = tile.rent[0];
+    if (tile.type === 'utility') base = (tile.lockedPerDie ?? room.board.utilityMultiplier[0]) * roll;
+    else if (tile.lockedRent != null) base = tile.lockedRent;
+    // A lock from before the rent was remembered: the book rate, as it was.
+    else if (tile.type === 'property') base = tile.rent[0];
     else if (tile.type === 'airport') base = room.board.airportRent[0];
-    else if (tile.type === 'utility') base = room.board.utilityMultiplier[0] * (dice[0] + dice[1] || 7);
     const rent = Math.round(base * (1 - boonsOf(room, player).rentOff / 100));
     const left = tile.lockedUntil - room.stats.turnCount;
     payBank(room, player, rent, `rent on ${tile.name}, locked for ${left} more turn${left === 1 ? '' : 's'}`);
@@ -2813,27 +2832,33 @@ function finishVote(room, passed) {
  * the problem: voting out whoever was winning put their whole estate straight
  * back on sale, to the people who had just voted. So for LOCK_ROUNDS rounds of
  * the table nobody can buy those tiles or take them at auction. They are not
- * free to land on either: the rent is still charged, to the bank, so a locked
- * country is not a safe corridor for everyone who removed its owner.
+ * free to land on either: what each one was charging — hotels, a doubled set, a
+ * run of airports — is still charged, to the bank, so a locked country is not a
+ * safe corridor for everyone who removed its owner.
  *
  * Counted in turns rather than minutes, so a pause or a restart does not run it
  * down, and scaled by the table, so each player passes it about as often
  * however many are left.
  */
-function lockTiles(room, target, tileIds) {
+function lockTiles(room, target, charging) {
     const until = room.stats.turnCount + LOCK_ROUNDS * Math.max(activePlayers(room).length, 1);
     const locked = [];
-    for (const id of tileIds) {
-        const tile = room.tiles[id];
+    for (const snap of charging) {
+        const tile = room.tiles[snap.id];
         if (!tile || tile.ownerId !== null) continue;
         tile.lockedUntil = until;
+        // Kept on the tile rather than beside the lock, so the snapshot a
+        // redeploy restores from carries it and a restart charges the same.
+        tile.lockedRent = snap.rent ?? null;
+        tile.lockedPerDie = snap.perDie ?? null;
+        tile.lockedHouses = snap.houses || 0;
         locked.push(tile);
     }
     if (!locked.length) return;
     const what = locked.length === 1 ? 'property is' : `${locked.length} properties are`;
     log(
         room,
-        `${target.name}’s ${what} locked for ${LOCK_ROUNDS} rounds — nobody can buy them, and landing on one still costs rent`,
+        `${target.name}’s ${what} locked for ${LOCK_ROUNDS} rounds — nobody can buy them, and landing on one still costs what it charged`,
     );
 }
 
@@ -2867,8 +2892,12 @@ function ejectPlayer(room, target, note, { lockEstate = false } = {}) {
     // Taken before it is handed back: removeFromPlay empties the list. A card
     // game has no estate, and the empty list is the whole of that case.
     const estate = lockEstate && Array.isArray(target.properties) ? target.properties.slice() : [];
+    // What each tile was charging, worked out while the owner, the set and the
+    // buildings are still there to work it out from — removeFromPlay clears all
+    // three, and a lock charges what the tile charged at the moment of the kick.
+    const charging = estate.map((id) => rentSnapshot(room, room.tiles[id], target));
     rulesFor(room).removeFromPlay(room, target);
-    if (estate.length && room.phase !== 'ended') lockTiles(room, target, estate);
+    if (charging.length && room.phase !== 'ended') lockTiles(room, target, charging);
     return {};
 }
 

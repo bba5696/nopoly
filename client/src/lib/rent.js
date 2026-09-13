@@ -193,11 +193,19 @@ export function lockedTurns(state, tile) {
     return Math.max(0, tile.lockedUntil - (state?.stats?.turnCount ?? 0));
 }
 
-/** What landing on a locked tile costs: the book rent for one tile on its own. */
+/**
+ * What landing on a locked tile costs: whatever it was charging when its owner
+ * was voted out, which the server remembers on the tile. The book rate only for
+ * a lock that predates it remembering.
+ */
 export function lockedRentLabel(state, tile) {
+    if (tile.type === 'utility') {
+        const per = tile.lockedPerDie ?? utilityMultiplier(state)[0];
+        return `${Number.isInteger(per) ? per : per.toFixed(1)}× the dice`;
+    }
+    if (tile.lockedRent != null) return `$${tile.lockedRent}`;
     if (tile.type === 'property') return `$${tile.rent[0]}`;
     if (tile.type === 'airport') return `$${airportRent(state)[0]}`;
-    if (tile.type === 'utility') return `${utilityMultiplier(state)[0]}× the dice`;
     return null;
 }
 

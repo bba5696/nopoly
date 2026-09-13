@@ -80,7 +80,7 @@ export function VoteKickPicker({ open, onClose }) {
                     Everyone else still in the game has to agree — at a big table, two-thirds of them — and who
                     voted goes in the log. Opens five minutes into a game, and needs at least three players.
                     Mid-game they're out for good, and their property is locked for a while: nobody can buy it, and
-                    landing on it still costs rent. Someone who's already dropped out gets two minutes to reconnect
+                    landing on it still costs the rent it was charging. Someone who's already dropped out gets two minutes to reconnect
                     instead of a vote.
                 </p>
                 <div className="flex flex-col gap-2">
