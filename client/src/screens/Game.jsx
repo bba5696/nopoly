@@ -19,7 +19,7 @@ import { useGame } from '@/lib/game-context';
 import { loadIdentity } from '@/lib/socket';
 import { useTokenPositions } from '@/lib/use-token-positions';
 import { useTableSounds } from '@/lib/use-table-sounds';
-import { useIdlePing } from '@/lib/use-idle-ping';
+import { useIdlePing, useInputPing } from '@/lib/use-idle-ping';
 import { BoardViewport } from '@/components/board/BoardViewport';
 import { AuctionBids } from '@/components/board/AuctionPanel';
 import { TurnActions, DebtNotice } from '@/components/board/TurnActions';
@@ -141,6 +141,9 @@ export function Game() {
     // Only while the clock is on you: any movement resets it, and if you don't
     // move, the turn plays itself rather than stalling everyone.
     useIdlePing(isMyTurn && !!state.idle, send);
+    // And whether you're at the keyboard at all, which is what decides whether
+    // a vote-kick on you locks your estate — see use-idle-ping.
+    useInputPing(!!me && !me.bankrupt && state.phase !== 'ended', send);
     const wasMyTurn = useRef(isMyTurn);
     useEffect(() => {
         if (isMyTurn && !wasMyTurn.current) playTurn();

@@ -228,6 +228,17 @@ const LOCK_ROUNDS = 5;
  */
 const ABANDON_MS = 2 * 60_000;
 /**
+ * How long without a mouse move, a key or an action before a player counts as
+ * not really playing. Decides whether a passed vote-kick locks their estate:
+ * kicking somebody who had stopped touching anything is clearing an empty
+ * chair, not taking a rival off the board.
+ */
+const INPUT_IDLE_MS = 60_000;
+
+/** Connected, and has touched something within the last minute. */
+const isPlaying = (player) =>
+    !!player.connected && (!player.lastInputAt || Date.now() - player.lastInputAt < INPUT_IDLE_MS);
+/**
  * How long a game runs before anyone can be voted out: five minutes. Every vote
  * called inside that window was someone reacting to a bad opening roll.
  */
@@ -706,6 +717,8 @@ function addPlayer(room, { name, playerId, initials, color }) {
         if (!existing.connected) log(room, `${existing.name} reconnected`);
         existing.connected = true;
         existing.disconnectedAt = null;
+        // Coming back is about the clearest sign of life there is.
+        existing.lastInputAt = Date.now();
         if (name && name !== existing.name) existing.name = name;
         // Whatever they last set carries across a refresh with them. Errors are
         // ignored on purpose — a colour their browser remembers is not worth
@@ -738,6 +751,8 @@ function addPlayer(room, { name, playerId, initials, color }) {
         initials: cleanInitials(initials),
         // Assigned by the host in the lobby; null in a free-for-all.
         teamId: null,
+        // The last mouse move, key or action — see INPUT_IDLE_MS.
+        lastInputAt: Date.now(),
         connected: true,
         disconnectedAt: null,
         // Both read by the vote rules, the sweep and the client, whatever is
@@ -1779,7 +1794,19 @@ function refreshIdle(room, playerId) {
 }
 
 /** A sign of life from the player whose turn it is. */
+/**
+ * Somebody touched something: a mouse move, a key, an action. Stamped for
+ * anyone, whoever's turn it is — what it feeds is whether a vote-kick on them
+ * would lock their estate, not the turn clock.
+ */
+function noteInput(room, playerId) {
+    const player = findPlayer(room, playerId);
+    if (player) player.lastInputAt = Date.now();
+    return {};
+}
+
 function noteActive(room, playerId) {
+    noteInput(room, playerId);
     if (!room.idle || room.idle.playerId !== playerId) return {};
     room.idle.endsAt = Date.now() + IDLE_MS;
     return {};
@@ -2680,6 +2707,10 @@ function startVoteKick(room, byId, targetId) {
         yes: abandoned ? [] : [byId], // calling the vote is a vote
         no: [],
         needed: abandoned ? 0 : votesNeeded(room, targetId),
+        // Whether the target was actually playing when the table called it,
+        // which is what decides if a passed kick locks their estate. Taken now
+        // rather than at the end: see finishVote.
+        targetActive: !abandoned && isPlaying(target),
         // Both ends of the window, so the client can draw how far through it is
         // without having to know how long either kind runs for.
         startedAt: Date.now(),
@@ -2813,15 +2844,28 @@ function finishVote(room, passed) {
         return {};
     }
 
+    // A ballot on somebody actually playing locks what they held. One on
+    // somebody who had stopped touching anything when it was called, or who has
+    // gone by the time it passes, is the table clearing an empty chair — and
+    // the countdown never locks, for the same reason. Judged on when the vote
+    // was called, so somebody away cannot wake up mid-vote and turn the lock
+    // on, and somebody playing cannot go quiet mid-vote to dodge it. A vote
+    // from before this was recorded carries no flag, and locks as it did then.
+    const wasPlaying = vote.targetActive !== false;
+    const lockEstate = !abandoned && wasPlaying && target.connected;
+    const why =
+        abandoned || lockEstate
+            ? ''
+            : target.connected
+              ? ' · they had gone idle, so nothing is locked'
+              : ' · they had dropped out, so nothing is locked';
     return ejectPlayer(
         room,
         target,
         abandoned
             ? `${target.name} never came back and is out`
-            : `${target.name} was voted out (${vote.yes.length}/${vote.needed}) — ${tally}`,
-        // Only a ballot. Somebody who drifted away profits nobody by going, and
-        // the countdown is the room's way of shedding an empty seat.
-        { lockEstate: !abandoned },
+            : `${target.name} was voted out (${vote.yes.length}/${vote.needed}) — ${tally}${why}`,
+        { lockEstate },
     );
 }
 
@@ -3413,6 +3457,7 @@ module.exports = {
     armIdle,
     refreshIdle,
     noteActive,
+    noteInput,
     expireIdle,
     spectateReason,
     addSpectator,

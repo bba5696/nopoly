@@ -1197,6 +1197,14 @@ io.on('connection', (socket) => {
         socket.data.hiddenAt = hidden ? was || Date.now() : null;
         pushPresence();
     });
+    // A sign of life between turns: stamped on the player and nothing more. No
+    // broadcast and no clocks, which is why it is not game:active — every
+    // player's mouse would otherwise be a state update for the whole table.
+    socket.on('presence:input', () => {
+        const room = getRoom(socket.data.roomCode);
+        if (!room || socket.data.spectating) return;
+        engine.noteInput(room, socket.data.playerId);
+    });
 
     socket.on('chat:send', ({ text } = {}) =>
         act(socket, (room, pid) => engine.addChat(room, pid, text), { watchers: true }),

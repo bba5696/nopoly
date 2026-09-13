@@ -225,6 +225,62 @@ function mk(names, { start = true, open = true } = {}) {
     ok('and so does a room restored from a snapshot', again.cash === 5000 - first.rent[5], String(again.cash));
 }
 
+/* ------------------ the lock is for kicking someone who was actually playing */
+{
+    // Idle for more than a minute when the vote was called: nothing locks.
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    const tile = r.tiles.find((t) => t.type === 'property');
+    tile.ownerId = p.Bo.id;
+    p.Bo.properties.push(tile.id);
+    p.Bo.lastInputAt = Date.now() - 2 * 60_000;
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    // Waking up during the vote does not change what they were when it was called.
+    e.noteInput(r, p.Bo.id);
+    e.castVote(r, p.Cy.id, true);
+    e.castVote(r, p.Di.id, true);
+    ok('an idle player is voted out', p.Bo.bankrupt);
+    ok('and nothing of theirs is locked', !tile.lockedUntil && tile.ownerId === null, JSON.stringify(tile.lockedUntil));
+    ok('the feed says why', r.log.some((l) => /idle/.test(l.text)), r.log.slice(-3).map((l) => l.text).join(' / '));
+}
+{
+    // Playing when it was called, gone quiet since: still locked.
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    const tile = r.tiles.find((t) => t.type === 'property');
+    tile.ownerId = p.Bo.id;
+    p.Bo.properties.push(tile.id);
+    e.noteInput(r, p.Bo.id);
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    p.Bo.lastInputAt = Date.now() - 2 * 60_000;
+    e.castVote(r, p.Cy.id, true);
+    e.castVote(r, p.Di.id, true);
+    ok('going quiet mid-vote does not dodge the lock', p.Bo.bankrupt && tile.lockedUntil > r.stats.turnCount);
+}
+{
+    // Playing when it was called, but gone by the time it passes: nothing locks.
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    const tile = r.tiles.find((t) => t.type === 'property');
+    tile.ownerId = p.Bo.id;
+    p.Bo.properties.push(tile.id);
+    e.noteInput(r, p.Bo.id);
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    p.Bo.connected = false;
+    e.castVote(r, p.Cy.id, true);
+    e.castVote(r, p.Di.id, true);
+    ok('someone who dropped out mid-vote locks nothing', p.Bo.bankrupt && !tile.lockedUntil);
+    ok('and the feed says so', r.log.some((l) => /dropped out/.test(l.text)), r.log.slice(-3).map((l) => l.text).join(' / '));
+}
+{
+    // Input is stamped for anyone, not only whoever is up.
+    const { r } = mk(['Ada', 'Bo', 'Cy']);
+    const waiting = r.players.find((q) => q.id !== r.players[r.turnIndex].id);
+    waiting.lastInputAt = 0;
+    e.noteInput(r, waiting.id);
+    ok('input is noted off-turn too', Date.now() - waiting.lastInputAt < 1000, String(waiting.lastInputAt));
+    waiting.lastInputAt = 0;
+    e.noteActive(r, waiting.id);
+    ok('and any action counts as input', Date.now() - waiting.lastInputAt < 1000, String(waiting.lastInputAt));
+}
+
 /* ------------------------------------- a dropout and an admin kick lock nothing */
 {
     const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);

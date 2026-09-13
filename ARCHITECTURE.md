@@ -430,7 +430,15 @@ set, a run of airports — to the bank, so a locked country is no free corridor
 either. The rent is worked out before the estate is cleared and kept on the
 tile, so a redeploy restores it and charges the same. Counted in turns, so a pause cannot run it down. A dropout's
 countdown and the admin's kick lock nothing — neither is a table choosing to
-remove somebody.
+remove somebody. Nor does a ballot on a player who was not really playing: one
+whose input had stopped for a minute when the vote was called, or who has
+dropped out by the time it passes. That kick is the table clearing an empty
+chair, and the estate goes straight back to the bank. "When it was called" is
+deliberate — somebody away cannot wake up mid-vote and turn the lock on, and an
+active player cannot go quiet mid-vote to dodge it. Input is stamped by every
+action and by a `presence:input` ping the client sends at most every twenty
+seconds, on or off turn; it is its own event rather than `game:active` so that
+it broadcasts nothing.
 
 None of it applies to a player who has dropped out. That path isn't a ballot at
 all but a two-minute countdown they end by coming back — the room's only way of
