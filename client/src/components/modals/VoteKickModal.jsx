@@ -77,12 +77,8 @@ export function VoteKickPicker({ open, onClose }) {
         <Modal open={open} onClose={onClose} subtitle="Vote to remove" title="Kick a player" width={420}>
             <div className="flex flex-col gap-4 p-5">
                 <p className="text-[13px] leading-snug text-muted-foreground">
-                    Everyone else still in the game has to agree — at a big table, two-thirds of them — and who
-                    voted goes in the log. Opens five minutes into a game, and needs at least three players.
-                    Mid-game they're out for good. If they were actively playing, their property is locked for a
-                    while: nobody can buy it, and landing on it still costs the rent it was charging. If they'd gone
-                    idle for a minute or dropped out, it goes straight back to the bank. Someone who's already dropped
-                    out gets two minutes to reconnect instead of a vote.
+                    Everyone else has to agree — two-thirds at a big table. Kick someone who's playing and their
+                    property locks for a while; if they were idle or gone, it goes back to the bank.
                 </p>
                 <div className="flex flex-col gap-2">
                     {others.length === 0 && (

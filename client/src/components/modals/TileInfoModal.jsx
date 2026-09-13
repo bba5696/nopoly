@@ -111,12 +111,11 @@ export function TileInfoModal({ tile, onClose }) {
                     <p className="flex gap-2 border-b border-white/8 px-5 py-3 text-[12px] leading-snug text-muted-foreground">
                         <Lock className="mt-0.5 size-3.5 shrink-0 text-[#ffb648]" />
                         <span>
-                            Taken back from a player who was voted out. Nobody can buy it for {locked} more turn
-                            {locked === 1 ? '' : 's'} — landing here still costs {lockedRentLabel(state, tile)}
+                            Can't be bought yet. Landing here costs {lockedRentLabel(state, tile)}
                             {/* A big number on an empty tile needs its reason next to it. */}
                             {tile.lockedHouses > 0 &&
-                                `, what it charged with ${tile.lockedHouses === 5 ? 'a hotel' : `${tile.lockedHouses} house${tile.lockedHouses === 1 ? '' : 's'}`}`}
-                            , paid to the bank.
+                                ` (${tile.lockedHouses === 5 ? 'hotel' : `${tile.lockedHouses}-house`} rent)`}
+                            .
                         </span>
                     </p>
                 )}

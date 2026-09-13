@@ -74,7 +74,17 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
             emblem={
                 // plain slots carry their icon in the body instead
                 (!plain || isTax) && (
-                    <SlotEmblem side={side} ring={owner ? alpha(owner.color, 0.95) : alpha(accent, 0.6)}>
+                    <SlotEmblem
+                        side={side}
+                        ring={owner ? alpha(owner.color, 0.95) : alpha(accent, 0.6)}
+                        badge={
+                            lockedFor > 0 && (
+                                <span className="absolute -top-[0.3em] -right-[0.3em] flex size-[0.85em] items-center justify-center rounded-full border-[0.1em] border-[#ffb648] text-[#ffb648]">
+                                    <Lock className="size-[0.5em]" strokeWidth={3} />
+                                </span>
+                            )
+                        }
+                    >
                         {flag ? (
                             <img src={flag} alt="" className="size-full object-cover" draggable={false} />
                         ) : (
@@ -155,14 +165,9 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                             tile.houses > 0 && <Houses houses={tile.houses} />
                         ) : lockedFor > 0 ? (
                             // Taken back from a vote-kick: no price, because there
-                            // is nothing to buy. The number is how long for.
-                            <span
-                                className="flex items-center gap-[0.2em] text-[#ffb648]"
-                                title={`Locked for ${lockedFor} more turn${lockedFor === 1 ? '' : 's'}`}
-                            >
-                                <Lock className="size-[0.85em]" />
-                                {lockedFor}
-                            </span>
+                            // is nothing to buy. What it was built to stays on
+                            // show, since that is what landing here still costs.
+                            tile.lockedHouses > 0 && <Houses houses={tile.lockedHouses} />
                         ) : (
                             <>
                                 ${priceOf(tile)}

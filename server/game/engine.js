@@ -1555,8 +1555,7 @@ function payLockedRent(room, player, tile, dice) {
     else if (tile.type === 'property') base = tile.rent[0];
     else if (tile.type === 'airport') base = room.board.airportRent[0];
     const rent = Math.round(base * (1 - boonsOf(room, player).rentOff / 100));
-    const left = tile.lockedUntil - room.stats.turnCount;
-    payBank(room, player, rent, `rent on ${tile.name}, locked for ${left} more turn${left === 1 ? '' : 's'}`);
+    payBank(room, player, rent, `rent on locked ${tile.name}`);
 }
 
 function resolveLanding(room, player, dice) {
@@ -2857,8 +2856,8 @@ function finishVote(room, passed) {
         abandoned || lockEstate
             ? ''
             : target.connected
-              ? ' · they had gone idle, so nothing is locked'
-              : ' · they had dropped out, so nothing is locked';
+              ? ' · was idle, so no lock'
+              : ' · dropped out, so no lock';
     return ejectPlayer(
         room,
         target,
@@ -2899,11 +2898,7 @@ function lockTiles(room, target, charging) {
         locked.push(tile);
     }
     if (!locked.length) return;
-    const what = locked.length === 1 ? 'property is' : `${locked.length} properties are`;
-    log(
-        room,
-        `${target.name}’s ${what} locked for ${LOCK_ROUNDS} rounds — nobody can buy them, and landing on one still costs what it charged`,
-    );
+    log(room, `${target.name}’s ${locked.length === 1 ? 'property is' : 'properties are'} locked for ${LOCK_ROUNDS} rounds`);
 }
 
 /** Whether a tile is still off the market after a vote-kick. */

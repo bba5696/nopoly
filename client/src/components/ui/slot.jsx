@@ -155,23 +155,29 @@ export function SlotName({ className, children, ...props }) {
 /**
  * Round emblem straddling the inner edge of the card. Rendered outside the
  * clipped surface so it can hang over the frame.
+ *
+ * `badge` rides on top of it — the lock on a tile taken back after a vote-kick
+ * — and sits outside the emblem's own clipping circle, which would otherwise
+ * cut it in half. The wrapper takes the position; the circle inside it clips.
  */
-export function SlotEmblem({ side = 'bottom', ring, className, style, children, ...props }) {
+export function SlotEmblem({ side = 'bottom', ring, badge, className, style, children, ...props }) {
     return (
         <span
             data-slot="slot-emblem"
-            className={cn(
-                'pointer-events-none absolute z-[5] flex size-[1.6em] items-center justify-center overflow-hidden rounded-full bg-[#12121a] text-[0.95em] leading-none',
-                className,
-            )}
-            style={{
-                ...EMBLEM_POSITION[side],
-                boxShadow: `0 0 0 0.12em ${ring || 'rgba(255,255,255,.18)'}, 0 0.15em 0.35em rgba(0,0,0,.7)`,
-                ...style,
-            }}
+            className="pointer-events-none absolute z-[5] size-[1.6em] text-[0.95em] leading-none"
+            style={{ ...EMBLEM_POSITION[side], ...style }}
             {...props}
         >
-            {children}
+            <span
+                className={cn(
+                    'flex size-full items-center justify-center overflow-hidden rounded-full bg-[#12121a]',
+                    className,
+                )}
+                style={{ boxShadow: `0 0 0 0.12em ${ring || 'rgba(255,255,255,.18)'}, 0 0.15em 0.35em rgba(0,0,0,.7)` }}
+            >
+                {children}
+            </span>
+            {badge}
         </span>
     );
 }
