@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronsRight } from 'lucide-react';
+import { ChevronsRight, Lock } from 'lucide-react';
 import { isCorner, jailIndex, taxLabel, tilePlacement } from '@/lib/board-layout';
 import { alpha } from '@/lib/color';
 import { cn } from '@/lib/utils';
@@ -19,7 +19,7 @@ const VACANT_SURFACE = 'rgba(255,255,255,0.055)';
 const TAX_PILL = 'rgba(255,92,124,0.14)';
 const TAX_TEXT = '#ff9db2';
 
-export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOwned, onSelect, dim, lit, litColor, lot }) {
+export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOwned, onSelect, dim, lit, litColor, lot, lockedFor = 0 }) {
     const { side, row, col } = tilePlacement(tile.id, boardSize);
     const corner = isCorner(tile.id, boardSize);
     const jail = tile.id === jailIndex(boardSize);
@@ -153,6 +153,16 @@ export function Tile({ tile, boardSize, groups, fontSize, nameSize, owner, setOw
                         {/* owned slots drop the price — the colour says it all */}
                         {owner ? (
                             tile.houses > 0 && <Houses houses={tile.houses} />
+                        ) : lockedFor > 0 ? (
+                            // Taken back from a vote-kick: no price, because there
+                            // is nothing to buy. The number is how long for.
+                            <span
+                                className="flex items-center gap-[0.2em] text-[#ffb648]"
+                                title={`Locked for ${lockedFor} more turn${lockedFor === 1 ? '' : 's'}`}
+                            >
+                                <Lock className="size-[0.85em]" />
+                                {lockedFor}
+                            </span>
                         ) : (
                             <>
                                 ${priceOf(tile)}

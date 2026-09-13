@@ -1,9 +1,9 @@
-import { Home, Hotel, ArrowDownRight, ArrowUpRight, Banknote } from 'lucide-react';
+import { Home, Hotel, ArrowDownRight, ArrowUpRight, Banknote, Lock } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { money, taxLabel } from '@/lib/board-layout';
-import { rentTable, ownsFullGroup, canBuild, canSell, sameSide } from '@/lib/rent';
+import { rentTable, ownsFullGroup, canBuild, canSell, sameSide, lockedTurns, lockedRentLabel } from '@/lib/rent';
 import { alpha } from '@/lib/color';
 import { priceOf, trendColor, trendOf } from '@/lib/market';
 
@@ -81,6 +81,7 @@ export function TileInfoModal({ tile, onClose }) {
     const sellOk = mine && tile.houses === 0;
     const priced = tile.price > 0;
     const trend = trendOf(tile);
+    const locked = lockedTurns(state, tile);
 
     return (
         <Modal open={!!tile} onClose={onClose} width={380}>
@@ -95,12 +96,27 @@ export function TileInfoModal({ tile, onClose }) {
                             that the number varies by tile. */}
                         {owner
                             ? `owned by ${owner.name}`
-                            : tile.type === 'tax'
+                            : locked > 0
+                              ? `locked · ${locked} turn${locked === 1 ? '' : 's'}`
+                              : tile.type === 'tax'
                               ? `tax · ${taxLabel(tile)}`
                               : group?.name || tile.type}
                     </span>
                     <h2 className="text-2xl font-medium">{tile.name}</h2>
                 </header>
+
+                {/* Why a property with nobody's name on it has no price. The
+                    board shows a lock and a number; this is the sentence. */}
+                {locked > 0 && (
+                    <p className="flex gap-2 border-b border-white/8 px-5 py-3 text-[12px] leading-snug text-muted-foreground">
+                        <Lock className="mt-0.5 size-3.5 shrink-0 text-[#ffb648]" />
+                        <span>
+                            Taken back from a player who was voted out. Nobody can buy it for {locked} more turn
+                            {locked === 1 ? '' : 's'} — landing here still costs {lockedRentLabel(state, tile)}, paid to
+                            the bank.
+                        </span>
+                    </p>
+                )}
 
                 {priced ? (
                     <div className="flex flex-col gap-3 p-5">

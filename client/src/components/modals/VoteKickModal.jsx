@@ -77,10 +77,11 @@ export function VoteKickPicker({ open, onClose }) {
         <Modal open={open} onClose={onClose} subtitle="Vote to remove" title="Kick a player" width={420}>
             <div className="flex flex-col gap-4 p-5">
                 <p className="text-[13px] leading-snug text-muted-foreground">
-                    Everyone else still in the game has to agree, up to four votes, and who voted goes in the log.
-                    Opens five minutes into a game, and needs at least three players. Mid-game it's the same as
-                    resigning: their property goes back to the bank and they can't rejoin. Someone who's already
-                    dropped out gets two minutes to reconnect instead of a vote.
+                    Everyone else still in the game has to agree — at a big table, two-thirds of them — and who
+                    voted goes in the log. Opens five minutes into a game, and needs at least three players.
+                    Mid-game they're out for good, and their property is locked for a while: nobody can buy it, and
+                    landing on it still costs rent. Someone who's already dropped out gets two minutes to reconnect
+                    instead of a vote.
                 </p>
                 <div className="flex flex-col gap-2">
                     {others.length === 0 && (

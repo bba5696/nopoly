@@ -207,6 +207,20 @@ const MIN_VOTERS = 3;
  */
 const VOTE_CAP = 4;
 /**
+ * At a big table, the share of everyone else a kick needs. The cap above keeps
+ * a small table from being vetoed by one phone nobody is looking at; this keeps
+ * a big one from being run by four friends — at twelve players the cap alone
+ * was four of eleven, a third of the table deciding for the rest.
+ */
+const VOTE_SHARE = 2 / 3;
+/**
+ * How long a voted-out player's estate stays off the market, in rounds of the
+ * table. Kicking whoever was winning used to put their whole estate straight
+ * back on sale to the people who had just voted — this takes the profit out of
+ * a kick without taking the kick away.
+ */
+const LOCK_ROUNDS = 5;
+/**
  * How long someone who has dropped out gets to come back before a kick called
  * on them goes through on its own. Two minutes: long enough for a phone
  * changing networks or a refresh that hung, short enough that a table is not
@@ -1495,6 +1509,22 @@ function rentFor(room, tile, owner, dice) {
     return 0;
 }
 
+/**
+ * Landing on a tile locked after a vote-kick: nothing to buy and no auction,
+ * but the rent still falls due — to the bank, since nobody holds it. The book
+ * rate for one tile on its own, as though a stranger held just that one: a
+ * locked country is not anybody's set.
+ */
+function payLockedRent(room, player, tile, dice) {
+    let base = 0;
+    if (tile.type === 'property') base = tile.rent[0];
+    else if (tile.type === 'airport') base = room.board.airportRent[0];
+    else if (tile.type === 'utility') base = room.board.utilityMultiplier[0] * (dice[0] + dice[1] || 7);
+    const rent = Math.round(base * (1 - boonsOf(room, player).rentOff / 100));
+    const left = tile.lockedUntil - room.stats.turnCount;
+    payBank(room, player, rent, `rent on ${tile.name}, locked for ${left} more turn${left === 1 ? '' : 's'}`);
+}
+
 function resolveLanding(room, player, dice) {
     const tile = room.tiles[player.position];
 
@@ -1541,6 +1571,10 @@ function resolveLanding(room, player, dice) {
 
     // property / airport / utility
     if (tile.ownerId === null) {
+        if (isLocked(room, tile)) {
+            payLockedRent(room, player, tile, dice);
+            return;
+        }
         if (player.cash >= market.priceOf(room, tile)) {
             room.pendingAction = { type: 'buy', playerId: player.id, tileId: tile.id };
         } else if (room.settings.auction) {
@@ -1875,7 +1909,8 @@ function declinePurchase(room, playerId) {
  */
 function startAuction(room, tileId, declinedBy = null) {
     const tile = room.tiles[tileId];
-    if (!tile || tile.ownerId !== null || room.auction) return;
+    // A locked tile cannot be bought at all, and an auction is buying it.
+    if (!tile || tile.ownerId !== null || room.auction || isLocked(room, tile)) return;
     // A reserve price is what stops a table quietly agreeing to let everything
     // go for pocket change.
     const opening = market.openingBid(room, tile);
@@ -2539,17 +2574,33 @@ function voters(room, targetId) {
 }
 
 /**
- * How many yes votes a kick takes: everyone else still in the game, up to four.
- * So 3 players need 2, 4 need 3, 5 need 4, and any bigger table stays at 4.
+ * How many yes votes a kick takes: everyone else up to four, or two-thirds of
+ * them, whichever is more. So 3 players need 2, 4 need 3, 5 need 4 — and past
+ * that the share takes over: 8 need 5, 12 need 8.
  *
- * Unanimity rather than a majority, because removing someone from a game with
- * friends should take the whole table agreeing rather than half of it. The
- * floor of 2 is what stops one player ever removing another on their own — if
+ * Unanimity at a small table, because removing someone from a game with friends
+ * should take the whole table agreeing. The cap is what stops one person who is
+ * not looking at their phone vetoing every vote at a big one; the two-thirds is
+ * what stops the cap turning into four friends deciding for eleven. The floor
+ * of 2 is what stops one player ever removing another on their own — if
  * bankruptcies leave only one eligible voter, the bar becomes unreachable and
  * the vote fails immediately rather than handing them the power.
  */
-const votesNeeded = (room, targetId) => clampVotes(voters(room, targetId).length);
-const clampVotes = (eligible) => Math.max(2, Math.min(eligible, VOTE_CAP));
+const votesNeeded = (room, targetId, vote = null) => clampVotes(eligibleVoters(room, targetId, vote).length);
+const clampVotes = (eligible) => Math.max(2, Math.min(eligible, VOTE_CAP), Math.ceil(eligible * VOTE_SHARE));
+
+/**
+ * The voters a ballot's bar is measured against: everyone still in the game who
+ * could actually answer it. Somebody whose tab is closed cannot, and counting
+ * them was the reason the cap had to exist — so they are left out until they
+ * are back, while anybody who has already voted stays counted whatever their
+ * connection does next.
+ */
+function eligibleVoters(room, targetId, vote = null) {
+    return voters(room, targetId).filter(
+        (p) => p.connected || !!vote?.yes.includes(p.id) || !!vote?.no.includes(p.id),
+    );
+}
 
 /**
  * When this game becomes old enough for anyone to be voted out. Null in the
@@ -2678,9 +2729,9 @@ function resolveVoteIfDecided(room) {
     // A countdown has no tally to settle — it ends when the clock does, or the
     // moment they reconnect.
     if (vote.mode === 'abandon') return null;
-    // Recounted every time: someone may have gone bankrupt mid-vote, which
-    // changes how many people are left to agree.
-    const eligible = voters(room, vote.targetId).length;
+    // Recounted every time: someone may have gone bankrupt mid-vote, or closed
+    // their tab, or come back — each of which changes who is left to agree.
+    const eligible = eligibleVoters(room, vote.targetId, vote).length;
     const needed = clampVotes(eligible);
     vote.needed = needed;
 
@@ -2701,7 +2752,11 @@ function expireVote(room) {
         const target = findPlayer(room, vote.targetId);
         return finishVote(room, !!target && !target.connected);
     }
-    return finishVote(room, vote.yes.length >= vote.needed);
+    // Recounted before it is judged: somebody may have dropped since the last
+    // vote came in, and the bar is measured against who could still answer.
+    const settled = resolveVoteIfDecided(room);
+    if (settled || !room.vote) return settled || {};
+    return finishVote(room, room.vote.yes.length >= room.vote.needed);
 }
 
 /** Names for a list of ids, for a log line that has to name people. */
@@ -2745,7 +2800,46 @@ function finishVote(room, passed) {
         abandoned
             ? `${target.name} never came back and is out`
             : `${target.name} was voted out (${vote.yes.length}/${vote.needed}) — ${tally}`,
+        // Only a ballot. Somebody who drifted away profits nobody by going, and
+        // the countdown is the room's way of shedding an empty seat.
+        { lockEstate: !abandoned },
     );
+}
+
+/**
+ * Keep a voted-out player's estate off the market for a while.
+ *
+ * Their deeds go back to the bank the way any resignation's do — and that was
+ * the problem: voting out whoever was winning put their whole estate straight
+ * back on sale, to the people who had just voted. So for LOCK_ROUNDS rounds of
+ * the table nobody can buy those tiles or take them at auction. They are not
+ * free to land on either: the rent is still charged, to the bank, so a locked
+ * country is not a safe corridor for everyone who removed its owner.
+ *
+ * Counted in turns rather than minutes, so a pause or a restart does not run it
+ * down, and scaled by the table, so each player passes it about as often
+ * however many are left.
+ */
+function lockTiles(room, target, tileIds) {
+    const until = room.stats.turnCount + LOCK_ROUNDS * Math.max(activePlayers(room).length, 1);
+    const locked = [];
+    for (const id of tileIds) {
+        const tile = room.tiles[id];
+        if (!tile || tile.ownerId !== null) continue;
+        tile.lockedUntil = until;
+        locked.push(tile);
+    }
+    if (!locked.length) return;
+    const what = locked.length === 1 ? 'property is' : `${locked.length} properties are`;
+    log(
+        room,
+        `${target.name}’s ${what} locked for ${LOCK_ROUNDS} rounds — nobody can buy them, and landing on one still costs rent`,
+    );
+}
+
+/** Whether a tile is still off the market after a vote-kick. */
+function isLocked(room, tile) {
+    return tile.lockedUntil != null && room.stats.turnCount < tile.lockedUntil;
 }
 
 /**
@@ -2755,7 +2849,7 @@ function finishVote(room, passed) {
  * the site's admin. Two paths would be two chances for one of them to forget
  * the ban, or to leave a kicked player's estate with a friend.
  */
-function ejectPlayer(room, target, note) {
+function ejectPlayer(room, target, note, { lockEstate = false } = {}) {
     // Banned, not merely removed — otherwise they reconnect two seconds later
     // and the removal meant nothing.
     banFromRoom(room, target);
@@ -2770,7 +2864,11 @@ function ejectPlayer(room, target, note) {
     // a friend your property.
     target.resigned = true;
     dropVoteFor(room, target.id);
+    // Taken before it is handed back: removeFromPlay empties the list. A card
+    // game has no estate, and the empty list is the whole of that case.
+    const estate = lockEstate && Array.isArray(target.properties) ? target.properties.slice() : [];
     rulesFor(room).removeFromPlay(room, target);
+    if (estate.length && room.phase !== 'ended') lockTiles(room, target, estate);
     return {};
 }
 

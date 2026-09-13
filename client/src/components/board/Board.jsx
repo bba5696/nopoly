@@ -5,6 +5,7 @@ import { useElementSize } from '@/lib/use-element-size';
 import { useNameSize } from '@/lib/use-name-size';
 import { gridFor } from '@/lib/board-layout';
 import { lotGroup, lotStakes } from '@/lib/auction';
+import { lockedTurns } from '@/lib/rent';
 import { Tile } from './Tile';
 import { TokenLayer } from './TokenLayer';
 import { BoardCenter } from './BoardCenter';
@@ -139,6 +140,7 @@ export function Board({ display, moving, spotlight, onSelectTile, sizePx, auctio
                         lit={!!focus && focus.ids.has(tile.id)}
                         litColor={focus?.color}
                         lot={focus?.lotId === tile.id}
+                        lockedFor={lockedTurns(state, tile)}
                     />
                 ))}
                 <BoardCenter

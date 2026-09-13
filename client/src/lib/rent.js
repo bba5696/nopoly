@@ -183,6 +183,24 @@ export function rentTable(state, tile) {
     return [];
 }
 
+/**
+ * Turns left before a tile taken back from a vote-kick can be bought again, or
+ * 0 once it can. Mirrors engine.isLocked — the server refuses the purchase; this
+ * only explains why there is no price on the tile.
+ */
+export function lockedTurns(state, tile) {
+    if (!tile?.lockedUntil || tile.ownerId) return 0;
+    return Math.max(0, tile.lockedUntil - (state?.stats?.turnCount ?? 0));
+}
+
+/** What landing on a locked tile costs: the book rent for one tile on its own. */
+export function lockedRentLabel(state, tile) {
+    if (tile.type === 'property') return `$${tile.rent[0]}`;
+    if (tile.type === 'airport') return `$${airportRent(state)[0]}`;
+    if (tile.type === 'utility') return `${utilityMultiplier(state)[0]}× the dice`;
+    return null;
+}
+
 /** Anyone on the side can develop the side's set, out of their own cash. */
 export function canBuild(state, player, tile) {
     if (!player || tile.type !== 'property' || !sameSide(state, tile.ownerId, player.id)) return false;

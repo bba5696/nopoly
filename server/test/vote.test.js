@@ -11,6 +11,8 @@ const ok = (l, c, x) => (c ? pass++ : fails.push(l + (x ? ` — ${x}` : '')));
 // block that isn't about them wants them out of the way.
 function mk(names, { start = true, open = true } = {}) {
     const r = e.createRoom('VOTE');
+    // Room for the twelve-player tables the thresholds are checked against.
+    r.settings.maxPlayers = 99;
     const p = {};
     for (const n of names) p[n] = e.addPlayer(r, { name: n }).player;
     if (start) e.startGame(r, p[names[0]].id);
@@ -20,10 +22,11 @@ function mk(names, { start = true, open = true } = {}) {
 
 /* ---------------------------------------------------------- the thresholds */
 {
-    // The table the rule was specified as: everyone else has to agree, to a
-    // ceiling of four.
-    for (const [players, need] of [[3, 2], [4, 3], [5, 4], [6, 4], [8, 4]]) {
-        const names = ['Ada', 'Bo', 'Cy', 'Di', 'Ev', 'Fi', 'Gu', 'Ha'].slice(0, players);
+    // The table the rule was specified as: everyone else up to four, or
+    // two-thirds of them, whichever is more — so a small table stays unanimous
+    // and a big one cannot be run by four friends.
+    for (const [players, need] of [[3, 2], [4, 3], [5, 4], [6, 4], [7, 4], [8, 5], [10, 6], [12, 8]]) {
+        const names = ['Ada', 'Bo', 'Cy', 'Di', 'Ev', 'Fi', 'Gu', 'Ha', 'Ia', 'Jo', 'Ki', 'Lu'].slice(0, players);
         const { r, p } = mk(names);
         e.startVoteKick(r, p.Ada.id, p.Bo.id);
         const got = r.vote ? r.vote.needed : 'resolved';
@@ -67,6 +70,7 @@ function mk(names, { start = true, open = true } = {}) {
     ok('the target is out', p.Bo.bankrupt);
     ok('their estate went to the bank', r.tiles[tile.id].ownerId === null && r.tiles[tile.id].houses === 0);
     ok('nobody inherited it', !r.players.some((q) => q.properties.includes(tile.id)));
+    ok('and it is locked off the market', r.tiles[tile.id].lockedUntil > r.stats.turnCount, String(r.tiles[tile.id].lockedUntil));
     ok('and they are banned', !!e.addPlayer(r, { name: 'Bo', playerId: p.Bo.id }).error);
     ok('the game continues', r.phase !== 'ended', r.phase);
     ok('others are untouched', !p.Cy.bankrupt && !p.Di.bankrupt);
@@ -102,6 +106,92 @@ function mk(names, { start = true, open = true } = {}) {
     p3.Bo.connected = false;
     ok('a player who dropped out gets a countdown', !e.startVoteKick(r3, p3.Ada.id, p3.Bo.id).error && r3.vote?.mode === 'abandon');
     ok('of two minutes', r3.vote.endsAt - r3.vote.startedAt === 2 * 60_000, String(r3.vote.endsAt - r3.vote.startedAt));
+}
+
+/* ------------------------------------ only voters who can answer are counted */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di', 'Ev', 'Fi', 'Gu', 'Ha']);
+    // Eight players is seven voters and a bar of five — with two tabs closed,
+    // five who can answer and a bar of four.
+    p.Gu.connected = false;
+    p.Ha.connected = false;
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    ok('a closed tab is not counted towards the bar', r.vote.needed === 4, String(r.vote.needed));
+    e.castVote(r, p.Cy.id, true);
+    p.Cy.connected = false;
+    e.castVote(r, p.Di.id, false);
+    ok('a voter who drops after voting is still counted', r.vote?.needed === 4, JSON.stringify(r.vote));
+}
+
+/* --------------------------------------------- four friends are not a big table */
+{
+    const names = ['Ada', 'Bo', 'Cy', 'Di', 'Ev', 'Fi', 'Gu', 'Ha', 'Ia', 'Jo', 'Ki', 'Lu'];
+    const { r, p } = mk(names);
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    for (const n of ['Cy', 'Di', 'Ev']) e.castVote(r, p[n].id, true);
+    ok('four yeses do not remove anyone from twelve', r.vote !== null && !p.Bo.bankrupt, JSON.stringify(r.vote));
+    for (const n of ['Fi', 'Gu', 'Ha', 'Ia']) e.castVote(r, p[n].id, true);
+    ok('eight do', r.vote === null && p.Bo.bankrupt);
+}
+
+/* ------------------------------------------ a kick locks the estate for a while */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    const tile = r.tiles.find((t) => t.type === 'property');
+    tile.ownerId = p.Bo.id;
+    p.Bo.properties.push(tile.id);
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    e.castVote(r, p.Cy.id, true);
+    e.castVote(r, p.Di.id, true);
+    ok('voted out', p.Bo.bankrupt);
+    ok('the estate is locked', tile.lockedUntil > r.stats.turnCount);
+    ok(
+        'for five rounds of whoever is left',
+        tile.lockedUntil - r.stats.turnCount === 5 * 3,
+        String(tile.lockedUntil - r.stats.turnCount),
+    );
+    ok('and the feed says so', r.log.some((l) => /locked for 5 rounds/.test(l.text)));
+
+    // Nobody can take it at auction.
+    e.startAuction(r, tile.id);
+    ok('a locked tile cannot be auctioned', r.auction === null);
+
+    // Landing on it: no offer to buy, and rent to the bank.
+    const lander = p.Cy;
+    lander.cash = 1000;
+    lander.position = tile.id;
+    r.pendingAction = null;
+    e.resolveLanding(r, lander, [3, 4]);
+    ok('landing offers nothing to buy', r.pendingAction === null && r.auction === null, JSON.stringify(r.pendingAction));
+    ok('but charges its rent', lander.cash === 1000 - tile.rent[0], String(lander.cash));
+    ok('paid to the bank', r.lastPayment?.toId === null && r.lastPayment?.amount === tile.rent[0], JSON.stringify(r.lastPayment));
+
+    // Once the rounds are up it is an ordinary tile again.
+    r.stats.turnCount = tile.lockedUntil;
+    lander.cash = 1000;
+    e.resolveLanding(r, lander, [3, 4]);
+    ok('after the lock it can be bought', r.pendingAction?.type === 'buy' && r.pendingAction.tileId === tile.id, JSON.stringify(r.pendingAction));
+    ok('with no rent charged', lander.cash === 1000, String(lander.cash));
+}
+
+/* ------------------------------------- a dropout and an admin kick lock nothing */
+{
+    const { r, p } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    const tile = r.tiles.find((t) => t.type === 'property');
+    tile.ownerId = p.Bo.id;
+    p.Bo.properties.push(tile.id);
+    p.Bo.connected = false;
+    e.startVoteKick(r, p.Ada.id, p.Bo.id);
+    e.expireVote(r);
+    ok('a dropout is removed', p.Bo.bankrupt);
+    ok('and their estate is not locked', !tile.lockedUntil);
+
+    const { r: r2, p: p2 } = mk(['Ada', 'Bo', 'Cy', 'Di']);
+    const t2 = r2.tiles.find((t) => t.type === 'property');
+    t2.ownerId = p2.Bo.id;
+    p2.Bo.properties.push(t2.id);
+    e.adminKick(r2, p2.Bo.id);
+    ok('an admin kick locks nothing either', p2.Bo.bankrupt && !t2.lockedUntil);
 }
 
 /* ------------------------------------------------------ the opening minutes */

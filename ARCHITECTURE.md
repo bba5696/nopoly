@@ -410,10 +410,25 @@ that window was somebody reacting to a bad opening roll.
 **A ballot needs at least three players in the game.** Below that, calling the
 vote *is* the vote, and one person would be removing another.
 
-**It still takes a majority** — everyone else still in the game, to a ceiling
-of four — **and everything is on the record.** The log names who called it and
+**It takes everyone else up to four, or two-thirds of them, whichever is
+more** — 5 players need 4, 8 need 5, 12 need 8. The cap alone kept one absent
+phone from vetoing every vote at a big table, and also let any four friends
+remove anyone at one: at twelve that was a third of the table deciding. Players
+whose tab is closed are left out of the count until they are back, which is
+what the cap was really protecting against; anyone who has already voted stays
+counted. **And everything is on the record.** The log names who called it and
 who voted which way. Among friends that is the part that actually keeps it
 honest.
+
+**A kick is not worth anything to the people who vote for it.** A voted-out
+player's estate goes back to the bank like any resignation's — and that used to
+put the leader's whole estate straight back on sale to the people who had just
+removed them. So a passed ballot locks those tiles for five rounds of the table
+(`lockTiles`): nobody can buy them or take them at auction, and landing on one
+still charges its book rent, to the bank, so a locked country is no free
+corridor either. Counted in turns, so a pause cannot run it down. A dropout's
+countdown and the admin's kick lock nothing — neither is a table choosing to
+remove somebody.
 
 None of it applies to a player who has dropped out. That path isn't a ballot at
 all but a two-minute countdown they end by coming back — the room's only way of
