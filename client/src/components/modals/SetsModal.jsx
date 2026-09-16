@@ -53,10 +53,14 @@ function Country({ groupId, blocked, onOpenTile }) {
         .filter((t) => t.ownerId === me?.id)
         .reduce((sum, t) => sum + Math.max(0, t.houses - want) * Math.floor(t.houseCost / 2), 0);
 
+    // What the bank has left. The panel is where whole countries go up, so a
+    // shortage shows here before it shows anywhere else.
+    const stock = state.buildings;
+    const short = stock?.limited && (want === 5 ? stock.hotelsLeft < 1 : stock.housesLeft < 1);
     const selling = want < high;
     const nothing = low === want && high === want;
     const tooPoor = !selling && cost > (me?.cash ?? 0);
-    const stop = selling ? null : blocked;
+    const stop = selling ? null : blocked || (short ? `the bank has no ${want === 5 ? 'hotels' : 'houses'} left` : null);
 
     const act = () => {
         if (selling) send('game:sellTo', { groupId, level: want });
@@ -191,14 +195,16 @@ export function SetsModal({ groupId, onClose, onOpenTile }) {
             ? 'you bought a share back this turn — build next turn'
             : null;
 
+    // Sets in hand, and — when the table is playing the shortage — what is left
+    // in the bank to build with. The second number is the one that decides
+    // whether crowning a hotel is generous or foolish.
+    const stock = state.buildings;
+    const subtitle = stock?.limited
+        ? `${sets.length} countries · bank has ${stock.housesLeft} houses, ${stock.hotelsLeft} hotels`
+        : `${sets.length} countries`;
+
     return (
-        <Modal
-            open
-            onClose={onClose}
-            width={560}
-            subtitle={`${sets.length} countries`}
-            title="Your sets"
-        >
+        <Modal open onClose={onClose} width={560} subtitle={subtitle} title="Your sets">
             <div className="scroll-thin flex max-h-[62svh] flex-col gap-3 overflow-y-auto p-4">
                 {ordered.map((g) => (
                     <Country key={g} groupId={g} blocked={blocked} onOpenTile={onOpenTile} />

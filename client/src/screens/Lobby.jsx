@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, Hand, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, Hand, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Store, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -117,6 +117,12 @@ const RULES = [
         icon: Hammer,
         label: 'Even build',
         hint: 'Houses and hotels must be built up and sold off evenly within a property set',
+    },
+    {
+        key: 'limitedBuildings',
+        icon: Store,
+        label: 'Limited buildings',
+        hint: 'The bank owns 20 houses and 8 hotels. When they run out nobody can build until somebody sells — so holding a set at four houses each, rather than crowning hotels, starves the table',
     },
     {
         key: 'teams',

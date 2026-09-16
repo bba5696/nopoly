@@ -253,6 +253,147 @@ const upNow = (r) => r.players[r.turnIndex];
     ok('and a stranger cannot sell yours', !!e.sellSetTo(r, idle.id, g, 0).error);
 }
 
+/* ------------------------------------------------ the bank runs out of houses */
+{
+    // The rule is set before the game starts in a lobby; these tests build the
+    // room by hand, so the setting goes on directly.
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    const up = upNow(r);
+    up.cash = 1000000;
+
+    const stock0 = e.buildingStock(r);
+    ok('the bank starts full', stock0.housesLeft === 20 && stock0.hotelsLeft === 8, JSON.stringify(stock0));
+
+    // Every country on the board, so the only thing that can stop the building
+    // is the bank.
+    for (const t of r.tiles) {
+        if (t.type !== 'property') continue;
+        t.ownerId = up.id;
+        up.properties.push(t.id);
+    }
+    const groups = [...new Set(r.tiles.filter((t) => t.type === 'property' && t.groupId).map((t) => t.groupId))];
+    let refused = null;
+    for (const g of groups) {
+        const res = e.buildSetTo(r, up.id, g, 4);
+        if (res.error) {
+            refused = res.error;
+            break;
+        }
+    }
+
+    const stock = e.buildingStock(r);
+    ok('the board never holds more than twenty houses', stock.houses === 20, String(stock.houses));
+    ok('and the bank is empty rather than negative', stock.housesLeft === 0, JSON.stringify(stock));
+    ok('with money still in hand, so it was the bank that stopped it', up.cash > 100000, String(up.cash));
+    ok('the next country is refused', !!refused, String(refused));
+    ok('and it says which building ran out', /no houses left/.test(refused || ''), String(refused));
+
+    // One house back in the bank is one house somebody else can build.
+    const built = r.tiles.find((t) => t.houses > 0);
+    e.sellHouse(r, up.id, built.id);
+    ok('selling one frees one', e.buildingStock(r).housesLeft === 1);
+}
+
+/* ------------------------------- a hotel hands its houses back to the bank */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    const up = upNow(r);
+    up.cash = 1000000;
+    const set = aSet(r);
+    give(r, up, set);
+
+    e.buildSetTo(r, up.id, set[0].groupId, 4);
+    ok('the set is at four each', set.every((t) => t.houses === 4));
+    const before = e.buildingStock(r).housesLeft;
+
+    e.buildHouse(r, up.id, set[0].id);
+    const after = e.buildingStock(r);
+    ok('crowning a hotel spends one', after.hotelsLeft === 7, String(after.hotelsLeft));
+    ok('and hands its four houses back', after.housesLeft === before + 4, `${before} -> ${after.housesLeft}`);
+    ok('so a board with no houses left can still crown one', true);
+}
+
+/* ------------------------- with no houses to break it into, a hotel is razed */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    const up = upNow(r);
+    up.cash = 1000000;
+    const set = aSet(r);
+    give(r, up, set);
+    const cost = set[0].houseCost;
+
+    e.buildSetTo(r, up.id, set[0].groupId, 5);
+    ok('the set is hotels', set.every((t) => t.houses === 5));
+
+    // Park every remaining house on tiles nobody is testing, four at a time,
+    // so the bank is genuinely empty rather than holding an impossible pile.
+    const spare = r.tiles.filter((t) => t.type === 'property' && t.groupId !== set[0].groupId);
+    for (const t of spare) {
+        const left = e.buildingStock(r).housesLeft;
+        if (!left) break;
+        t.houses = Math.min(4, left);
+    }
+    ok('the bank is empty of houses', e.buildingStock(r).housesLeft === 0, JSON.stringify(e.buildingStock(r)));
+
+    up.cash = 0;
+    e.sellHouse(r, up.id, set[0].id);
+    ok('the hotel is gone rather than broken up', set[0].houses === 0, String(set[0].houses));
+    ok('and it was paid for all five levels', up.cash === Math.floor(cost / 2) * 5, String(up.cash));
+    ok('the feed says why', r.log.some((l) => /no houses left to break it into/.test(l.text)));
+
+    // Houses back in the bank, and the next hotel breaks up the ordinary way.
+    for (const t of spare) t.houses = 0;
+    up.cash = 0;
+    e.sellHouse(r, up.id, set[1].id);
+    ok('a hotel with houses available becomes four', set[1].houses === 4, String(set[1].houses));
+    ok('paid for one level', up.cash === Math.floor(cost / 2), String(up.cash));
+}
+
+/* ---------------------------------- a debt can always be sold down to money */
+{
+    // The reason a razed hotel pays for all five: somebody owing money must
+    // never be holding buildings the rules will not let them turn into it.
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    const up = upNow(r);
+    up.cash = 1000000;
+    const set = aSet(r);
+    give(r, up, set);
+    e.buildSetTo(r, up.id, set[0].groupId, 5);
+    for (const t of r.tiles.filter((t) => t.type === 'property' && t.groupId !== set[0].groupId)) {
+        const left = e.buildingStock(r).housesLeft;
+        if (!left) break;
+        t.houses = Math.min(4, left);
+    }
+
+    up.cash = 0;
+    ok('every hotel can still be sold', set.every((t) => !e.sellHouse(r, up.id, t.id).error));
+    ok('and they all came down', set.every((t) => t.houses === 0), set.map((t) => t.houses).join());
+    ok('for real money', up.cash > 0, String(up.cash));
+}
+
+/* ------------------------------------------- and the table can switch it off */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    const up = upNow(r);
+    up.cash = 1000000;
+    ok('off by default', r.settings.limitedBuildings === false);
+    ok('and the stock says so', e.buildingStock(r).limited === false);
+
+    for (const t of r.tiles) {
+        if (t.type !== 'property') continue;
+        t.ownerId = up.id;
+        up.properties.push(t.id);
+    }
+    const groups = [...new Set(r.tiles.filter((t) => t.type === 'property' && t.groupId).map((t) => t.groupId))];
+    for (const g of groups) e.buildSetTo(r, up.id, g, 5);
+    const hotels = r.tiles.filter((t) => t.houses === 5).length;
+    ok('with the rule off there is no ceiling', hotels > 8, `${hotels} hotels`);
+}
+
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const f of fails) console.log('  FAIL ' + f);

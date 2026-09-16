@@ -445,6 +445,29 @@ all but a two-minute countdown they end by coming back — the room's only way o
 shedding an empty seat. Nor can any vote run while a game is paused: somebody
 gone from a paused game is somebody the pause is waiting for.
 
+## The building shortage is a second currency
+
+`limitedBuildings` gives the bank twenty houses and eight hotels, the numbers a
+real set comes with, and off by default. What it buys is not scarcity for its
+own sake: with thirty-two houses standing nobody else can build at all, so
+holding a set at four houses each — rather than crowning hotels and handing the
+houses back — starves the table at no cost but patience. That is the rule, and
+it is why `buildingStock` counts houses and hotels apart rather than counting
+buildings. A tile at five is one hotel and no houses, so a board with every
+house out can still crown the hotel that frees four of them.
+
+Selling is where it gets interesting. A hotel is one building, so selling it
+normally puts four houses back on the tile — and those four have to exist. When
+they do not, the hotel goes and the tile drops to nothing, paid for all five
+levels (`sellOneBuilding`). That is the classic answer to the same shortage, and
+the only one that cannot leave somebody owing money while holding buildings the
+rules will not let them turn into it. `sellSetTo` stops after razing one rather
+than flattening a country nobody asked it to.
+
+Locked tiles hold no buildings — a vote-kick clears them with the rest of the
+estate, and `lockedHouses` is only the memory of what the rent used to be — so
+they cost the bank nothing.
+
 ## Building is turn-gated; selling is not
 
 A deliberate asymmetry. Rent lands on you during *other people's* turns, so you

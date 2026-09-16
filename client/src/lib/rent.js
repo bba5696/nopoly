@@ -210,11 +210,23 @@ export function lockedRentLabel(state, tile) {
 }
 
 /** Anyone on the side can develop the side's set, out of their own cash. */
+/**
+ * Whether the bank still holds what this tile's next step needs. Mirrors
+ * engine.hasBuildingFor, off the counts the server sends: crowning a hotel
+ * spends a hotel and hands four houses back, so the two are counted apart.
+ */
+export function hasBuildingFor(state, tile) {
+    const stock = state.buildings;
+    if (!stock?.limited) return true;
+    return tile.houses === 4 ? stock.hotelsLeft > 0 : stock.housesLeft > 0;
+}
+
 export function canBuild(state, player, tile) {
     if (!player || tile.type !== 'property' || !sameSide(state, tile.ownerId, player.id)) return false;
     if (!ownsFullGroup(state, player.id, tile.groupId)) return false;
     if (tile.houses >= 5) return false;
     if (player.cash < tile.houseCost) return false;
+    if (!hasBuildingFor(state, tile)) return false;
     if (!state.settings.evenBuild) return true;
     const group = state.tiles.filter((t) => t.groupId === tile.groupId);
     return tile.houses === Math.min(...group.map((t) => t.houses));

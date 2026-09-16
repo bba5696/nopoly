@@ -111,6 +111,19 @@ const AUCTION_MS = 10_000;
 /** Raise amounts offered in the auction UI. */
 const BID_STEPS = [2, 10, 100];
 
+/**
+ * How many buildings the bank owns, when the table is playing the shortage.
+ *
+ * The numbers a real set comes with. What they turn into is a second currency:
+ * with thirty-two houses on the board nobody else can build at all, so holding
+ * a set at four houses each — rather than crowning hotels and handing the
+ * houses back — is a way of starving the table that costs nothing but patience.
+ * That is the whole point of the rule, and why the counts are of houses and
+ * hotels apart rather than of buildings.
+ */
+const HOUSE_SUPPLY = 20;
+const HOTEL_SUPPLY = 8;
+
 const DEFAULT_SETTINGS = {
     startingCash: STARTING_CASH,
     passStartBonus: PASS_START_BONUS,
@@ -125,6 +138,7 @@ const DEFAULT_SETTINGS = {
     passNoBid: true,
     noRentInPrison: false,
     evenBuild: true,
+    limitedBuildings: false,
     dynamicValues: false,
     auctionBalance: false,
     teams: false,
@@ -681,6 +695,10 @@ function nopolyView(room) {
         lastPayment: room.lastPayment,
         vacationPot: room.vacationPot,
         bidSteps: BID_STEPS,
+        // What the bank has left to build with, sent whether or not the table
+        // is playing the shortage — the client decides what to show, and
+        // working the counts out twice is how the two come to disagree.
+        buildings: buildingStock(room),
         // How long a fresh auction clock runs, so the countdown is drawn
         // against the length the server is actually keeping rather than a
         // second copy of the number that can fall out of step with it.
@@ -2092,6 +2110,42 @@ function useJailCard(room, playerId) {
 
 /* ---------------------------------------------------------------- building */
 
+const limitedBuildings = (room) => !!room.settings.limitedBuildings;
+
+/**
+ * What the bank has left, and what is standing on the board.
+ *
+ * A tile at five is one hotel and no houses — crowning a hotel hands its four
+ * houses back, which is why a table with every house out can still build the
+ * hotel that frees them. Locked tiles hold no buildings: a vote-kick clears
+ * them with the rest of the estate, and `lockedHouses` is only the memory of
+ * what the rent used to be.
+ */
+function buildingStock(room) {
+    let houses = 0;
+    let hotels = 0;
+    for (const tile of room.tiles) {
+        if (tile.houses === 5) hotels++;
+        else houses += tile.houses;
+    }
+    return {
+        limited: limitedBuildings(room),
+        houses,
+        hotels,
+        housesLeft: Math.max(HOUSE_SUPPLY - houses, 0),
+        hotelsLeft: Math.max(HOTEL_SUPPLY - hotels, 0),
+        houseSupply: HOUSE_SUPPLY,
+        hotelSupply: HOTEL_SUPPLY,
+    };
+}
+
+/** Whether the bank holds the one building this tile's next step needs. */
+function hasBuildingFor(room, tile) {
+    if (!limitedBuildings(room)) return true;
+    const stock = buildingStock(room);
+    return tile.houses === 4 ? stock.hotelsLeft > 0 : stock.housesLeft > 0;
+}
+
 /**
  * Anyone on the side may develop a set the side owns, paying from their own
  * cash — the rent still goes to whoever's name is on the deed. Selling is the
@@ -2102,6 +2156,7 @@ function canBuild(room, player, tile) {
     if (!ownsFullGroup(room, player.id, tile.groupId)) return false;
     if (tile.houses >= 5) return false;
     if (player.cash < tile.houseCost) return false;
+    if (!hasBuildingFor(room, tile)) return false;
     if (!room.settings.evenBuild) return true;
     // Even building: never more than one ahead of the rest of the set.
     const min = Math.min(...groupTiles(room, tile.groupId).map((t) => t.houses));
@@ -2122,7 +2177,15 @@ function buildHouse(room, playerId, tileId) {
     if (!isCurrent(room, playerId)) return { error: 'You can only build on your own turn' };
     if (player.debt) return { error: DEBT_BLOCKED };
     if (room.boughtBackBy === playerId) return { error: 'You bought a share back this turn — build next turn' };
-    if (!canBuild(room, player, tile)) return { error: 'Cannot build there' };
+    if (!canBuild(room, player, tile)) {
+        // Worth naming: a table playing the shortage spends real turns waiting
+        // for somebody else to sell, and "cannot build there" would read as a
+        // bug rather than as the rule doing its job.
+        if (!hasBuildingFor(room, tile)) {
+            return { error: tile.houses === 4 ? 'The bank has no hotels left' : 'The bank has no houses left' };
+        }
+        return { error: 'Cannot build there' };
+    }
     player.cash -= tile.houseCost;
     tile.houses += 1;
     log(room, `${player.name} built on ${tile.name} (${tile.houses === 5 ? 'hotel' : `${tile.houses} house${tile.houses > 1 ? 's' : ''}`})`);
@@ -2176,8 +2239,12 @@ function buildSetTo(room, playerId, groupId, level) {
         built++;
     }
     if (!built) {
-        const already = tiles.every((t) => t.houses >= want);
-        return { error: already ? 'Already built that far' : 'Not enough cash to build there' };
+        if (tiles.every((t) => t.houses >= want)) return { error: 'Already built that far' };
+        const next = tiles.filter((t) => t.houses < want).sort((a, b) => a.houses - b.houses)[0];
+        if (next && !hasBuildingFor(room, next)) {
+            return { error: next.houses === 4 ? 'The bank has no hotels left' : 'The bank has no houses left' };
+        }
+        return { error: 'Not enough cash to build there' };
     }
 
     // One line for the lot. Where it actually got to, not where it was aimed:
@@ -2223,9 +2290,13 @@ function sellSetTo(room, playerId, groupId, level) {
             const max = Math.max(...groupTiles(room, groupId).map((t) => t.houses));
             if (next.houses !== max) break;
         }
-        next.houses -= 1;
-        raised += Math.floor(next.houseCost / 2);
+        const one = sellOneBuilding(room, next);
+        raised += one.raised;
         sold++;
+        // A razed hotel took the tile to nothing in one go; asking for four
+        // houses each and getting none is not what anyone pressed the button
+        // for, so it stops there rather than flattening the country.
+        if (one.razed && want > 0) break;
     }
     if (!sold) return { error: 'Nothing to sell there' };
 
@@ -2235,6 +2306,30 @@ function sellSetTo(room, playerId, groupId, level) {
     // Last, so a debt cleared by the sale is settled with the money in hand.
     payDownDebt(room, player);
     return {};
+}
+
+/**
+ * Take one building off a tile, and say what the bank paid for it.
+ *
+ * A hotel is one building rather than five, so selling it normally puts four
+ * houses back on the tile. With the shortage on those four have to exist — and
+ * when they do not, the hotel goes and the tile drops to nothing, paid for all
+ * five levels. That is the classic answer to the same shortage, and the only
+ * one that cannot leave somebody holding buildings they are not allowed to turn
+ * into the money they owe.
+ */
+function sellOneBuilding(room, tile) {
+    const half = Math.floor((tile.houseCost || 0) / 2);
+    if (tile.houses === 5 && (!limitedBuildings(room) || buildingStock(room).housesLeft >= 4)) {
+        tile.houses = 4;
+        return { raised: half, razed: false };
+    }
+    if (tile.houses === 5) {
+        tile.houses = 0;
+        return { raised: half * 5, razed: true };
+    }
+    tile.houses -= 1;
+    return { raised: half, razed: false };
 }
 
 function sellHouse(room, playerId, tileId) {
@@ -2251,9 +2346,14 @@ function sellHouse(room, playerId, tileId) {
         const max = Math.max(...groupTiles(room, tile.groupId).map((t) => t.houses));
         if (tile.houses !== max) return { error: 'Sell evenly across the set' };
     }
-    tile.houses -= 1;
-    player.cash += Math.floor(tile.houseCost / 2);
-    log(room, `${player.name} sold a building on ${tile.name}`);
+    const { raised, razed } = sellOneBuilding(room, tile);
+    player.cash += raised;
+    log(
+        room,
+        razed
+            ? `${player.name} sold the hotel on ${tile.name} for $${raised} — no houses left to break it into`
+            : `${player.name} sold a building on ${tile.name}`,
+    );
     payDownDebt(room, player);
     return {};
 }
@@ -3498,6 +3598,7 @@ module.exports = {
     useJailCard,
     buildHouse,
     buildSetTo,
+    buildingStock,
     sellHouse,
     sellSetTo,
     sellProperty,
