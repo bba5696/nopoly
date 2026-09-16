@@ -375,6 +375,81 @@ const upNow = (r) => r.players[r.turnIndex];
     ok('for real money', up.cash > 0, String(up.cash));
 }
 
+/* ----------------------------------- the host sets what the bank starts with */
+{
+    // updateSettings is lobby-only, so this one builds its own room rather than
+    // using mk's already-started game.
+    const r = e.createRoom('SUPP');
+    const ada = e.addPlayer(r, { name: 'Ada' }).player;
+    e.addPlayer(r, { name: 'Bo' });
+
+    ok('a fresh room holds a real set', r.settings.houseSupply === 20 && r.settings.hotelSupply === 8);
+
+    e.updateSettings(r, ada.id, { limitedBuildings: true, houseSupply: 8, hotelSupply: 2 });
+    ok('the host can tighten it', r.settings.houseSupply === 8 && r.settings.hotelSupply === 2, JSON.stringify(r.settings));
+    const stock = e.buildingStock(r);
+    ok('and the stock says so', stock.houseSupply === 8 && stock.housesLeft === 8, JSON.stringify(stock));
+
+    e.updateSettings(r, ada.id, { houseSupply: 99, hotelSupply: 99 });
+    ok('neither goes past a real set', r.settings.houseSupply === 20 && r.settings.hotelSupply === 8, JSON.stringify(r.settings));
+
+    e.updateSettings(r, ada.id, { houseSupply: 0, hotelSupply: -5 });
+    ok('houses have a floor of four', r.settings.houseSupply === 4, String(r.settings.houseSupply));
+    ok('and hotels of none at all', r.settings.hotelSupply === 0, String(r.settings.hotelSupply));
+
+    // Nobody but the host, and not once the game is running.
+    const bo = r.players[1];
+    e.updateSettings(r, bo.id, { houseSupply: 20 });
+    ok('a guest cannot change it', r.settings.houseSupply === 4);
+    e.startGame(r, ada.id);
+    e.updateSettings(r, ada.id, { houseSupply: 20 });
+    ok('and neither can the host once it starts', r.settings.houseSupply === 4, String(r.settings.houseSupply));
+}
+
+/* ------------------------------------------- a tighter bank runs out sooner */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    r.settings.houseSupply = 6;
+    const up = upNow(r);
+    up.cash = 1000000;
+    for (const t of r.tiles) {
+        if (t.type !== 'property') continue;
+        t.ownerId = up.id;
+        up.properties.push(t.id);
+    }
+    const groups = [...new Set(r.tiles.filter((t) => t.type === 'property' && t.groupId).map((t) => t.groupId))];
+    for (const g of groups) e.buildSetTo(r, up.id, g, 4);
+    ok('the board never holds more than the bank had', e.buildingStock(r).houses === 6, String(e.buildingStock(r).houses));
+}
+
+/* ------------------------------------------ no hotels means four is the top */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    r.settings.hotelSupply = 0;
+    const up = upNow(r);
+    up.cash = 1000000;
+    const set = aSet(r);
+    give(r, up, set);
+
+    e.buildSetTo(r, up.id, set[0].groupId, 5);
+    ok('a set stops at four houses each', set.every((t) => t.houses === 4), set.map((t) => t.houses).join());
+    const refused = e.buildHouse(r, up.id, set[0].id);
+    ok('and the last step is refused', !!refused.error, JSON.stringify(refused));
+    ok('saying it is hotels that ran out', /no hotels left/.test(refused.error), refused.error);
+}
+
+/* --------------------------------- a room saved before any of this still works */
+{
+    const { r } = mk(['Ada', 'Bo']);
+    r.settings.limitedBuildings = true;
+    delete r.settings.houseSupply;
+    delete r.settings.hotelSupply;
+    const stock = e.buildingStock(r);
+    ok('an older snapshot falls back to a real set', stock.houseSupply === 20 && stock.hotelSupply === 8, JSON.stringify(stock));
+}
+
 /* ------------------------------------------- and the table can switch it off */
 {
     const { r } = mk(['Ada', 'Bo']);

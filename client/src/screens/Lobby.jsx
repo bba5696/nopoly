@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, Hand, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Store, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
+import { Check, Coins, Copy, Crown, Gavel, Hammer, Hand, Home, Hotel, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Store, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
 import { Toggle, NumberField } from '@/components/ui/toggle';
@@ -122,7 +122,7 @@ const RULES = [
         key: 'limitedBuildings',
         icon: Store,
         label: 'Limited buildings',
-        hint: 'The bank owns 20 houses and 8 hotels. When they run out nobody can build until somebody sells — so holding a set at four houses each, rather than crowning hotels, starves the table',
+        hint: 'The bank owns a set number of houses and hotels. When they run out nobody can build until somebody sells — so holding a set at four houses each, rather than crowning hotels, starves the table',
     },
     {
         key: 'teams',
@@ -648,6 +648,39 @@ export function Lobby() {
                                             min={0}
                                             max={99}
                                             onChange={patch('maxTeamSize')}
+                                        />
+                                    </SettingRow>
+                                </>
+                            )}
+                            {/* Only while the shortage is on. A real set's
+                                worth is the ceiling on both: past that there is
+                                nothing to run out of. */}
+                            {!cards && settings.limitedBuildings && (
+                                <>
+                                    <SettingRow
+                                        icon={Home}
+                                        label="Houses in the bank"
+                                        hint="Fewer means the squeeze starts sooner. A hotel hands its four houses back, so crowning one feeds the table"
+                                    >
+                                        <NumberField
+                                            value={settings.houseSupply}
+                                            disabled={!isHost}
+                                            min={4}
+                                            max={20}
+                                            onChange={patch('houseSupply')}
+                                        />
+                                    </SettingRow>
+                                    <SettingRow
+                                        icon={Hotel}
+                                        label="Hotels in the bank"
+                                        hint="0 means nobody ever builds one, and four houses is as far as a property goes"
+                                    >
+                                        <NumberField
+                                            value={settings.hotelSupply}
+                                            disabled={!isHost}
+                                            min={0}
+                                            max={8}
+                                            onChange={patch('hotelSupply')}
                                         />
                                     </SettingRow>
                                 </>

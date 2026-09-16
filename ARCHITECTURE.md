@@ -448,7 +448,12 @@ gone from a paused game is somebody the pause is waiting for.
 ## The building shortage is a second currency
 
 `limitedBuildings` gives the bank twenty houses and eight hotels, the numbers a
-real set comes with, and off by default. What it buys is not scarcity for its
+real set comes with, and off by default. The host can go tighter —
+`houseSupply` down to four, `hotelSupply` down to none — but never higher, since
+past a real set's worth there is nothing to run out of. Both are lobby-only like
+every setting, which is what makes them safe: a supply can never shrink under
+buildings already standing. Zero hotels is a real variant rather than an
+accident, and four houses becomes the top of every property. What it buys is not scarcity for its
 own sake: with thirty-two houses standing nobody else can build at all, so
 holding a set at four houses each — rather than crowning hotels and handing the
 houses back — starves the table at no cost but patience. That is the rule, and

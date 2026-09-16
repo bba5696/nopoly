@@ -112,14 +112,17 @@ const AUCTION_MS = 10_000;
 const BID_STEPS = [2, 10, 100];
 
 /**
- * How many buildings the bank owns, when the table is playing the shortage.
+ * The most buildings a bank may hold, and what it holds unless the host says
+ * otherwise — the numbers a real set comes with.
  *
- * The numbers a real set comes with. What they turn into is a second currency:
- * with thirty-two houses on the board nobody else can build at all, so holding
- * a set at four houses each — rather than crowning hotels and handing the
- * houses back — is a way of starving the table that costs nothing but patience.
- * That is the whole point of the rule, and why the counts are of houses and
- * hotels apart rather than of buildings.
+ * What they turn into is a second currency: with every house on the board
+ * nobody else can build at all, so holding a set at four houses each — rather
+ * than crowning hotels and handing the houses back — is a way of starving the
+ * table that costs nothing but patience. That is the whole point of the rule,
+ * and why the counts are of houses and hotels apart rather than of buildings.
+ *
+ * A host who wants it tighter can set either lower in the lobby; neither can go
+ * higher, since past a real set's worth the shortage stops being one.
  */
 const HOUSE_SUPPLY = 20;
 const HOTEL_SUPPLY = 8;
@@ -139,6 +142,10 @@ const DEFAULT_SETTINGS = {
     noRentInPrison: false,
     evenBuild: true,
     limitedBuildings: false,
+    // What the bank starts with, when the shortage is on. Lobby-only like every
+    // setting, so neither can ever shrink under buildings already standing.
+    houseSupply: HOUSE_SUPPLY,
+    hotelSupply: HOTEL_SUPPLY,
     dynamicValues: false,
     auctionBalance: false,
     teams: false,
@@ -202,6 +209,11 @@ const SETTING_LIMITS = {
     // Zero is the default and means no cap — a side holds whoever the host puts
     // on it. Anything above that is a real limit the picker enforces.
     maxTeamSize: { min: 0, max: 99 },
+    // Four houses is one tile's worth, and below that the rule is not a
+    // shortage but a wall. Zero hotels is a real variant — houses only, four
+    // being the ceiling — so it is allowed.
+    houseSupply: { min: 4, max: HOUSE_SUPPLY },
+    hotelSupply: { min: 0, max: HOTEL_SUPPLY },
 };
 
 const uid = () => crypto.randomUUID();
@@ -2128,14 +2140,19 @@ function buildingStock(room) {
         if (tile.houses === 5) hotels++;
         else houses += tile.houses;
     }
+    // Clamped rather than trusted: a room restored from a snapshot written
+    // before the host could set these carries neither, and the ceiling is the
+    // rule rather than a suggestion.
+    const houseSupply = Math.min(room.settings.houseSupply ?? HOUSE_SUPPLY, HOUSE_SUPPLY);
+    const hotelSupply = Math.min(room.settings.hotelSupply ?? HOTEL_SUPPLY, HOTEL_SUPPLY);
     return {
         limited: limitedBuildings(room),
         houses,
         hotels,
-        housesLeft: Math.max(HOUSE_SUPPLY - houses, 0),
-        hotelsLeft: Math.max(HOTEL_SUPPLY - hotels, 0),
-        houseSupply: HOUSE_SUPPLY,
-        hotelSupply: HOTEL_SUPPLY,
+        housesLeft: Math.max(houseSupply - houses, 0),
+        hotelsLeft: Math.max(hotelSupply - hotels, 0),
+        houseSupply,
+        hotelSupply,
     };
 }
 
