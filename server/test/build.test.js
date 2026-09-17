@@ -391,7 +391,9 @@ const upNow = (r) => r.players[r.turnIndex];
     ok('and the stock says so', stock.houseSupply === 8 && stock.housesLeft === 8, JSON.stringify(stock));
 
     e.updateSettings(r, ada.id, { houseSupply: 99, hotelSupply: 99 });
-    ok('neither goes past a real set', r.settings.houseSupply === 20 && r.settings.hotelSupply === 8, JSON.stringify(r.settings));
+    ok('houses stop at the ceiling', r.settings.houseSupply === 32, String(r.settings.houseSupply));
+    ok('and hotels at a real set', r.settings.hotelSupply === 8, String(r.settings.hotelSupply));
+    ok('a ceiling bank is a bank of thirty-two', e.buildingStock(r).housesLeft === 32, JSON.stringify(e.buildingStock(r)));
 
     e.updateSettings(r, ada.id, { houseSupply: 0, hotelSupply: -5 });
     ok('houses have a floor of four', r.settings.houseSupply === 4, String(r.settings.houseSupply));

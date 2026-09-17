@@ -112,8 +112,8 @@ const AUCTION_MS = 10_000;
 const BID_STEPS = [2, 10, 100];
 
 /**
- * The most buildings a bank may hold, and what it holds unless the host says
- * otherwise — the numbers a real set comes with.
+ * What the bank starts with when the shortage is on — the numbers a real set
+ * comes with — and the most a host may give it.
  *
  * What they turn into is a second currency: with every house on the board
  * nobody else can build at all, so holding a set at four houses each — rather
@@ -121,11 +121,15 @@ const BID_STEPS = [2, 10, 100];
  * table that costs nothing but patience. That is the whole point of the rule,
  * and why the counts are of houses and hotels apart rather than of buildings.
  *
- * A host who wants it tighter can set either lower in the lobby; neither can go
- * higher, since past a real set's worth the shortage stops being one.
+ * The house ceiling is thirty-two rather than twenty because the big board is a
+ * different game: eight countries at four houses each is the point where every
+ * set on Classic is full, and a table that wants the rule present but gentle
+ * needs the room. Hotels stay at eight — there are only so many sets to crown.
  */
 const HOUSE_SUPPLY = 20;
 const HOTEL_SUPPLY = 8;
+const HOUSE_SUPPLY_CAP = 32;
+const HOTEL_SUPPLY_CAP = 8;
 
 const DEFAULT_SETTINGS = {
     startingCash: STARTING_CASH,
@@ -212,8 +216,8 @@ const SETTING_LIMITS = {
     // Four houses is one tile's worth, and below that the rule is not a
     // shortage but a wall. Zero hotels is a real variant — houses only, four
     // being the ceiling — so it is allowed.
-    houseSupply: { min: 4, max: HOUSE_SUPPLY },
-    hotelSupply: { min: 0, max: HOTEL_SUPPLY },
+    houseSupply: { min: 4, max: HOUSE_SUPPLY_CAP },
+    hotelSupply: { min: 0, max: HOTEL_SUPPLY_CAP },
 };
 
 const uid = () => crypto.randomUUID();
@@ -2143,8 +2147,8 @@ function buildingStock(room) {
     // Clamped rather than trusted: a room restored from a snapshot written
     // before the host could set these carries neither, and the ceiling is the
     // rule rather than a suggestion.
-    const houseSupply = Math.min(room.settings.houseSupply ?? HOUSE_SUPPLY, HOUSE_SUPPLY);
-    const hotelSupply = Math.min(room.settings.hotelSupply ?? HOTEL_SUPPLY, HOTEL_SUPPLY);
+    const houseSupply = Math.min(room.settings.houseSupply ?? HOUSE_SUPPLY, HOUSE_SUPPLY_CAP);
+    const hotelSupply = Math.min(room.settings.hotelSupply ?? HOTEL_SUPPLY, HOTEL_SUPPLY_CAP);
     return {
         limited: limitedBuildings(room),
         houses,

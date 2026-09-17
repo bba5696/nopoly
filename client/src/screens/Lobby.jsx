@@ -666,7 +666,7 @@ export function Lobby() {
                                             value={settings.houseSupply}
                                             disabled={!isHost}
                                             min={4}
-                                            max={20}
+                                            max={32}
                                             onChange={patch('houseSupply')}
                                         />
                                     </SettingRow>
