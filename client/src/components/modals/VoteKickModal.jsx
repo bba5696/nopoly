@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Check, Clock, Gavel, WifiOff, X } from 'lucide-react';
+import { Check, Gavel, WifiOff, X } from 'lucide-react';
 
 import { useGame } from '@/lib/game-context';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { tag } from '@/lib/color';
+import { cn } from '@/lib/utils';
+import { SignedOut, kick as adminKick, loadAdminToken, signIn as adminSignIn } from '@/lib/admin';
 
 /** Seconds left, ticking locally between broadcasts. */
 function useCountdown(endsAt) {
@@ -18,26 +20,8 @@ function useCountdown(endsAt) {
     return left;
 }
 
-/**
- * The wall clock as something that changes, since every cooldown here is a
- * deadline and a deadline read once at render is stale the moment it's drawn.
- * Only runs while the picker is open — nothing else on screen needs the tick.
- */
-function useNow(active) {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        if (!active) return undefined;
-        const t = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(t);
-    }, [active]);
-    return now;
-}
-
 /** Bare seconds up to a minute, then m:ss — five minutes as "287s" reads as noise. */
 const clock = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
-
-/** Whole minutes, rounded up — any wait at all reads as "1 min", never "0". */
-const mins = (ms) => Math.max(1, Math.ceil(ms / 60_000));
 
 /** Names for a list of player ids, for the places a vote has to name people. */
 const names = (ids, state) =>
@@ -47,55 +31,144 @@ const names = (ids, state) =>
         .join(', ');
 
 /**
- * Picker for starting a vote. Deliberately a separate modal rather than a
- * control on each rail row — the rows are already tap-to-pin, and a kick button
- * one pixel from that is a bad place to put a mis-tap.
+ * Removing somebody, which is the admin's job alone now.
+ *
+ * The ballot is shut. It kept being used on whoever was winning rather than on
+ * whoever was spoiling the game, and no threshold fixes that — a table that
+ * wants somebody gone can always find one more yes. So this is a door rather
+ * than a vote: the notice, a way in for whoever holds the key, and then the
+ * same list as before with none of the rules on it, since the person reading it
+ * is the one the rules existed to protect everybody from.
+ *
+ * It signs in against the admin key, the same one the panel at /admin uses, and
+ * removes people through the same route — which is also the kick that locks
+ * nothing behind it.
  */
 export function VoteKickPicker({ open, onClose }) {
-    const { state, playerId, send } = useGame();
-    const now = useNow(open);
-    const others = state.players.filter((p) => p.id !== playerId && !p.bankrupt);
-    // The server decides every one of these; the picker only mirrors them, so
-    // that a name you can't vote on says why rather than failing when pressed.
-    const opens = state.voteOpensAt || 0;
-    const tooEarly = opens > now;
-    // A ballot needs at least three people in the game, the target included —
-    // below that it is one player removing another.
-    const tooFew = state.players.filter((p) => !p.bankrupt).length < (state.minVoters || 3);
+    const { state, playerId } = useGame();
+    const [stage, setStage] = useState('notice');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [busy, setBusy] = useState(false);
+    // Which name is a press away from being removed. A mis-tap here cannot be
+    // undone from in here, so it costs two.
+    const [armed, setArmed] = useState(null);
 
-    /** Why this player can't be voted on, or null if they can. */
-    const blocked = (p) => {
-        // Someone who has dropped out is never a ballot — it's a countdown,
-        // and neither rule below applies to it.
-        if (!p.connected) return null;
-        if (tooEarly) return `kicking opens in ${mins(opens - now)} min`;
-        if (tooFew) return `needs ${state.minVoters || 3} players in the game`;
-        return null;
+    const others = state.players.filter((p) => p.id !== playerId && !p.bankrupt);
+
+    const close = () => {
+        setStage('notice');
+        setPassword('');
+        setError('');
+        setArmed(null);
+        onClose();
     };
 
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!password || busy) return;
+        setBusy(true);
+        setError('');
+        try {
+            await adminSignIn(password);
+            setPassword('');
+            setStage('picker');
+        } catch (err) {
+            setPassword('');
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const remove = async (p) => {
+        if (armed !== p.id) {
+            setArmed(p.id);
+            return;
+        }
+        setBusy(true);
+        setError('');
+        try {
+            await adminKick(state.roomCode, p.id);
+            close();
+        } catch (err) {
+            setArmed(null);
+            // The key is good for a week and then it is not; say so rather than
+            // showing the refusal a stale token comes back with.
+            if (err instanceof SignedOut) {
+                setStage('password');
+                setError('Signed out — the password again');
+            } else {
+                setError(err.message);
+            }
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const title = stage === 'picker' ? 'Remove a player' : 'Kick a player';
+    const subtitle = stage === 'picker' ? 'Admin' : 'Vote to remove';
+
     return (
-        <Modal open={open} onClose={onClose} subtitle="Vote to remove" title="Kick a player" width={420}>
-            <div className="flex flex-col gap-4 p-5">
-                <p className="text-[13px] leading-snug text-muted-foreground">
-                    Everyone else has to agree — two-thirds at a big table. Kick someone who's playing and their
-                    property locks for a while; if they were idle or gone, it goes back to the bank.
-                </p>
-                <div className="flex flex-col gap-2">
-                    {others.length === 0 && (
-                        <span className="py-2 text-[13px] text-muted-foreground">Nobody else to vote on.</span>
-                    )}
-                    {others.map((p) => {
-                        const why = blocked(p);
-                        return (
+        <Modal open={open} onClose={close} subtitle={subtitle} title={title} width={420}>
+            {stage === 'notice' && (
+                <div className="flex flex-col gap-4 p-5">
+                    <p className="text-[13px] leading-snug text-muted-foreground">
+                        Due to abuse, votekick is no longer available and can only be used by admins.
+                    </p>
+                    {/* Small on purpose. It is a way in for the one person who
+                        has the key, not an invitation to the table. */}
+                    <button
+                        type="button"
+                        onClick={() => setStage(loadAdminToken() ? 'picker' : 'password')}
+                        className="self-start text-[11px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                    >
+                        I'm an admin
+                    </button>
+                </div>
+            )}
+
+            {stage === 'password' && (
+                <form onSubmit={submit} className="flex flex-col gap-3 p-5">
+                    <input
+                        type="password"
+                        autoFocus
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="admin key"
+                        className="h-11 min-w-0 rounded-xl border border-input bg-black/25 px-4 outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                    />
+                    {error && <span className="label text-[#ff5c7c]">{error}</span>}
+                    <Button type="submit" className="h-11" disabled={!password || busy}>
+                        {busy ? 'Checking…' : 'Sign in'}
+                    </Button>
+                </form>
+            )}
+
+            {stage === 'picker' && (
+                <div className="flex flex-col gap-4 p-5">
+                    <p className="text-[13px] leading-snug text-muted-foreground">
+                        They are out for good and cannot rejoin. Their property goes back to the bank unlocked, and
+                        nobody has to agree.
+                    </p>
+                    {error && <span className="label text-[#ff5c7c]">{error}</span>}
+                    <div className="flex flex-col gap-2">
+                        {others.length === 0 && (
+                            <span className="py-2 text-[13px] text-muted-foreground">Nobody else at the table.</span>
+                        )}
+                        {others.map((p) => (
                             <button
                                 key={p.id}
                                 type="button"
-                                disabled={!!why}
-                                onClick={() => {
-                                    send('vote:start', { targetId: p.id });
-                                    onClose();
-                                }}
-                                className="flex items-center gap-3 rounded-xl border border-white/8 px-3 py-2.5 text-left transition-colors hover:border-white/25 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-white/8"
+                                disabled={busy}
+                                onClick={() => remove(p)}
+                                className={cn(
+                                    'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors disabled:opacity-50',
+                                    armed === p.id
+                                        ? 'border-[#ff5c7c]/60 bg-[#ff5c7c]/10'
+                                        : 'border-white/8 hover:border-white/25',
+                                )}
                             >
                                 <span
                                     className="mono flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] text-white"
@@ -105,29 +178,34 @@ export function VoteKickPicker({ open, onClose }) {
                                 </span>
                                 <span className="flex min-w-0 flex-1 flex-col">
                                     <span className="truncate text-[15px]">{p.name}</span>
-                                    {/* The grounds, or what's standing in the
-                                        way of them. Either way it's the
-                                        sentence you'd otherwise have to guess
-                                        at from a button that does nothing. */}
-                                    <span className="label truncate text-muted-foreground">
-                                        {why || (p.connected ? 'start a vote' : 'dropped out')}
+                                    <span
+                                        className={cn(
+                                            'label truncate',
+                                            armed === p.id ? 'text-[#ff5c7c]' : 'text-muted-foreground',
+                                        )}
+                                    >
+                                        {armed === p.id
+                                            ? 'press again to remove them'
+                                            : p.connected
+                                              ? 'remove from the game'
+                                              : 'dropped out'}
                                     </span>
                                 </span>
-                                {/* Which of the two this turns into, before you
-                                    press it rather than after. */}
-                                {!p.connected && <span className="label shrink-0 text-[#ff9db2]">away · 2 min</span>}
                                 {!p.connected ? (
                                     <WifiOff className="size-4 shrink-0 text-[#ff9db2]" />
-                                ) : why ? (
-                                    <Clock className="size-4 shrink-0 text-muted-foreground" />
                                 ) : (
-                                    <Gavel className="size-4 shrink-0 text-muted-foreground" />
+                                    <Gavel
+                                        className={cn(
+                                            'size-4 shrink-0',
+                                            armed === p.id ? 'text-[#ff5c7c]' : 'text-muted-foreground',
+                                        )}
+                                    />
                                 )}
                             </button>
-                        );
-                    })}
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
         </Modal>
     );
 }

@@ -1,5 +1,11 @@
-// The countdown over a real socket: a dropped connection, the kick that turns
-// into a clock, and the reconnect that calls it off.
+// A dropped connection over a real socket: the away mark, and the reconnect
+// that puts them back at the table.
+//
+// The countdown that used to be started on somebody who had gone went through
+// the same door as the ballot, and that door is shut — an empty seat is the
+// admin's to clear now, the same as any other removal. What is still the room's
+// own business, and still covered here, is noticing somebody has gone and
+// letting them back in when they return.
 const { io } = require('socket.io-client');
 const URL = 'http://localhost:3001';
 
@@ -56,17 +62,14 @@ const quiet = async (s) => {
     st = await quiet(a);
     ok('Bo shows as away', st.players.find((p) => p.id === bJoin.playerId).connected === false);
 
-    a.emit('vote:start', { targetId: bJoin.playerId });
-    st = await until(a, (s) => !!s.vote);
-    ok('the kick became a countdown', st.vote?.mode === 'abandon', JSON.stringify(st.vote));
-    ok('it is broadcast to the others', (await until(c, (s) => !!s.vote)).vote?.mode === 'abandon');
-    ok('with two minutes on the clock', st.vote.endsAt - Date.now() > 110_000, String(st.vote.endsAt - Date.now()));
-
+    // The countdown went with the ballot.
     const errs = [];
-    c.on('error:game', (e) => errs.push(e));
-    c.emit('vote:cast', { agree: true });
+    a.on('error:game', (e) => errs.push(e));
+    a.emit('vote:start', { targetId: bJoin.playerId });
     await sleep(400);
-    ok('votes are refused over the wire', errs.length === 1, JSON.stringify(errs));
+    ok('a countdown cannot be started either', errs.some((m) => /admin-only/.test(m)), JSON.stringify(errs));
+    ok('and nothing is running', !seen(a).vote, JSON.stringify(seen(a).vote));
+    ok('Bo is still in the game', seen(a).players.find((p) => p.id === bJoin.playerId).bankrupt === false);
 
     // Bo gets back in on the same identity, which is what a refresh does.
     const b2 = await connect();
@@ -74,9 +77,9 @@ const quiet = async (s) => {
         b2.emit('room:join', { roomCode: code, name: 'Bo', playerId: bJoin.playerId }, r),
     );
     ok('Bo is let back in', !back.error, JSON.stringify(back));
-    st = await until(a, (s) => s.vote === null);
-    ok('the countdown was dropped', st.vote === null, JSON.stringify(st.vote));
-    ok('and Bo is still playing', st.players.find((p) => p.id === bJoin.playerId).bankrupt === false);
+    st = await until(a, (s) => s.players.find((p) => p.id === bJoin.playerId)?.connected === true);
+    ok('and shows as back', st.players.find((p) => p.id === bJoin.playerId).connected === true);
+    ok('still playing', st.players.find((p) => p.id === bJoin.playerId).bankrupt === false);
 
     console.log(`\n${pass} passed, ${fails.length} failed`);
     for (const f of fails) console.log('  FAIL ' + f);

@@ -2731,6 +2731,14 @@ function declareBankruptcy(room, playerId) {
 
 /* -------------------------------------------------------------- vote-kick */
 
+/*
+ * Dormant. Nothing on the wire reaches any of this any more — see the note on
+ * `vote:start` in index.js for why the ballot was shut off, and `adminKick` for
+ * what replaced it. It is kept whole, and kept under test, because the rule may
+ * well come back, and rebuilding a majority, a countdown and their two clocks
+ * from scratch is a worse afternoon than leaving them standing.
+ */
+
 /**
  * Everyone entitled to a say: still in the game, and not the person on trial.
  * Bankrupt players are out of it — they have nothing left to lose by voting.

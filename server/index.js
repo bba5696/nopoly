@@ -1150,10 +1150,21 @@ io.on('connection', (socket) => {
     socket.on('game:bailout', ({ accept } = {}) =>
         nopolyAct(socket, (room, pid) => engine.respondBailout(room, pid, !!accept)),
     );
-    socket.on('vote:start', ({ targetId } = {}) =>
-        act(socket, (room, pid) => engine.startVoteKick(room, pid, targetId)),
-    );
-    socket.on('vote:cast', ({ agree } = {}) => act(socket, (room, pid) => engine.castVote(room, pid, !!agree)));
+    // Vote-kick, shut at the door.
+    //
+    // It kept being used on whoever was winning rather than on whoever was
+    // spoiling the game, and no threshold fixed that — a table that wants
+    // somebody gone can always find one more yes. So the only kick left is the
+    // admin's, through the routes above, which is also the one that leaves
+    // nothing locked behind it.
+    //
+    // These two stay rather than being deleted so a tab that has not reloaded
+    // since is told why its button did nothing. The machinery behind them is
+    // untouched in engine.js and still under test: putting the ballot back is
+    // these two lines, not a rewrite.
+    const VOTE_OFF = 'Vote-kick is admin-only now';
+    socket.on('vote:start', () => socket.emit('error:game', VOTE_OFF));
+    socket.on('vote:cast', () => socket.emit('error:game', VOTE_OFF));
     socket.on('game:dismissCard', () =>
         nopolyAct(socket, (room) => {
             room.pendingCard = null;

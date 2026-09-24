@@ -161,7 +161,14 @@ removing them.
 
 ## The admin panel
 
-Off unless you give it a key. With one set, `/admin` shows:
+Off unless you give it a key — and the key now has two doors. The panel is one;
+the other is in the game itself, where the kick button opens a notice saying
+vote-kick is admin-only and a small "I'm an admin" under it takes the same key.
+Signing in either way lasts a week in that browser, and removing somebody from
+in there is the same `Kick` as below: banned from the room, estate back to the
+bank, nothing locked.
+
+With a key set, `/admin` shows:
 
 - **Every room**, with a **Watch** view of who has what and the last things
   the game did (never chat, never anyone's cards). A finished room also has

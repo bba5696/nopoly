@@ -1,5 +1,10 @@
 // Vote-kick: who may call one, what counts as a majority, what a kick does to
 // the estate, and that the person removed can't simply walk back in.
+//
+// The ballot is switched off at the door — no socket a player holds can start
+// one — so all of this is machinery held ready rather than machinery in use.
+// It stays under test because a rule that comes back untested comes back
+// broken; votewire is what checks the door is actually shut.
 const e = require('../game/engine');
 
 let pass = 0;

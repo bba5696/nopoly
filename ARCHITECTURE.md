@@ -394,56 +394,37 @@ takes. It runs even at a table that switched the turn timer off, because that
 setting is a rule about how long a person may take, not a reason for the game to
 stop dead for someone who has left.
 
-## A kick is a majority, and not much else
+## The only kick left is the admin's
 
-Vote-kick once carried four rules meant to stop it being used on whoever was
-winning: a ballot only on someone the turn clock had had to play for, an opening
-window that grew with the table, a cooldown on the target, and another on the
-caller. In play they mostly stopped a table removing somebody it plainly wanted
-gone — "sometimes it just doesn't let you" — so three of them went.
+Vote-kick is switched off. It carried, at one point or another, seven rules
+meant to stop it being used on whoever was winning: a ballot only on someone the
+turn clock had played for, an opening window, cooldowns on the target and on the
+caller, a two-thirds majority, an estate lock to take the profit out of it, and
+an exemption for players who had gone quiet. Some of them helped. None of them
+fixed it, because what is being defended against is not a bar a table cannot
+clear — a table that wants somebody gone can always find one more yes.
 
-What is left, all in `startVoteKick`:
+So the door is shut rather than narrowed again. `vote:start` and `vote:cast`
+answer "Vote-kick is admin-only now" and nothing else reaches the machinery.
+Removing somebody is `adminKick`, through the admin routes, behind the same key
+as the panel at `/admin` — and it is the kick that locks nothing behind it,
+since the lock existed to make a *table's* decision unprofitable and there is no
+longer a table making one.
 
-**Nothing can be called in the first five minutes.** Every vote called inside
-that window was somebody reacting to a bad opening roll.
+In the game that is one screen. The kick button opens a notice saying so, with a
+small "I'm an admin" under it that asks for the key and then shows the same list
+with none of the rules on it. The token is the panel's own and lives in that
+browser for a week, so the second removal in an evening is two taps.
 
-**A ballot needs at least three players in the game.** Below that, calling the
-vote *is* the vote, and one person would be removing another.
+The countdown on somebody who had dropped out went with it, being the same
+event. An empty seat is the admin's to clear now; the turn clock still plays
+their turns in the meantime, so nothing stalls waiting for them.
 
-**It takes everyone else up to four, or two-thirds of them, whichever is
-more** — 5 players need 4, 8 need 5, 12 need 8. The cap alone kept one absent
-phone from vetoing every vote at a big table, and also let any four friends
-remove anyone at one: at twelve that was a third of the table deciding. Players
-whose tab is closed are left out of the count until they are back, which is
-what the cap was really protecting against; anyone who has already voted stays
-counted. **And everything is on the record.** The log names who called it and
-who voted which way. Among friends that is the part that actually keeps it
-honest.
-
-**A kick is not worth anything to the people who vote for it.** A voted-out
-player's estate goes back to the bank like any resignation's — and that used to
-put the leader's whole estate straight back on sale to the people who had just
-removed them. So a passed ballot locks those tiles for five rounds of the table
-(`lockTiles`): nobody can buy them or take them at auction, and landing on one
-still charges what it was charging at the moment of the kick — hotels, a doubled
-set, a run of airports — to the bank, so a locked country is no free corridor
-either. The rent is worked out before the estate is cleared and kept on the
-tile, so a redeploy restores it and charges the same. Counted in turns, so a pause cannot run it down. A dropout's
-countdown and the admin's kick lock nothing — neither is a table choosing to
-remove somebody. Nor does a ballot on a player who was not really playing: one
-whose input had stopped for a minute when the vote was called, or who has
-dropped out by the time it passes. That kick is the table clearing an empty
-chair, and the estate goes straight back to the bank. "When it was called" is
-deliberate — somebody away cannot wake up mid-vote and turn the lock on, and an
-active player cannot go quiet mid-vote to dodge it. Input is stamped by every
-action and by a `presence:input` ping the client sends at most every twenty
-seconds, on or off turn; it is its own event rather than `game:active` so that
-it broadcasts nothing.
-
-None of it applies to a player who has dropped out. That path isn't a ballot at
-all but a two-minute countdown they end by coming back — the room's only way of
-shedding an empty seat. Nor can any vote run while a game is paused: somebody
-gone from a paused game is somebody the pause is waiting for.
+The machinery — the majority, the countdown, their two clocks, the estate lock
+and everything that decided when it applied — is left standing in `engine.js`
+and still under test. Dormant, not deleted: the rule may well come back, and a
+rule that comes back untested comes back broken. `votewire` is what checks the
+door is actually shut.
 
 ## The building shortage is a second currency
 
