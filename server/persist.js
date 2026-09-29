@@ -45,6 +45,9 @@ const payloadFor = (rooms) => ({ savedAt: Date.now(), rooms: [...rooms.values()]
  * atomic.
  */
 function save(rooms) {
+    // From here on this is the snapshot. An autosave still in flight must not
+    // land on top of it with the older rooms it serialised before we got here.
+    final = true;
     const tmp = tempPath();
     try {
         fs.mkdirSync(DIR, { recursive: true });
@@ -64,6 +67,8 @@ function save(rooms) {
 
 /** Set while an async save is in flight, so a slow disk can't stack them up. */
 let writing = false;
+/** Set once the shutdown save has run; later async writes are discarded. */
+let final = false;
 
 /**
  * The same write, without blocking the event loop on the disk. This is the one
@@ -79,13 +84,26 @@ let writing = false;
  * nothing.
  */
 async function saveAsync(rooms) {
-    if (writing) return { ok: false, skipped: true };
+    if (writing || final) return { ok: false, skipped: true };
     writing = true;
     const tmp = tempPath();
     try {
+        // Nothing running is a snapshot too. Skipping the write left the last
+        // one on disk, and a crash inside six hours brought back rooms that
+        // had already been closed.
+        if (!rooms.size) {
+            await fsp.rm(FILE, { force: true });
+            return { ok: true, count: 0 };
+        }
         await fsp.mkdir(DIR, { recursive: true });
         const payload = payloadFor(rooms);
         await fsp.writeFile(tmp, JSON.stringify(payload));
+        // The shutdown save may have run while this was writing, and what it
+        // wrote is newer than what this serialised.
+        if (final) {
+            await fsp.rm(tmp, { force: true });
+            return { ok: false, skipped: true };
+        }
         await fsp.rename(tmp, FILE);
         return { ok: true, count: payload.rooms.length };
     } catch (err) {

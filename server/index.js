@@ -54,8 +54,22 @@ const io = new Server(server, { cors: corsOptions });
 
 /** roomCode -> room state (in-memory only for the MVP). */
 const rooms = new Map();
-/** playerId -> timeout handle for the disconnect grace period. */
+/**
+ * roomCode:playerId -> timeout handle for the disconnect grace period.
+ *
+ * Keyed by room as well as player because a player id is the browser's, and the
+ * same in every room it has been in. Keyed by player alone, sitting down in one
+ * room cancelled the grace running in another, and closing a room cleared timers
+ * that belonged to rooms still open.
+ */
 const graceTimers = new Map();
+const graceKey = (room, playerId) => `${room.roomCode}:${playerId}`;
+
+function clearGrace(room, playerId) {
+    const key = graceKey(room, playerId);
+    clearTimeout(graceTimers.get(key));
+    graceTimers.delete(key);
+}
 /** roomCode -> timeout handle for whatever deadline the game is running. */
 const gameTimers = new Map();
 /** roomCode -> timeout handle closing the running vote-kick. */
@@ -923,10 +937,7 @@ function closeRoom(code, room, notice) {
     // A grace timer outlives its room otherwise. The closure captures `room`,
     // so the thing being freed stays reachable — and reachable through a timer
     // that will then act on a room nobody can reach any more.
-    for (const p of room.players) {
-        clearTimeout(graceTimers.get(p.id));
-        graceTimers.delete(p.id);
-    }
+    for (const p of room.players) clearGrace(room, p.id);
 
     // Told, not left to find out. A stale room is closed with people still
     // connected to it by definition, and a board that quietly stops answering
@@ -1156,9 +1167,11 @@ io.on('connection', (socket) => {
     const VOTE_OFF = 'Vote-kick is admin-only now';
     socket.on('vote:start', () => socket.emit('error:game', VOTE_OFF));
     socket.on('vote:cast', () => socket.emit('error:game', VOTE_OFF));
+    // Only whoever drew it — it is their modal. Anyone else sending this was
+    // clearing the card off the table for everyone.
     socket.on('game:dismissCard', () =>
-        nopolyAct(socket, (room) => {
-            room.pendingCard = null;
+        nopolyAct(socket, (room, pid) => {
+            if (room.pendingCard?.playerId === pid) room.pendingCard = null;
             return {};
         }),
     );
@@ -1233,28 +1246,38 @@ io.on('connection', (socket) => {
             return;
         }
 
-        engine.markDisconnected(room, playerId);
-        // If they were the one on the clock, it just got shorter — a tab that
-        // has closed is never going to take its full minute. `refreshIdle`
-        // keeps its own hands off anyone else's turn.
-        engine.refreshIdle(room, playerId);
-        broadcast(room);
-        scheduleIdle(room);
-
-        clearTimeout(graceTimers.get(playerId));
-        graceTimers.set(
-            playerId,
-            setTimeout(() => {
-                graceTimers.delete(playerId);
-                // Phase decides which applies: an empty seat in the lobby is
-                // freed, a seat mid-game is kept and its turn skipped.
-                if (engine.dropIfStillGone(room, playerId) || engine.skipIfStillGone(room, playerId)) {
-                    broadcast(room);
-                }
-            }, DISCONNECT_GRACE_MS),
-        );
+        goneFrom(room, playerId);
     });
 });
+
+/**
+ * A seated player's last socket has left the room: hold the seat, and start the
+ * clocks that decide what happens if they don't come back. The same whether the
+ * tab closed, the player pressed Leave mid-game, or went off to another room.
+ */
+function goneFrom(room, playerId) {
+    engine.markDisconnected(room, playerId);
+    // If they were the one on the clock, it just got shorter — a tab that
+    // has closed is never going to take its full minute. `refreshIdle`
+    // keeps its own hands off anyone else's turn.
+    engine.refreshIdle(room, playerId);
+    broadcast(room);
+    scheduleIdle(room);
+
+    clearGrace(room, playerId);
+    const key = graceKey(room, playerId);
+    graceTimers.set(
+        key,
+        setTimeout(() => {
+            graceTimers.delete(key);
+            // Phase decides which applies: an empty seat in the lobby is
+            // freed, a seat mid-game is kept and its turn skipped.
+            if (engine.dropIfStillGone(room, playerId) || engine.skipIfStillGone(room, playerId)) {
+                broadcast(room);
+            }
+        }, DISCONNECT_GRACE_MS),
+    );
+}
 
 /**
  * Take a socket out of the room it is in: out of the broadcast channel, and out
@@ -1267,13 +1290,19 @@ function leaveRoom(socket, { keepSeat = false } = {}) {
         if (socket.data.spectating) {
             // Nothing to hold open for a watcher — no seat, no turn.
             engine.removeSpectator(room, socket.data.playerId);
-        } else if (!keepSeat) {
-            // Pressing Leave in the lobby gives the seat up for real;
-            // mid-game it can only mean "gone for now", and removePlayer
-            // knows which.
+            broadcast(room);
+        } else if (keepSeat) {
+            broadcast(room);
+        } else if (room.phase === 'waiting') {
+            // Leaving the lobby gives the seat up for real.
             engine.removePlayer(room, socket.data.playerId);
+            broadcast(room);
+        } else {
+            // Mid-game it can only mean "gone for now": the seat is held, and
+            // treated exactly like a closed tab — shortened turn clock, and
+            // the turn skipped if they aren't back within the grace.
+            goneFrom(room, socket.data.playerId);
         }
-        broadcast(room);
     }
     socket.data.roomCode = null;
     socket.data.spectating = false;
@@ -1311,8 +1340,7 @@ function seat(socket, room, result, cb) {
     socket.data.spectating = false;
     socket.join(room.roomCode);
     touch(room);
-    clearTimeout(graceTimers.get(result.player.id));
-    graceTimers.delete(result.player.id);
+    clearGrace(room, result.player.id);
     // Back mid-turn: give them the full window again rather than the seconds
     // left of the one they were being played out on.
     engine.refreshIdle(room, result.player.id);
@@ -1392,14 +1420,19 @@ function restoreRooms() {
 }
 
 // A hard kill, an OOM or a power cut never runs the shutdown hook, so the
-// snapshot can't only be written on the way out. Skipped entirely when there's
-// nothing running, so an idle server doesn't touch the disk at all.
+// snapshot can't only be written on the way out. An idle server touches the
+// disk once more after its last room closes — to take that room's snapshot
+// away — and then not at all.
 const AUTOSAVE_MS = 15_000;
+let snapshotHasRooms = false;
 setInterval(() => {
     // Async: this runs while people are mid-turn, and a blocking write stalls
     // every table in the process for as long as the disk takes. The shutdown
     // save below stays synchronous, where blocking is the entire point.
-    if (rooms.size) persist.saveAsync(rooms);
+    if (!rooms.size && !snapshotHasRooms) return;
+    persist.saveAsync(rooms).then((r) => {
+        if (r.ok) snapshotHasRooms = r.count > 0;
+    });
 }, AUTOSAVE_MS).unref();
 
 const PORT = process.env.PORT || 3000;

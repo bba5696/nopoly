@@ -3247,7 +3247,11 @@ function setActivity(room, playerId, activity = {}) {
     const player = findPlayer(room, playerId);
     if (!player) return { error: 'Unknown player' };
     const kind = ACTIVITY_KINDS.includes(activity?.kind) ? activity.kind : null;
-    player.activity = kind ? { kind, tradeId: activity.tradeId || null } : null;
+    // Only ever the id of a live trade. It is re-sent to the whole table on every
+    // broadcast, so taking whatever the client sent would let one player park
+    // anything they liked in everyone's state.
+    const tradeId = room.trades?.some((t) => t.id === activity.tradeId) ? activity.tradeId : null;
+    player.activity = kind ? { kind, tradeId } : null;
     return {};
 }
 

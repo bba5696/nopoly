@@ -112,6 +112,33 @@ const pin = (fn) => {
     fs.rmSync(process.env.NOPOLY_STATE, { recursive: true, force: true });
 }
 
-console.log(`\n${pass} passed, ${fails.length} failed`);
-for (const f of fails) console.log('  FAIL ' + f);
-process.exit(fails.length ? 1 : 0);
+/* ------------------------------------------------ the autosave and the last save */
+(async () => {
+    // A fresh copy of the module: the save above has already marked this one
+    // as shut down, which is exactly the state the second half tests.
+    const fresh = () => {
+        delete require.cache[require.resolve('../persist')];
+        return require('../persist');
+    };
+    const room = e.createRoom('SNAP');
+
+    let p = fresh();
+    await p.saveAsync(new Map([['SNAP', room]]));
+    ok('an autosave writes the rooms', p.load().length === 1);
+    await p.saveAsync(new Map());
+    ok('an autosave with nothing running takes the old snapshot away', !fs.existsSync(p.FILE));
+
+    // The shutdown save lands while an autosave is still writing: the older
+    // rooms that autosave serialised must not be what is left on disk.
+    p = fresh();
+    const late = p.saveAsync(new Map([['SNAP', room]]));
+    p.save(new Map([['SNAP', room], ['LAST', e.createRoom('LAST')]]));
+    await late;
+    ok('an autosave in flight does not overwrite the shutdown save', p.load().length === 2, String(p.load().length));
+    ok('and nothing autosaves after it', (await p.saveAsync(new Map())).skipped === true);
+    fs.rmSync(process.env.NOPOLY_STATE, { recursive: true, force: true });
+
+    console.log(`\n${pass} passed, ${fails.length} failed`);
+    for (const f of fails) console.log('  FAIL ' + f);
+    process.exit(fails.length ? 1 : 0);
+})().catch((err) => { console.error(err); process.exit(1); });

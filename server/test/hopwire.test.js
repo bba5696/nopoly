@@ -48,6 +48,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(300);
     ok('bo hears nothing from the first room after moving', !seenBo.includes(first.roomCode), seenBo.join(' '));
 
+    // What a player says they are looking at is re-sent to the whole table on
+    // every broadcast, so it can only name a trade that exists.
+    const last = [];
+    cy.on('state', (st) => last.push(st));
+    cy.emit('game:activity', { kind: 'viewing', tradeId: { junk: 'x'.repeat(5000) } });
+    await sleep(200);
+    const me = last.at(-1)?.players.find((p) => p.id === third.playerId);
+    ok('an activity keeps its kind', me?.activity?.kind === 'viewing', JSON.stringify(me?.activity));
+    ok('but not a trade id that is no trade', me?.activity?.tradeId === null, JSON.stringify(me?.activity).slice(0, 80));
+
     console.log(`\n${pass} passed, ${fails.length} failed`);
     for (const f of fails) console.log('  FAIL ' + f);
     for (const s of [ada, bo, cy]) s.close();
