@@ -81,6 +81,42 @@ export function saveIdentity(patch) {
 
 export function clearRoom() {
     saveIdentity({ roomCode: null });
+    saveTabRoom(null);
+}
+
+/**
+ * Which room *this tab* is in, kept apart from the identity above.
+ *
+ * The identity lives in localStorage, which every tab of the browser shares. With
+ * the room code only in there, a second tab that made or joined a room rewrote
+ * it for the first, and the first tab's next reconnect — a phone waking up, a
+ * wifi blip — rejoined the other tab's room. sessionStorage is per tab and
+ * survives a refresh, so a tab that has been somewhere goes back to where it
+ * was. An empty string is "this tab left", so a tab on the home screen doesn't
+ * fall through to another tab's room either; no entry at all is a fresh tab,
+ * which takes the shared one, as it always did.
+ */
+const TAB_KEY = 'nopoly.tabRoom';
+
+export function saveTabRoom(roomCode, spectating = false) {
+    try {
+        sessionStorage.setItem(TAB_KEY, roomCode ? JSON.stringify({ roomCode, spectating }) : '');
+    } catch {
+        // Storage blocked: falls back to the shared identity, as before.
+    }
+}
+
+/** The room to rejoin on connect: this tab's own if it has one, else the browser's. */
+export function loadRoom() {
+    const { roomCode, spectating } = loadIdentity();
+    try {
+        const raw = sessionStorage.getItem(TAB_KEY);
+        if (raw === '') return { roomCode: null, spectating: false };
+        if (raw) return JSON.parse(raw);
+    } catch {
+        // Unreadable — the shared identity it is.
+    }
+    return { roomCode, spectating };
 }
 
 /**

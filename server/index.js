@@ -1049,6 +1049,7 @@ io.on('connection', (socket) => {
             return cb?.({ error: 'Join the game instead' });
         }
         const { spectator } = engine.addSpectator(room, { name, playerId });
+        moveOut(socket, room);
         socket.data.playerId = spectator.id;
         socket.data.roomCode = room.roomCode;
         socket.data.spectating = true;
@@ -1065,22 +1066,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('room:leave', () => {
-        const room = getRoom(socket.data.roomCode);
-        if (room) {
-            socket.leave(room.roomCode);
-            if (socket.data.spectating) {
-                // Nothing to hold open for a watcher — no seat, no turn.
-                engine.removeSpectator(room, socket.data.playerId);
-            } else {
-                // Pressing Leave in the lobby gives the seat up for real;
-                // mid-game it can only mean "gone for now", and removePlayer
-                // knows which.
-                engine.removePlayer(room, socket.data.playerId);
-            }
-            broadcast(room);
-        }
-        socket.data.roomCode = null;
-        socket.data.spectating = false;
+        leaveRoom(socket);
         pushPresence();
     });
 
@@ -1270,8 +1256,56 @@ io.on('connection', (socket) => {
     });
 });
 
+/**
+ * Take a socket out of the room it is in: out of the broadcast channel, and out
+ * of the seat or the watchers' bench it held there.
+ */
+function leaveRoom(socket, { keepSeat = false } = {}) {
+    const room = getRoom(socket.data.roomCode);
+    if (room) {
+        socket.leave(room.roomCode);
+        if (socket.data.spectating) {
+            // Nothing to hold open for a watcher — no seat, no turn.
+            engine.removeSpectator(room, socket.data.playerId);
+        } else if (!keepSeat) {
+            // Pressing Leave in the lobby gives the seat up for real;
+            // mid-game it can only mean "gone for now", and removePlayer
+            // knows which.
+            engine.removePlayer(room, socket.data.playerId);
+        }
+        broadcast(room);
+    }
+    socket.data.roomCode = null;
+    socket.data.spectating = false;
+}
+
+/**
+ * Before a socket goes into `next`, out of wherever it was.
+ *
+ * Without this a socket that made or joined a second room was still in the
+ * first one's Socket.IO channel, and went on receiving its broadcasts. The
+ * player id is the browser's and the same in both rooms, so the client took
+ * the old room's state as its own: the screen flipped back to the old room on
+ * every move made there, or — when the old roster no longer had them — threw
+ * them out of the new one. The old seat also stayed "connected" for a socket
+ * that had gone, so the old table never started the grace period on them.
+ *
+ * A second tab of the same person still sitting in the old room keeps the
+ * seat; this socket only stops listening.
+ */
+function moveOut(socket, next) {
+    const code = socket.data.roomCode;
+    if (!code || code === next.roomCode) return;
+    const pid = socket.data.playerId;
+    const otherTab = [...io.sockets.sockets.values()].some(
+        (s) => s.id !== socket.id && s.data.playerId === pid && s.data.roomCode === code,
+    );
+    leaveRoom(socket, { keepSeat: otherTab });
+}
+
 /** Sit a socket down in a room it has just been admitted to. */
 function seat(socket, room, result, cb) {
+    moveOut(socket, room);
     socket.data.playerId = result.player.id;
     socket.data.roomCode = room.roomCode;
     socket.data.spectating = false;

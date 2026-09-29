@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- provider and its hook belong together */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { socket, loadIdentity, saveIdentity, clearRoom } from './socket';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { socket, loadIdentity, saveIdentity, clearRoom, loadRoom, saveTabRoom } from './socket';
 
 const GameContext = createContext(null);
 
@@ -8,6 +8,9 @@ export function GameProvider({ children }) {
     const [connected, setConnected] = useState(socket.connected);
     const [playerId, setPlayerId] = useState(() => loadIdentity().playerId || null);
     const [roomCode, setRoomCode] = useState(null);
+    // The same, readable from inside socket handlers without re-subscribing.
+    // Written alongside every setRoomCode.
+    const roomRef = useRef(null);
     const [state, setState] = useState(null);
     // Your own cards, in games that have any. Kept apart from `state` because
     // that is exactly what it is on the wire: the room's truth and yours are
@@ -29,6 +32,8 @@ export function GameProvider({ children }) {
     const applyJoin = useCallback((res) => {
         if (!res || res.error) return res;
         saveIdentity({ playerId: res.playerId, roomCode: res.roomCode, spectating: !!res.spectating });
+        saveTabRoom(res.roomCode, !!res.spectating);
+        roomRef.current = res.roomCode;
         setPlayerId(res.playerId);
         setRoomCode(res.roomCode);
         setSpectating(!!res.spectating);
@@ -48,11 +53,13 @@ export function GameProvider({ children }) {
             setConnected(true);
             // A tab restored in the background connects already hidden.
             reportVisibility();
-            const { roomCode: stored, playerId: pid, name, initials, color, spectating: wasWatching } = loadIdentity();
+            const { playerId: pid, name, initials, color } = loadIdentity();
+            const { roomCode: stored, spectating: wasWatching } = loadRoom();
             if (!stored) return;
 
             const dropOut = () => {
                 clearRoom();
+                roomRef.current = null;
                 setRoomCode(null);
                 setSpectating(false);
                 setState(null);
@@ -82,6 +89,11 @@ export function GameProvider({ children }) {
         };
         const onPresence = (next) => setPresence(next);
         const onState = (next) => {
+            // Only the room this tab is in. A state for any other room is left
+            // over from one we have since moved out of, and taking it would
+            // swap the screen to that room — or, if we're not in its roster,
+            // throw us out of the one we are in.
+            if (!next || next.roomCode !== roomRef.current) return;
             // Dropped from the room (resigned, or not carried into a rematch) —
             // fall back to the home screen rather than showing a game we're
             // no longer part of. A watcher is never in `players` and is meant
@@ -91,6 +103,7 @@ export function GameProvider({ children }) {
             const stillWatching = watching && next.spectators?.some((s) => s.id === pid);
             if (gone && !stillWatching) {
                 clearRoom();
+                roomRef.current = null;
                 setRoomCode(null);
                 setSpectating(false);
                 setState(null);
@@ -105,6 +118,7 @@ export function GameProvider({ children }) {
         // that no longer exists.
         const onClosed = (text) => {
             clearRoom();
+            roomRef.current = null;
             setRoomCode(null);
             setSpectating(false);
             setState(null);
@@ -209,6 +223,7 @@ export function GameProvider({ children }) {
     const leaveRoom = useCallback(() => {
         socket.emit('room:leave');
         clearRoom();
+        roomRef.current = null;
         setRoomCode(null);
         setSpectating(false);
         setState(null);
