@@ -161,6 +161,18 @@ const until = async (fn, ms = 3000) => {
     const cardView = await (await get(`/api/admin/rooms/${cardCode}`, token)).json();
     ok('watching a card game shows nobody s hand', !JSON.stringify(cardView).includes('"hand"'));
 
+    /* ----------------------------------------------- a list that holds still */
+    // The panel polls this list every three seconds. When it was ordered by
+    // whoever had acted last, a live table reshuffled the cards under whoever
+    // was reading them and the page crawled back up the screen on every poll.
+    const order = async () => (await (await get('/api/admin/rooms', token)).json()).rooms.map((r) => r.code);
+    const firstLook = await order();
+    ok('the list has both rooms', firstLook.includes(code) && firstLook.includes(cardCode), firstLook.join(' '));
+    ada.emit('game:roll');
+    await new Promise((r) => setTimeout(r, 150));
+    const secondLook = await order();
+    ok('and play in one does not move it up the list', secondLook.join() === firstLook.join(), secondLook.join(' '));
+
     /* ------------------------------------------------ ending with the results */
     let deeClosed = null;
     dee.on('room:closed', (t) => (deeClosed = t));

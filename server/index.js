@@ -476,7 +476,12 @@ app.get('/api/admin/rooms', admin.requireAdmin, (req, res) => {
         spectators: (room.spectators || []).length,
         banned: (room.banned || []).map((id) => ({ id, name: room.banNames?.[id] || null })),
     }));
-    list.sort((a, b) => (b.lastActionAt || 0) - (a.lastActionAt || 0));
+    // Left in the order the rooms were made, and deliberately not sorted by
+    // anything that moves. This list is polled every three seconds, and when
+    // the order was "whoever acted last", a live table reshuffled the cards
+    // under whoever was reading them — the browser follows the element it was
+    // anchored to and the page walks back up the screen every poll. A room's
+    // place in the list now only changes when a room opens or closes.
     res.set('Cache-Control', 'no-store').json({ rooms: list, now: Date.now() });
 });
 
