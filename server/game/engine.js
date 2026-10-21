@@ -957,6 +957,9 @@ function updateSettings(room, playerId, patch = {}) {
         if (!Number.isFinite(value)) continue;
         room.settings[key] = Math.min(Math.max(value, limit.min), limit.max);
     }
+    // A game can seat only so many — six round one island.
+    const seats = rulesFor(room).maxPlayers;
+    if (seats && room.settings.maxPlayers > seats) room.settings.maxPlayers = seats;
     if (room.settings.maxPlayers < room.players.length) {
         room.settings.maxPlayers = room.players.length;
     }

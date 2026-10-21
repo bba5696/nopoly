@@ -325,7 +325,7 @@ const num = (suit, value) => card(suit, 'num', value);
 /* ----------------------------------------------------- the registry itself */
 {
     const { GAMES, HOOKS, rulesFor, gameId } = require('../game/rules');
-    ok('both games are registered', Object.keys(GAMES).sort().join() === 'nopoly,nouno');
+    ok('every game is registered', Object.keys(GAMES).sort().join() === 'nopoly,notan,nouno');
     ok('an unknown id falls back', gameId('wat') === 'nopoly' && rulesFor({ game: 'wat' }).id === 'nopoly');
     ok('a room with no game is the board game', rulesFor({}).id === 'nopoly');
     for (const [id, mod] of Object.entries(GAMES)) {

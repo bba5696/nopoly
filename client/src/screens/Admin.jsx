@@ -286,7 +286,8 @@ function WatchPanel({ code, game }) {
     if (error) return <p className="px-4 pb-3 text-[13px] text-[#ff5c7c]">{error}</p>;
     if (!view) return <p className="px-4 pb-3 text-[13px] text-muted-foreground">Loading…</p>;
 
-    const cards = game === 'nouno';
+    const island = game === 'notan';
+    const cards = game === 'nouno' || island;
     const current = view.players?.[view.turnIndex];
     const feed = (view.log || []).slice(-14).reverse();
 
@@ -294,7 +295,9 @@ function WatchPanel({ code, game }) {
         <div className="grid gap-3 border-t border-white/8 px-4 py-3 md:grid-cols-[1.1fr_1fr]">
             <div className="flex flex-col gap-1.5">
                 <span className="label opacity-70">
-                    {cards
+                    {island
+                        ? `${current ? `${current.name} is up` : ''} · ${view.step || '—'}${view.dice ? ` · last roll ${view.dice[0] + view.dice[1]}` : ''}`
+                        : cards
                         ? `Top card ${view.top ? `${view.top.kind}${view.top.value ?? ''}` : '—'} · following ${view.active || '—'} · ${view.stockCount} in the stock`
                         : `${current ? `${current.name} is up` : ''}${view.auction ? ' · auction running' : ''}${view.pendingAction ? ` · waiting on ${view.pendingAction.type}` : ''}`}
                 </span>
@@ -304,7 +307,10 @@ function WatchPanel({ code, game }) {
                             <tr className="text-left text-muted-foreground">
                                 <th className="py-1 pr-3 font-normal">Player</th>
                                 {cards ? (
-                                    <th className="py-1 pr-3 font-normal">Cards</th>
+                                    <>
+                                        <th className="py-1 pr-3 font-normal">Cards</th>
+                                        {island && <th className="py-1 pr-3 font-normal">Points</th>}
+                                    </>
                                 ) : (
                                     <>
                                         <th className="py-1 pr-3 font-normal">Cash</th>
@@ -331,7 +337,10 @@ function WatchPanel({ code, game }) {
                                         </span>
                                     </td>
                                     {cards ? (
-                                        <td className="mono py-1 pr-3">{p.handCount}</td>
+                                        <>
+                                            <td className="mono py-1 pr-3">{island ? p.cardCount : p.handCount}</td>
+                                            {island && <td className="mono py-1 pr-3">{p.points}</td>}
+                                        </>
                                     ) : (
                                         <>
                                             <td className="mono py-1 pr-3">

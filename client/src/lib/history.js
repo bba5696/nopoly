@@ -99,7 +99,13 @@ export function entryFromState(state) {
             chatMessages: state.stats.chatMessages || 0,
             played: state.stats.played || 0,
             wilds: state.stats.wilds || 0,
+            devPlayed: state.stats.devPlayed || 0,
         },
+        // The island's: which number the dice favoured.
+        mostRolled: (() => {
+            const rolled = top(state.stats.rolls);
+            return rolled ? { name: rolled[0], count: rolled[1] } : null;
+        })(),
         mostVisited: visited ? { name: state.tiles[visited[0]]?.name || '—', count: visited[1] } : null,
         mostJail: jailed
             ? { name: players.find((p) => p.id === jailed[0])?.name || '—', count: jailed[1] }

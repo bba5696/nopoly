@@ -10,6 +10,7 @@ import { Lobby } from '@/screens/Lobby';
 import { Game } from '@/screens/Game';
 import { GameOver } from '@/screens/GameOver';
 import { Nouno } from '@/screens/Nouno';
+import { Notan } from '@/screens/Notan';
 import { SharedGame } from '@/screens/SharedGame';
 import { sharedIdFromPath } from '@/lib/share-link';
 import { Admin } from '@/screens/Admin';
@@ -92,6 +93,7 @@ function Router() {
     if (state.phase === 'waiting') return <Lobby />;
     if (state.phase === 'ended') return <GameOver />;
     if (state.game === 'nouno') return <Nouno />;
+    if (state.game === 'notan') return <Notan />;
     return <Game />;
 }
 

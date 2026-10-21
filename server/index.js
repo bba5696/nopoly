@@ -834,6 +834,10 @@ function scheduleGame(room) {
             gameTimers.delete(room.roomCode);
             due.resolve(room);
             broadcast(room);
+            // What it resolved can start the next deadline — a bot's move
+            // leads to its next one — and can begin somebody's turn.
+            scheduleGame(room);
+            scheduleIdle(room);
         }, delay),
     );
 }
@@ -1360,6 +1364,9 @@ function seat(socket, room, result, cb) {
     // with it — and the turn clock they were being played out on.
     scheduleVote(room);
     scheduleIdle(room);
+    // And the game's own clock: bots wait for a person at the table, so the
+    // first one back is what sets them moving again.
+    scheduleGame(room);
     pushPresence();
 }
 
@@ -1387,8 +1394,10 @@ function restoreRooms() {
     const saved = persist.load();
     for (const room of saved) {
         for (const p of room.players) {
-            p.connected = false;
             p.activity = null;
+            // A bot has no socket to lose, so it is still sitting there.
+            if (p.bot) continue;
+            p.connected = false;
             // The restart is when they went away, as far as anything measuring
             // absence is concerned. Stamped rather than inherited so the away
             // clock gives them its grace to reconnect instead of counting from

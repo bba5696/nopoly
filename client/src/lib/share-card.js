@@ -53,7 +53,7 @@ function niceMax(value) {
  * because the picture is being made to say who won. Everyone else stays a thin
  * line: eight filled areas over each other is a smear, not a graph.
  */
-function drawChart(ctx, box, series, winnerNames) {
+function drawChart(ctx, box, series, winnerNames, counted = false) {
     const { x, y, w, h } = box;
     const len = Math.max(...series.map((s) => s.points.length), 2);
     const peak = Math.max(...series.flatMap((s) => s.points.map((p) => p.value)), 1);
@@ -77,7 +77,7 @@ function drawChart(ctx, box, series, winnerNames) {
         ctx.font = mono(11);
         ctx.fillStyle = MUTED;
         ctx.textAlign = 'right';
-        ctx.fillText(shortMoney(v), x - 12, gy);
+        ctx.fillText(counted ? String(v) : shortMoney(v), x - 12, gy);
     }
 
     // Turn numbers along the bottom, thinned to whatever fits.
@@ -166,7 +166,7 @@ function drawWinners(ctx, winners, x, y) {
  * scoreboard at once. Eight lines are only identifiable if the colours are
  * named somewhere, and the names may as well carry the numbers.
  */
-function drawStandings(ctx, standings, x, y, w) {
+function drawStandings(ctx, standings, x, y, w, counted = false) {
     const cols = Math.min(4, Math.max(1, standings.length));
     const cw = w / cols;
     ctx.textBaseline = 'alphabetic';
@@ -187,7 +187,7 @@ function drawStandings(ctx, standings, x, y, w) {
         ctx.textAlign = 'right';
         ctx.font = mono(13);
         ctx.fillStyle = MUTED;
-        ctx.fillText(p.bankrupt ? 'bankrupt' : money(p.netWorth), cx + cw - 24, cy);
+        ctx.fillText(p.bankrupt ? 'bankrupt' : counted ? `${p.netWorth} pts` : money(p.netWorth), cx + cw - 24, cy);
     });
 }
 
@@ -247,6 +247,7 @@ export function drawShareCard(canvas, card) {
         { x: PAD + 62, y: 232, w: W - PAD * 2 - 62, h: 286 },
         card.series,
         new Set(card.winners.map((w) => w.name)),
+        card.counted,
     );
 
     ctx.strokeStyle = FAINT;
@@ -255,7 +256,7 @@ export function drawShareCard(canvas, card) {
     ctx.moveTo(PAD, 566.5);
     ctx.lineTo(W - PAD, 566.5);
     ctx.stroke();
-    drawStandings(ctx, card.standings, PAD, 600, W - PAD * 2);
+    drawStandings(ctx, card.standings, PAD, 600, W - PAD * 2, card.counted);
 
     return canvas;
 }
@@ -275,6 +276,8 @@ export function cardFromEntry(entry) {
         endedAt: entry.endedAt,
         title: entry.nickname || undefined,
         teamLabel: entry.winnerTeam ? `winning team · ${entry.winnerTeam}` : 'winner',
+        // Counts rather than money: cards held, or points on the island.
+        counted: entry.game === 'nouno' || entry.game === 'notan',
         winners: winners.map((w) => ({ name: w.name, color: w.color, initials: w.initials })),
         facts: [
             `${Math.floor(ms / 60000)} min ${Math.floor((ms % 60000) / 1000)} sec`,
@@ -282,7 +285,7 @@ export function cardFromEntry(entry) {
             `${entry.players.length} players`,
             entry.game === 'nouno'
                 ? `${entry.facts.played || 0} cards played`
-                : `${entry.facts.trades} trades`,
+                : `${entry.facts.trades || 0} trades`,
         ],
         series: entry.players.map((p) => ({
             name: p.name,
@@ -291,7 +294,11 @@ export function cardFromEntry(entry) {
         })),
         standings: entry.players
             .slice()
-            .sort((a, b) => Number(a.bankrupt) - Number(b.bankrupt) || b.netWorth - a.netWorth)
+            .sort((a, b) =>
+                entry.game === 'nouno'
+                    ? (a.netWorth || 0) - (b.netWorth || 0)
+                    : Number(a.bankrupt) - Number(b.bankrupt) || b.netWorth - a.netWorth,
+            )
             .map((p) => ({ name: p.name, color: p.color, bankrupt: p.bankrupt, netWorth: p.netWorth })),
     };
 }

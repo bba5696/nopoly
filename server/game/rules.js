@@ -18,10 +18,12 @@
 
 const nopoly = require('./engine').rules;
 const nouno = require('./nouno/rules');
+const notan = require('./notan/rules');
 
 const GAMES = {
     [nopoly.id]: nopoly,
     [nouno.id]: nouno,
+    [notan.id]: notan,
 };
 
 const DEFAULT_GAME = nopoly.id;
@@ -44,6 +46,7 @@ const GAME_LIST = Object.values(GAMES).map((g) => ({
     name: g.name,
     tagline: g.tagline,
     minPlayers: g.minPlayers,
+    maxPlayers: g.maxPlayers || null,
     supportsTeams: !!g.supportsTeams,
 }));
 

@@ -10,7 +10,7 @@ import { ProfileModal } from '@/components/modals/ProfileModal';
 import { loadIdentity } from '@/lib/socket';
 import { alpha, initials } from '@/lib/color';
 import { historyCount } from '@/lib/history';
-import { BETA_WARNING, GAMES } from '@/lib/games';
+import { GAMES, warningFor } from '@/lib/games';
 import { cn } from '@/lib/utils';
 import { PastGames } from '@/screens/PastGames';
 
@@ -105,7 +105,7 @@ export function Home() {
                     {/* Which game the room will be playing. Two of them is a
                         pair of buttons rather than a dropdown: a dropdown is
                         for a list, and this is a choice. */}
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-3 gap-2.5">
                         {GAMES.map((g) => (
                             <button
                                 key={g.id}
@@ -257,7 +257,7 @@ export function Home() {
                 <div className="flex flex-col gap-5 p-5">
                     <p className="flex gap-3 text-[14px] leading-relaxed text-muted-foreground">
                         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[#ffb648]" />
-                        <span>{BETA_WARNING}</span>
+                        <span>{warningFor(warnAbout?.id)}</span>
                     </p>
                     <div className="flex gap-2">
                         <Button

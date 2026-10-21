@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Coins, Copy, Crown, Gavel, Hammer, Hand, Home, Hotel, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Store, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
+import { Bot, Check, Coins, Copy, Crown, Gavel, Hammer, Hand, Home, Hotel, LogOut, Palmtree, Pencil, Percent, Scale, ShieldOff, Store, Timer, TrendingUp, TriangleAlert, UserMinus, Users, UsersRound } from 'lucide-react';
 import { useGame } from '@/lib/game-context';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { Toggle, NumberField } from '@/components/ui/toggle';
 import { PresencePill } from '@/components/ui/presence';
 import { ProfileModal } from '@/components/modals/ProfileModal';
 import { alpha, tag } from '@/lib/color';
 import { cn } from '@/lib/utils';
 import { playJoin, playPlayerJoined } from '@/lib/sound';
-import { BETA_WARNING } from '@/lib/games';
+import { gameOf, warningFor } from '@/lib/games';
 
 /**
  * The settings column is tabbed rather than one long list — the whole lobby
@@ -204,6 +205,7 @@ export function Lobby() {
     const { state, playerId, isHost, send, leaveRoom } = useGame();
     const [copied, setCopied] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
+    const [askBots, setAskBots] = useState(false);
 
     // Landing in the lobby is a gesture-adjacent moment — the click that got
     // you here has already opened the audio context.
@@ -251,7 +253,8 @@ export function Lobby() {
     // that hold them are simply not there. The rest of this screen — the
     // roster, the kick, the code, the start button — never knew which game
     // it was setting up.
-    const cards = state.game === 'nouno';
+    const cards = state.game !== 'nopoly';
+    const game = gameOf(state.game);
     const teamIds = state.teamIds || [];
     const teamColors = state.teamColors || {};
 
@@ -275,8 +278,13 @@ export function Lobby() {
     const canDrag = isHost && settings.teams;
 
     // Why the button is dead, in the same words the server would use.
+    const minPlayers = game.minPlayers || 2;
+    // Short of the minimum in a game that has bots: Start stays live and asks.
+    const short = state.players.length < minPlayers;
+    const canFill = short && !!game.bots;
     const blockedReason = (() => {
-        if (state.players.length < 2) return 'need at least 2 players';
+        if (canFill) return null;
+        if (short) return `need at least ${minPlayers} players`;
         if (!settings.teams) return null;
         const cap = settings.maxTeamSize;
         if (cap && teamIds.length * cap < state.players.length) {
@@ -443,6 +451,12 @@ export function Lobby() {
                                             {tag(p)}
                                         </span>
                                         <span className="min-w-0 flex-1 truncate text-lg">{p.name}</span>
+                                        {p.bot && (
+                                            <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+                                                <Bot className="size-4" />
+                                                <span className="label">bot</span>
+                                            </span>
+                                        )}
                                         {p.id === playerId && (
                                             <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
                                                 <span className="label">you</span>
@@ -513,24 +527,41 @@ export function Lobby() {
                             {cards && (
                                 <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
                                     <span className="flex items-baseline gap-1.5">
-                                        <span className="text-xl">nouno</span>
+                                        <span className="text-xl">{game.name}</span>
                                         <span className="label text-[#ffb648]">beta</span>
                                     </span>
-                                    <p className="text-[13px] leading-snug text-muted-foreground">
-                                        Seven cards each. Follow the suit or the number, and shed your hand
-                                        before anyone else does. Halt skips the next player, Turn sends play
-                                        back the way it came, and an Any names the suit that carries on.
-                                    </p>
-                                    <p className="text-[12px] leading-snug text-muted-foreground/70">
-                                        Say <span className="text-foreground">last card</span> before you play
-                                        your second-to-last one, or draw two for the silence.
-                                    </p>
+                                    {state.game === 'notan' ? (
+                                        <>
+                                            <p className="text-[13px] leading-snug text-muted-foreground">
+                                                Everyone places two settlements and two roads. Each turn you roll,
+                                                and every hex showing that number pays whoever is built on it.
+                                                Spend what you collect on roads, settlements, cities and cards.
+                                            </p>
+                                            <p className="text-[12px] leading-snug text-muted-foreground/70">
+                                                First to <span className="text-foreground">10 points</span> wins. The
+                                                board lights up where you can build, and the hint bar says what
+                                                to do next. Five or six players get a bigger island.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-[13px] leading-snug text-muted-foreground">
+                                                Seven cards each. Follow the suit or the number, and shed your hand
+                                                before anyone else does. Halt skips the next player, Turn sends play
+                                                back the way it came, and an Any names the suit that carries on.
+                                            </p>
+                                            <p className="text-[12px] leading-snug text-muted-foreground/70">
+                                                Say <span className="text-foreground">last card</span> before you play
+                                                your second-to-last one, or draw two for the silence.
+                                            </p>
+                                        </>
+                                    )}
                                     {/* Whoever made the room was warned on the
                                         way in; everybody else arrived with a
                                         code and has seen nothing. */}
                                     <p className="mt-1 flex gap-2 rounded-lg border border-[#ffb648]/30 bg-[#ffb648]/5 px-3 py-2 text-left text-[12px] leading-snug text-[#ffb648]">
                                         <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-                                        <span>{BETA_WARNING}</span>
+                                        <span>{warningFor(state.game)}</span>
                                     </p>
                                 </div>
                             )}
@@ -694,7 +725,7 @@ export function Lobby() {
                                     value={settings.maxPlayers}
                                     disabled={!isHost}
                                     min={Math.max(2, state.players.length)}
-                                    max={999}
+                                    max={game.maxPlayers || 999}
                                     onChange={patch('maxPlayers')}
                                 />
                             </SettingRow>
@@ -704,17 +735,50 @@ export function Lobby() {
                             className="mt-3 shrink-0 text-lg"
                             style={{ height: 52 }}
                             disabled={!isHost || !!blockedReason}
-                            onClick={() => send('game:start')}
+                            onClick={() => (canFill ? setAskBots(true) : send('game:start'))}
                         >
                             Start game
                         </Button>
                         <span className="label mt-1 text-center">
-                            {isHost ? blockedReason || 'you are the host' : 'only the host can change the rules'}
+                            {isHost
+                                ? blockedReason || (canFill ? `${minPlayers} players needed — bots can fill in` : 'you are the host')
+                                : 'only the host can change the rules'}
                         </span>
                     </div>
                 </div>
             </motion.div>
             {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+            {/* Only ever short of the minimum: at three or more there is no bot option at all. */}
+            <Modal
+                open={askBots && canFill}
+                onClose={() => setAskBots(false)}
+                subtitle="Not enough players"
+                title={`${game.name} needs ${minPlayers} players`}
+                width={420}
+            >
+                <div className="flex flex-col gap-5 p-5">
+                    <p className="text-[14px] leading-relaxed text-muted-foreground">
+                        There {state.players.length === 1 ? 'is 1 player' : `are ${state.players.length} players`} here.
+                        Fill the {minPlayers - state.players.length === 1 ? 'empty seat' : `${minPlayers - state.players.length} empty seats`} with
+                        bots and start now, or wait for more people to join with the code.
+                    </p>
+                    <div className="flex gap-2">
+                        <Button variant="outline" className="h-11 flex-1" onClick={() => setAskBots(false)}>
+                            Wait for players
+                        </Button>
+                        <Button
+                            className="h-11 flex-1"
+                            onClick={() => {
+                                setAskBots(false);
+                                send('notan:bots');
+                                send('game:start');
+                            }}
+                        >
+                            <Bot className="size-4" /> Fill with bots
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }
